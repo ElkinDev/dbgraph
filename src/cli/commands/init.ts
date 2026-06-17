@@ -1,0 +1,206 @@
+/**
+ * init command handler — tasks 3.2 + 3.3 (phase-4-cli-config).
+ *
+ * Both flag form and -i wizard paths funnel through the SINGLE buildConfig/writeConfig
+ * pipeline from Batch A (ensuring byte-identical output — ADR-008, Decision 4).
+ *
+ * What init does:
+ *   1. Build a DbgraphConfig via buildConfig (flag form) or runWizard → buildConfig (-i form).
+ *   2. Serialize via writeConfig and write to PROJECT_ROOT/dbgraph.config.json.
+ *   3. Append `.dbgraph/` to PROJECT_ROOT/.gitignore (idempotent, creates if absent).
+ *   4. (Seam for Batch D) Call syncStub — a clean seam that Batch D will wire to the
+ *      real sync engine. For now returns success immediately.
+ *
+ * ADR-004: imports ONLY from ../index.js (public barrel) + node builtins.
+ * No adapter imports, no process.exit (cli.ts owns that).
+ * Throws ConfigError on invalid input (propagated to cli.ts → exit code 2).
+ */
+
+import { writeFileSync, readFileSync, existsSync, appendFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Readable, Writable } from 'node:stream';
+import { buildConfig, writeConfig } from '../config/build-config.js';
+import type { BuildConfigInput } from '../config/build-config.js';
+import { runWizard } from '../init/wizard.js';
+import type { CapabilityMatrix } from '../../index.js';
+import type { HandlerOutcome } from '../dispatch.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Public input types
+// ─────────────────────────────────────────────────────────────────────────────
+
+type NonInteractiveInit =
+  | { dialect: 'sqlite'; file: string; driver?: 'better-sqlite3' | 'node:sqlite' }
+  | {
+      dialect: 'mssql';
+      server: string;
+      database: string;
+      user: string;
+      password: string;
+      port?: string;
+      domain?: string;
+    };
+
+type InteractiveInit = {
+  interactive: true;
+  wizardInput?: Readable;
+  wizardOutput?: Writable;
+  capabilitiesOverride?: CapabilityMatrix;
+};
+
+export type InitOptions = { projectRoot: string } & (
+  | (NonInteractiveInit & { interactive?: false })
+  | InteractiveInit
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// .gitignore writer (idempotent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GITIGNORE_ENTRY = '.dbgraph/';
+
+/**
+ * Appends `.dbgraph/` to the project .gitignore.
+ * Idempotent: if the entry already exists as its own line, it is NOT duplicated.
+ * Creates the .gitignore file if it does not exist.
+ */
+function ensureGitignored(projectRoot: string): void {
+  const gitignorePath = join(projectRoot, '.gitignore');
+
+  if (existsSync(gitignorePath)) {
+    const content = readFileSync(gitignorePath, 'utf-8');
+    // Check whether the entry already exists as an exact line
+    const lines = content.split('\n').map((l) => l.trim());
+    if (lines.includes(GITIGNORE_ENTRY)) {
+      return; // Already present — idempotent, do nothing
+    }
+    // Append to existing file. Ensure we start on a new line.
+    const suffix = content.endsWith('\n') ? '' : '\n';
+    appendFileSync(gitignorePath, `${suffix}${GITIGNORE_ENTRY}\n`, 'utf-8');
+  } else {
+    // Create fresh .gitignore with just the entry
+    writeFileSync(gitignorePath, `${GITIGNORE_ENTRY}\n`, 'utf-8');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sync seam (Batch D wires the real engine here)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Stub for the first sync after init.
+ * Batch D will replace this with the real sync implementation.
+ * Returns success immediately without touching any database.
+ *
+ * The seam is kept as a separate exported function so Batch D can wire it by
+ * replacing this file's import — no changes to runInit itself needed.
+ */
+export async function syncAfterInit(_projectRoot: string): Promise<void> {
+  // Batch D seam: real sync will call createSqliteSchemaAdapter/createMssqlSchemaAdapter
+  // and run the incremental sync. For now, no-op.
+  return Promise.resolve();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WizardResult → BuildConfigInput adapter
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { WizardResult } from '../init/wizard.js';
+
+/**
+ * Converts a WizardResult to a BuildConfigInput.
+ * Both are structurally identical — this is a type-level adapter that ensures
+ * TypeScript is satisfied without duplicating the conversion logic.
+ */
+function wizardResultToBuildInput(result: WizardResult): BuildConfigInput {
+  if (result.dialect === 'sqlite') {
+    return { dialect: 'sqlite', file: result.file };
+  }
+  const base: BuildConfigInput = {
+    dialect: 'mssql',
+    server: result.server,
+    database: result.database,
+    user: result.user,
+    password: result.password,
+  };
+  const mssql = base as {
+    dialect: 'mssql';
+    server: string;
+    database: string;
+    user: string;
+    password: string;
+    port?: string;
+    domain?: string;
+  };
+  if (result.port !== undefined) mssql.port = result.port;
+  if (result.domain !== undefined) mssql.domain = result.domain;
+  return mssql;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// runInit — public entry point
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Executes the init command.
+ *
+ * Non-interactive: takes flags directly → buildConfig → write.
+ * Interactive (-i): runs wizard → WizardResult → buildConfig → write.
+ * Both paths call the SAME buildConfig/writeConfig — byte-identical guarantee.
+ *
+ * Throws ConfigError if any identity field is plaintext (propagated from buildConfig).
+ * Returns HandlerOutcome { type: 'success' } on success.
+ */
+export async function runInit(options: InitOptions): Promise<HandlerOutcome> {
+  const { projectRoot } = options;
+
+  let buildInput: BuildConfigInput;
+
+  if ('interactive' in options && options.interactive === true) {
+    // ── Interactive path (-i wizard) ─────────────────────────────────────────
+    const wizardOpts: Parameters<typeof runWizard>[0] = {};
+    if (options.wizardInput !== undefined) wizardOpts.input = options.wizardInput;
+    if (options.wizardOutput !== undefined) wizardOpts.output = options.wizardOutput;
+    if (options.capabilitiesOverride !== undefined) {
+      wizardOpts.capabilitiesOverride = options.capabilitiesOverride;
+    }
+    const wizardResult = await runWizard(wizardOpts);
+    buildInput = wizardResultToBuildInput(wizardResult);
+  } else {
+    // ── Non-interactive path (flags) ─────────────────────────────────────────
+    const opts = options as NonInteractiveInit & { interactive?: false; projectRoot: string };
+    if (opts.dialect === 'sqlite') {
+      buildInput = {
+        dialect: 'sqlite',
+        file: opts.file,
+        ...(opts.driver !== undefined ? { driver: opts.driver } : {}),
+      };
+    } else {
+      buildInput = {
+        dialect: 'mssql',
+        server: opts.server,
+        database: opts.database,
+        user: opts.user,
+        password: opts.password,
+        ...(opts.port !== undefined ? { port: opts.port } : {}),
+        ...(opts.domain !== undefined ? { domain: opts.domain } : {}),
+      };
+    }
+  }
+
+  // ── Build + write config ───────────────────────────────────────────────────
+  // buildConfig throws ConfigError if any identity field is plaintext.
+  // writeConfig serializes with deterministic key order (ADR-008).
+  const config = buildConfig(buildInput);
+  const configString = writeConfig(config);
+  const configPath = join(projectRoot, 'dbgraph.config.json');
+  writeFileSync(configPath, configString, 'utf-8');
+
+  // ── .gitignore writer ──────────────────────────────────────────────────────
+  ensureGitignored(projectRoot);
+
+  // ── First sync (Batch D seam) ──────────────────────────────────────────────
+  await syncAfterInit(projectRoot);
+
+  return { type: 'success' };
+}

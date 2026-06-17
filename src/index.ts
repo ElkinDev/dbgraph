@@ -26,6 +26,10 @@ import { MSSQL_CAPABILITIES } from './adapters/engines/mssql/capabilities.js';
 import type { CapabilityMatrix } from './core/model/capability.js';
 import { UnsupportedDialectError } from './core/errors.js';
 
+// Re-export the capability constants so CLI/MCP modules can consume them
+// without importing adapter internals directly (ADR-004 boundary).
+export { SQLITE_CAPABILITIES, MSSQL_CAPABILITIES };
+
 /**
  * Returns the static CapabilityMatrix for the given dialect WITHOUT opening
  * a database connection. Unknown dialect throws UnsupportedDialectError.

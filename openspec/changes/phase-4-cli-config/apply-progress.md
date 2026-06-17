@@ -1,4 +1,4 @@
-# Apply Progress — phase-4-cli-config (Batches A + B)
+# Apply Progress — phase-4-cli-config (Batches A + B + C)
 
 ---
 
@@ -82,6 +82,48 @@ Hand-rolled argument parser, dispatch table, exit-code mapper, and `cli.ts` skel
 
 ---
 
+## Batch C (tasks 3.1–3.3) — COMPLETE
+
+`init` command + `node:readline` wizard + `.gitignore` writer + byte-identity golden.
+
+### Tasks completed
+
+- [x] 3.1 RED→GREEN `src/cli/init/wizard.ts`. `node:readline` wizard driven by `CapabilityMatrix.supported` (via `capabilitiesFor` from barrel — ADR-004 boundary preserved). Offers ONLY kinds in the dialect matrix. Connection-identity fields must be `${env:VAR}` references; literal values trigger a re-prompt with guidance message. Secret prompts: readline created with `terminal:false` (no echo). Async iterator pattern used (`rl[Symbol.asyncIterator]()`) — NOT `rl.question()` — to work correctly with injected `Readable.from()` test streams (see L-010 in `docs/learnings.md`). `SQLITE_CAPABILITIES`/`MSSQL_CAPABILITIES` re-exported from `src/index.ts` (barrel) so CLI/tests can consume them without importing adapters. Done: 17 unit tests pass.
+- [x] 3.2 RED→GREEN `src/cli/commands/init.ts`. Both paths (flag form and `-i`) feed through ONE `buildConfig` → `writeConfig` pipeline (byte-identity). Writes `dbgraph.config.json` at `projectRoot`. Appends `.dbgraph/` to `.gitignore` (idempotent — checks for exact-line match before appending; creates file if absent). Batch D sync seam exported as `syncAfterInit()` — no-op stub for now. `dispatch.ts` updated to wire the real `handleInit` (reads flags for dialect/file/server etc., falls back to interactive if no dialect supplied). Done: 13 unit tests pass.
+- [x] 3.3 RED→GREEN byte-identity golden. Both paths (flag form + wizard) call `buildConfig` → `writeConfig` with the same structured input → IDENTICAL string output (ADR-008). Test in `init.test.ts` writes via wizard, reads the file back, and asserts equality with a direct `writeConfig(buildConfig(...))` call. Done: 2 dedicated byte-identity tests pass.
+
+### Files created/modified (Batch C)
+
+- `src/index.ts` — modified (re-exported `SQLITE_CAPABILITIES`, `MSSQL_CAPABILITIES` constants for CLI/tests without adapter imports)
+- `src/cli/init/wizard.ts` — created (`runWizard`, `WizardResult`, `WizardOptions`, `Level` types; `LineReader` class with async iterator + muting pattern)
+- `src/cli/commands/init.ts` — created (`runInit`, `InitOptions`, `syncAfterInit` seam, `ensureGitignored`, `wizardResultToBuildInput`)
+- `src/cli/dispatch.ts` — modified (wired real `handleInit` replacing stub; imports `runInit` from `./commands/init.js`)
+- `docs/learnings.md` — appended L-010 (readline async iterator vs question() for testability)
+
+### Test files created (Batch C)
+
+- `test/cli/init/wizard.test.ts` — created (17 tests: capability-driven offering, SQLite no-procedure, MSSQL includes procedure, literal-credential re-prompt, masking, WizardResult shape)
+- `test/cli/commands/init.test.ts` — created (13 tests: flag-form writes config, appends .gitignore, idempotent, preserves existing gitignore, success outcome, MSSQL env refs, literal password rejected, interactive form writes config + gitignore, byte-identity x2)
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 3.1 | `test/cli/init/wizard.test.ts` | Unit | N/A (new) | Written (module not found) | 17/17 pass | Capability-driven (SQLite vs MSSQL matrices), literal→re-prompt, masking, WizardResult shape across dialects | Removed no-op `void` suppressor; async iterator AsyncIterator<string> type fix |
+| 3.2 | `test/cli/commands/init.test.ts` | Unit | N/A (new) | Written (module not found) | 13/13 pass | Flag form (sqlite+mssql), idempotent .gitignore, literal rejection, interactive form, Batch D seam | Removed unused NodeKind import + void suppressor |
+| 3.3 | `test/cli/commands/init.test.ts` | Unit | N/A (new) | Written (module not found) | 2/2 pass (within init test file) | wizard→file vs direct writeConfig assertion; golden for determinism | None needed — trivially clean |
+
+### Learnings (Batch C)
+
+**Windows readline masking (L-010):** `readline.question()` fails with `Readable.from()` test streams because `Readable.from` emits all lines in a synchronous burst before any `question()` callback can be queued. Readline closes and throws "readline was closed". Fix: use `rl[Symbol.asyncIterator]()` (lazy consumption, one line per iteration step). Also `output: null` causes immediate close — pass a real writable and use `terminal: false` to prevent echo. Documented in `docs/learnings.md` as L-010.
+
+### Gate result (Batch C)
+
+`npx tsc --noEmit`: CLEAN (no output, exit 0)
+`npm test`: PASS — 48 test files, 720 tests, 0 failures (30 new tests added in Batch C)
+
+---
+
 ## Next batch
 
-Batch C (tasks 3.1–3.3): `init` + `node:readline` wizard + `.gitignore` writer + byte-identity golden.
+Batch D (tasks 4.1–4.3): `sync` incremental selector (fake store) + `status` + status formatter.

@@ -5,13 +5,14 @@
  * Unknown commands are RETURNED as a DispatchResult with type "unknown" —
  * never thrown as raw errors. The caller (cli.ts) decides exit code 2 + usage.
  *
- * Handlers are stub functions for now; later batches (C, D, E) will fill them in.
  * Handlers THROW or RETURN — they NEVER call process.exit (keeps them testable).
+ * Batch C wires the real init handler; later batches fill in sync/status/query/explore/diff.
  *
  * ADR-004: no adapter imports here — only types from this module.
  */
 
 import type { ParsedArgs } from './parse/args.js';
+import { runInit } from './commands/init.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler type
@@ -45,8 +46,50 @@ export type DispatchResult =
 // Stub handlers (later batches replace these with real implementations)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleInit(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('init handler not yet implemented — Batch C will fill this in');
+async function handleInit(args: ParsedArgs): Promise<HandlerOutcome> {
+  // Resolve project root: use cwd so the config is written to the project root.
+  const projectRoot = process.cwd();
+
+  // -i / --interactive flag: run the wizard
+  if (args.flags['i'] === true || args.flags['interactive'] === true) {
+    return runInit({ projectRoot, interactive: true });
+  }
+
+  // Flag form: extract connection fields from parsed flags
+  const dialect = typeof args.flags['dialect'] === 'string' ? args.flags['dialect'] : '';
+  if (dialect === 'sqlite') {
+    const file = typeof args.flags['file'] === 'string' ? args.flags['file'] : '';
+    const driver = args.flags['driver'];
+    return runInit({
+      projectRoot,
+      dialect: 'sqlite',
+      file,
+      ...(driver === 'better-sqlite3' || driver === 'node:sqlite' ? { driver } : {}),
+    });
+  }
+
+  if (dialect === 'mssql') {
+    const server = typeof args.flags['server'] === 'string' ? args.flags['server'] : '';
+    const database = typeof args.flags['database'] === 'string' ? args.flags['database'] : '';
+    const user = typeof args.flags['user'] === 'string' ? args.flags['user'] : '';
+    const password = typeof args.flags['password'] === 'string' ? args.flags['password'] : '';
+    const port = typeof args.flags['port'] === 'string' ? args.flags['port'] : undefined;
+    const domain = typeof args.flags['domain'] === 'string' ? args.flags['domain'] : undefined;
+
+    return runInit({
+      projectRoot,
+      dialect: 'mssql',
+      server,
+      database,
+      user,
+      password,
+      ...(port !== undefined ? { port } : {}),
+      ...(domain !== undefined ? { domain } : {}),
+    });
+  }
+
+  // No dialect or unrecognized — fall back to interactive wizard
+  return runInit({ projectRoot, interactive: true });
 }
 
 async function handleSync(_args: ParsedArgs): Promise<HandlerOutcome> {
