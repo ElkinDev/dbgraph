@@ -82,6 +82,14 @@ describe('src/core/index.ts — exports', () => {
     it('exports NotFoundError', () => {
       expect(typeof CoreBarrel.NotFoundError).toBe('function');
     });
+
+    it('exports ConfigError (task 1.2 — phase-4-cli-config)', () => {
+      expect(typeof CoreBarrel.ConfigError).toBe('function');
+    });
+
+    it('exports UnsupportedDialectError (task 1.2 — phase-4-cli-config)', () => {
+      expect(typeof CoreBarrel.UnsupportedDialectError).toBe('function');
+    });
   });
 
   describe('constants', () => {
@@ -126,5 +134,13 @@ describe('src/index.ts — package root exports', () => {
 
   it('core barrel and root barrel share the same normalizeCatalog reference', () => {
     expect(RootBarrel.normalizeCatalog).toBe(CoreBarrel.normalizeCatalog);
+  });
+
+  it('exports ConfigError (reachable from root barrel, task 1.2)', () => {
+    expect(typeof RootBarrel.ConfigError).toBe('function');
+  });
+
+  it('exports UnsupportedDialectError (reachable from root barrel, task 1.2)', () => {
+    expect(typeof RootBarrel.UnsupportedDialectError).toBe('function');
   });
 });

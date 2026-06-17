@@ -15,6 +15,8 @@ import {
   NotFoundError,
   ConnectionError,
   PermissionError,
+  ConfigError,
+  UnsupportedDialectError,
 } from '../../src/core/errors.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -216,5 +218,90 @@ describe('PermissionError', () => {
   it('cause is absent when not provided', () => {
     const err = new PermissionError('no cause');
     expect(err.cause).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ConfigError — task 1.1 (phase-4-cli-config)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ConfigError', () => {
+  it('is an instance of Error', () => {
+    const err = new ConfigError('bad config');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('is an instance of DbgraphError', () => {
+    const err = new ConfigError('bad config');
+    expect(err).toBeInstanceOf(DbgraphError);
+  });
+
+  it('is an instance of ConfigError', () => {
+    const err = new ConfigError('bad config');
+    expect(err).toBeInstanceOf(ConfigError);
+  });
+
+  it('carries stable code E_CONFIG', () => {
+    const err = new ConfigError('bad config');
+    expect(err.code).toBe('E_CONFIG');
+  });
+
+  it('name is ConfigError', () => {
+    const err = new ConfigError('bad config');
+    expect(err.name).toBe('ConfigError');
+  });
+
+  it('preserves the message passed in', () => {
+    const msg = 'Field "dialect" is required but missing.';
+    const err = new ConfigError(msg);
+    expect(err.message).toBe(msg);
+  });
+
+  it('can carry an actionable message naming a field', () => {
+    const err = new ConfigError(
+      'Field "host" must be a ${env:VAR} reference, not a literal value.',
+    );
+    expect(err.message).toContain('host');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UnsupportedDialectError — task 1.1 (phase-4-cli-config)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('UnsupportedDialectError', () => {
+  it('is an instance of Error', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('is an instance of DbgraphError', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err).toBeInstanceOf(DbgraphError);
+  });
+
+  it('is an instance of UnsupportedDialectError', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err).toBeInstanceOf(UnsupportedDialectError);
+  });
+
+  it('carries stable code E_UNSUPPORTED_DIALECT', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err.code).toBe('E_UNSUPPORTED_DIALECT');
+  });
+
+  it('name is UnsupportedDialectError', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err.name).toBe('UnsupportedDialectError');
+  });
+
+  it('message includes the bad dialect name', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err.message).toContain('oracle');
+  });
+
+  it('message lists available dialects', () => {
+    const err = new UnsupportedDialectError('oracle');
+    expect(err.message).toMatch(/sqlite|mssql/i);
   });
 });

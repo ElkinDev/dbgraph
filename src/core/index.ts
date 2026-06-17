@@ -104,4 +104,6 @@ export {
   NotFoundError,
   ConnectionError,
   PermissionError,
+  ConfigError,
+  UnsupportedDialectError,
 } from './errors.js';

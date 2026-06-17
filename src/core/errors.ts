@@ -87,6 +87,31 @@ export class NotFoundError extends DbgraphError {
 }
 
 /**
+ * Thrown when configuration is invalid, malformed, or unsafe.
+ * Examples: missing required field, unknown dialect, inline plaintext credential,
+ * or an unset env variable referenced by ${env:VAR}.
+ * Message MUST be actionable — naming the offending field and corrective action.
+ */
+export class ConfigError extends DbgraphError {
+  constructor(message: string) {
+    super(message, 'E_CONFIG');
+  }
+}
+
+/**
+ * Thrown when a requested dialect has no registered adapter.
+ * Message names the bad dialect and lists the available dialects.
+ */
+export class UnsupportedDialectError extends DbgraphError {
+  constructor(dialect: string) {
+    super(
+      `Unsupported dialect: "${dialect}". Available dialects: sqlite, mssql.`,
+      'E_UNSUPPORTED_DIALECT',
+    );
+  }
+}
+
+/**
  * Thrown when the engine adapter cannot connect to the source database.
  * Covers: file not found, file not a valid database, database locked/busy,
  * and required driver package not installed.
