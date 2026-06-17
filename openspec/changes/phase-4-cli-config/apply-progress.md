@@ -175,8 +175,60 @@ Hand-rolled argument parser, dispatch table, exit-code mapper, and `cli.ts` skel
 
 ---
 
+---
+
+## Batch E (tasks 5.1–5.3) — COMPLETE
+
+Shared `src/core/present/explore.ts` formatter (pure, core-types-only, boundary-clean) + `explore` command + `query` formatter + `query` command + `dispatch.ts` wired with real handlers.
+
+### Tasks completed
+
+- [x] 5.1 RED→GREEN `src/core/present/explore.ts`. Pure `formatExplore(view: ExploreView, detail: ExploreDetail): string`. ExploreView = `{ node: GraphNode; neighbors: NeighborGroups }`. Levels: `brief` (qname/kind/neighbor-kind counts), `normal` (+ grouped neighbors by edge kind/direction/qname-sorted), `full` (+ bodyHash + level + hasDynamicSql warning). Re-exported via `src/core/index.ts` (new "present/" section before errors). Reachable via `src/index.ts` through `export * from './core/index.js'`. `test/core/boundaries.test.ts` still green — `src/core/present/explore.ts` imports ONLY `../model/node.js` and `../ports/graph-store.js` (core-internal). 20 unit tests pass.
+- [x] 5.2 RED→GREEN `src/cli/commands/explore.ts`. `runExplore(options: ExploreOptions): Promise<ExploreOutcome>`. Resolves qname by iterating NODE_KINDS via `store.getNodeByQName`; throws `NotFoundError` when not found. Calls `getNeighbors(store, { nodeId })` (public barrel, ADR-004 boundary preserved). Assembles `ExploreView` → `formatExplore(view, detail)`. Returns `{ type: 'success', output }`. `dispatch.ts` wired with real `handleExplore` (reads `args.positionals[0]` as qname, `args.flags['detail']` defaulting to `'normal'`). 9 unit tests pass.
+- [x] 5.3 RED→GREEN `src/cli/format/query.ts` (`formatQueryText` + `formatQueryJson`) + `src/cli/commands/query.ts` (`runQuery`). Text formatter: one line per hit `kind.padEnd(14) qname`. JSON formatter: stable `{ term, total, hits: [{kind, qname, id, score}] }` (ADR-008 fixed key order). `runQuery` calls `search(store, {term})`, formats, returns `{ type: 'success'|'negative', output }`. Zero hits → `type: 'negative'` (maps to exit 1 via `exitCodeFor`, US-020). `dispatch.ts` wired with real `handleQuery` (reads `args.positionals[0]` as term, `args.flags['json']` as boolean). 22 unit tests pass (12 formatter + 10 command).
+
+### Files created (Batch E)
+
+- `src/core/present/explore.ts` — created (`formatExplore`, `ExploreView`, `ExploreDetail`)
+- `src/core/index.ts` — modified (added present/ section exporting `formatExplore`, `ExploreDetail`, `ExploreView`)
+- `src/cli/commands/explore.ts` — created (`runExplore`, `ExploreOptions`, `ExploreOutcome`)
+- `src/cli/commands/query.ts` — created (`runQuery`, `QueryOptions`, `QueryOutcome`)
+- `src/cli/format/query.ts` — created (`formatQueryText`, `formatQueryJson`, `QueryResultView`)
+- `src/cli/dispatch.ts` — modified (wired real `handleQuery`/`handleExplore` replacing stubs; added imports for `runQuery`, `runExplore`)
+
+### Test files created/modified (Batch E)
+
+- `test/core/present/explore-format.test.ts` — created (20 tests: brief/normal/full levels, determinism x3, purity, goldens)
+- `test/core/barrel.test.ts` — modified (added 1 test for `formatExplore` export from `src/core/index.ts`)
+- `test/cli/commands/explore.test.ts` — created (9 tests: qname resolution, kind in output, neighbor qnames, detail levels, not-found, determinism, return type)
+- `test/cli/commands/query.test.ts` — created (10 tests: success outcome, text output, zero-hit negative, JSON mode, JSON determinism, return type)
+- `test/cli/format/query.test.ts` — created (12 tests: text kind+qname, multiple hits, procedure kind, empty, newline, JSON parseable, JSON structure, JSON determinism, goldens)
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 5.1 | `test/core/present/explore-format.test.ts` | Unit | N/A (new) | Written (module not found) | 20/20 pass | 3 describe blocks: brief/normal/full; determinism x3 levels; empty neighbors; purity | Fixed `ExploreOutcome extends HandlerOutcome` TS error (union type cannot be extended directly — removed extends, inlined the shape) |
+| 5.2 | `test/cli/commands/explore.test.ts` | Unit | N/A (new) | Written (module not found) | 9/9 pass | qname resolution, brief/normal/full each tested, not-found throw, determinism | Fixed `NotFoundError(kind, id)` signature (takes two args, not one) |
+| 5.3 (fmt) | `test/cli/format/query.test.ts` | Unit | N/A (new) | Written (module not found) | 12/12 pass | `formatQueryText` (text, multi-hit, procedure, empty, newline); `formatQueryJson` (parseable, kind+qname, total, determinism, newline); golden x2 | Clean — fixed key order via object literal shape |
+| 5.3 (cmd) | `test/cli/commands/query.test.ts` | Unit | N/A (new) | Written (module not found) | 10/10 pass | success/text, multi-hit, zero→negative, JSON mode, zero in JSON mode, JSON determinism, return type | Matches handleSync/handleStatus adapter.close() pattern in dispatch |
+
+### Learnings (Batch E)
+
+**`NotFoundError` takes two arguments (L-013):** `NotFoundError(kind: string, identifier: string)` — not a single message string. Discovered during RED→GREEN cycle for `explore.ts`. Pattern consistent with `StorageError(message, cause?)`.
+
+**`ExploreOutcome extends HandlerOutcome` rejected by TS:** `HandlerOutcome` is a union type (`{type:'success'}|{type:'negative'}`). TypeScript disallows `interface X extends UnionType`. Fix: declare `ExploreOutcome` as a standalone interface with `type: 'success'` — does not extend the union.
+
+### Gate result (Batch E)
+
+`npx tsc --noEmit`: CLEAN (no output, exit 0)
+`npm test`: PASS — 56 test files, 808 tests, 0 failures (52 new tests added in Batch E)
+`test/core/boundaries.test.ts`: 7/7 pass — `src/core/present/explore.ts` imports only core model/port types (PURE, boundary-clean)
+
+---
+
 ## Next batch
 
-Batch E (tasks 5.1–5.3): shared `src/core/present/explore.ts` formatter + `explore` command + `query` command (+ `--json`) + formatters.
+Batch F (tasks 6.1–6.5): storage schema v1→v2 (`snapshot_objects` DDL, migration), `putSnapshot` manifest write, diff engine + `diff` formatter + command.
 
-Note (design override from tasks.md): The SHARED `explore` formatter lives in `src/core/present/` (NOT `src/cli/format/` as design Decision 2 stated) — PURE, core-types-only, reused by Phase-5 MCP. CLI-only formatters (`query`/`status`/`diff`) stay in `src/cli/format/`.
+Batch G (tasks 7.1–7.6): tsup build wiring, CLI boundaries test, E2E (SQLite + gated MSSQL), final sweep.

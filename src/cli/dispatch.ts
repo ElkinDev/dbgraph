@@ -17,6 +17,8 @@ import type { ParsedArgs } from './parse/args.js';
 import { runInit } from './commands/init.js';
 import { runSync } from './commands/sync.js';
 import { runStatus } from './commands/status.js';
+import { runQuery } from './commands/query.js';
+import { runExplore } from './commands/explore.js';
 import { parseConfig } from './config/parse-config.js';
 import { resolveSecrets } from './config/resolve-secrets.js';
 import {
@@ -181,12 +183,48 @@ async function openAdapterAndStore(projectRoot: string): Promise<AdapterAndStore
   return { adapter, store };
 }
 
-async function handleQuery(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('query handler not yet implemented — Batch E will fill this in');
+/**
+ * Runs search and prints text or JSON output.
+ * Zero hits → 'negative' outcome (exit 1 per US-020 / Decision 9).
+ */
+async function handleQuery(args: ParsedArgs): Promise<HandlerOutcome> {
+  const term = args.positionals[0] ?? '';
+  const json = args.flags['json'] === true;
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  try {
+    const result = await runQuery({ store, term, json });
+    process.stdout.write(result.output);
+    return result;
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
 }
 
-async function handleExplore(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('explore handler not yet implemented — Batch E will fill this in');
+/**
+ * Resolves qname → node + neighbors → formatExplore.
+ * --detail defaults to 'normal'.
+ */
+async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
+  const qname = args.positionals[0] ?? '';
+  const detailRaw = args.flags['detail'];
+  const detail =
+    detailRaw === 'brief' || detailRaw === 'normal' || detailRaw === 'full'
+      ? detailRaw
+      : 'normal';
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  try {
+    const result = await runExplore({ store, qname, detail });
+    process.stdout.write(result.output);
+    return { type: 'success' };
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
 }
 
 async function handleDiff(_args: ParsedArgs): Promise<HandlerOutcome> {
