@@ -1,0 +1,44 @@
+[
+  {
+    "schema_name": "dbo",
+    "object_name": "v_active_orders",
+    "object_type": "V",
+    "object_id": 3001,
+    "definition": "CREATE VIEW dbo.v_active_orders AS SELECT o.order_id, o.customer_name FROM dbo.orders o WHERE o.created_at IS NOT NULL"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_process_order",
+    "object_type": "P",
+    "object_id": 3002,
+    "definition": "CREATE PROCEDURE dbo.usp_process_order @order_id INT AS BEGIN INSERT INTO dbo.audit_log (event, ref_id) VALUES ('process', @order_id); UPDATE dbo.orders SET customer_name = customer_name WHERE order_id = @order_id; SELECT order_id FROM dbo.order_items WHERE order_id = @order_id END"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "fn_total",
+    "object_type": "FN",
+    "object_id": 3003,
+    "definition": "CREATE FUNCTION dbo.fn_total(@order_id INT) RETURNS DECIMAL(18,2) AS BEGIN DECLARE @total DECIMAL(18,2); SELECT @total = SUM(total) FROM dbo.order_items WHERE order_id = @order_id; RETURN @total END"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "tvf_order_details",
+    "object_type": "IF",
+    "object_id": 3004,
+    "definition": "CREATE FUNCTION dbo.tvf_order_details(@order_id INT) RETURNS TABLE AS RETURN SELECT oi.item_id, oi.qty, oi.price FROM dbo.order_items oi WHERE oi.order_id = @order_id"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "tr_audit_orders",
+    "object_type": "TR",
+    "object_id": 3005,
+    "definition": "CREATE TRIGGER dbo.tr_audit_orders ON dbo.orders AFTER UPDATE AS BEGIN INSERT INTO dbo.audit_log (event, ref_id) SELECT 'updated', order_id FROM inserted END"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_dynamic",
+    "object_type": "P",
+    "object_id": 3006,
+    "definition": "CREATE PROCEDURE dbo.usp_dynamic @table NVARCHAR(128) AS BEGIN DECLARE @sql NVARCHAR(MAX) = N'SELECT * FROM ' + @table; EXEC sp_executesql @sql END"
+  }
+]

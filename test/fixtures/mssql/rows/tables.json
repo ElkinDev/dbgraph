@@ -1,0 +1,22 @@
+[
+  {
+    "schema_name": "dbo",
+    "table_name": "orders",
+    "object_id": 1001
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "object_id": 1002
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "products",
+    "object_id": 1003
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "audit_log",
+    "object_id": 1004
+  }
+]

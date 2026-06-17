@@ -1,0 +1,174 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "387199d3553bfc452102116d4969ca9a6e4be490",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "audit_id",
+        "qname": "dbo.invoices.audit_id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": true,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "7a155f4ac3d0ab71aae768614435eb96852c25f1",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.invoices.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "5983cb05c95618e9040c45efa08a66b660241c38",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "fk_invoices_audit",
+        "qname": "dbo.invoices.fk_invoices_audit",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "FK",
+          "columns": [
+            "audit_id"
+          ]
+        }
+      },
+      {
+        "id": "148a20ea2761bc5e5ba1ee57be660ba261bf3c95",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_invoices",
+        "qname": "dbo.invoices.pk_invoices",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "d3a4c052d88207cddda45230da8fa80a22108fd8",
+        "kind": "table",
+        "schema": "audit",
+        "name": "log",
+        "qname": "audit.log",
+        "level": "off",
+        "missing": false,
+        "excluded": true,
+        "bodyHash": null,
+        "payload": {}
+      },
+      {
+        "id": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "invoices",
+        "qname": "dbo.invoices",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "d4d7ad05f1f9c189dd7d6f418b49673740257eb6",
+        "kind": "has_column",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "387199d3553bfc452102116d4969ca9a6e4be490",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "c81e6c3e26cdc47c3b0d0f7db34fc6dc20852c54",
+        "kind": "has_column",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "7a155f4ac3d0ab71aae768614435eb96852c25f1",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "cdcb62766f26130b4f30c9aaed7f8b03d495d387",
+        "kind": "has_constraint",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "148a20ea2761bc5e5ba1ee57be660ba261bf3c95",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "9aedc4b47a4d36236592c6caa07239f1815c5044",
+        "kind": "has_constraint",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "5983cb05c95618e9040c45efa08a66b660241c38",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "72deee26a18c9760f241cad972d418ae5ce35f5f",
+        "kind": "references",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "d3a4c052d88207cddda45230da8fa80a22108fd8",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "aggregate": true,
+          "constraintName": "FK_invoices_audit"
+        }
+      },
+      {
+        "id": "80ffec03b318c4e239ddeaf12123bb8c67ee6141",
+        "kind": "references",
+        "src": "70aa6ab026015082244de7d7e067e2da8a4f3663",
+        "dst": "d3a4c052d88207cddda45230da8fa80a22108fd8",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "srcColumn": "audit_id",
+          "dstColumn": "id",
+          "constraintName": "FK_invoices_audit"
+        }
+      }
+    ]
+  },
+  "stubs": [
+    {
+      "id": "d3a4c052d88207cddda45230da8fa80a22108fd8",
+      "qname": "audit.log",
+      "kind": "table",
+      "reason": "excluded",
+      "referencedBy": "70aa6ab026015082244de7d7e067e2da8a4f3663"
+    }
+  ],
+  "warnings": [],
+  "omitted": []
+}

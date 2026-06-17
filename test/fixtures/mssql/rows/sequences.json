@@ -1,0 +1,22 @@
+[
+  {
+    "schema_name": "dbo",
+    "sequence_name": "seq_order_id",
+    "data_type": "int",
+    "start_value": "1",
+    "increment": "1",
+    "minimum_value": "1",
+    "maximum_value": "2147483647",
+    "is_cycling": false
+  },
+  {
+    "schema_name": "dbo",
+    "sequence_name": "seq_batch_id",
+    "data_type": "bigint",
+    "start_value": "1000",
+    "increment": "10",
+    "minimum_value": "1",
+    "maximum_value": "9223372036854775807",
+    "is_cycling": false
+  }
+]

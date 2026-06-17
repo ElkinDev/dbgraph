@@ -1,0 +1,54 @@
+{
+  "name": "@niklerk23/dbgraph",
+  "version": "0.0.0",
+  "description": "Database schema graph for AI agents — index your database catalog into a local graph, served over MCP",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ElkinDev/dbgraph.git"
+  },
+  "dependencies": {
+    "better-sqlite3": "12.10.0"
+  },
+  "optionalDependencies": {
+    "mssql": "12.5.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "^25.9.3",
+    "eslint": "^10.4.1",
+    "prettier": "^3.8.4",
+    "testcontainers": "10.24.1",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
+  }
+}

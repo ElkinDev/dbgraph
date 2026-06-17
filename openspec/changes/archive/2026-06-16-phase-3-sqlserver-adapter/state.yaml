@@ -1,0 +1,56 @@
+change: phase-3-sqlserver-adapter
+schema: spec-driven
+artifact_store: openspec
+created: 2026-06-16
+updated: 2026-06-16
+last_phase: archive
+
+phases:
+  explore:
+    status: skipped
+  proposal:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifact: specs/mssql-extraction/spec.md
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: done
+    batch_a: done
+    batch_b: done
+    batch_c: done
+    batch_d: done
+    artifact: apply-progress.md
+  verify:
+    status: done
+    outcome: PASS
+    previous_outcome: FAIL
+    artifact: verify-report.md
+    summary: >
+      Re-verification (Batch D) PASS, ZERO carry-over. All 4 prior findings fixed and confirmed.
+      C-1: trigger fires_on dst is the dbo.orders parent table (tableById + parent_object_id in
+      map.ts:481-555); empirically verified against the live SQL Server 2022 container (one trigger
+      node, zero phantom stubs, fires_on dst=dbo.orders, attrs.event=UPDATE). C-2: L-008 retracted in
+      docs/learnings.md; writes_to(trigger->audit_log, parsed) restored at both test layers and live.
+      W-1: endpoint assertions by destination qname for fires_on, writes_to, reads_from + no-stub.
+      W-2: DB-free map unit test asserts RawTriggerInfo.table = parent table. Gates: unit 540/540 x2,
+      lint clean, tsc clean, integration 47/47 x2; goldens byte-identical across both runs (ADR-008).
+      US-007 genuinely done. L-009 + false-negative policy promoted to skill and registry.
+  archive:
+    status: done
+    archived_to: openspec/changes/archive/2026-06-16-phase-3-sqlserver-adapter/
+    archive_report: openspec/changes/archive/2026-06-16-phase-3-sqlserver-adapter/archive-report.md
+
+capabilities:
+  new:
+    - mssql-extraction
+  modified: []
+
+next_recommended: none
+change_closed: true

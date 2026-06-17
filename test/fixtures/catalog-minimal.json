@@ -1,0 +1,68 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "orders",
+      "comment": "Customer orders",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "customer_id", "dataType": "int", "nullable": false, "ordinal": 2 },
+        { "name": "total", "dataType": "decimal", "nullable": true, "ordinal": 3 }
+      ],
+      "constraints": [
+        { "name": "PK_orders", "type": "PK", "columns": ["id"] },
+        {
+          "name": "FK_orders_customer",
+          "type": "FK",
+          "columns": ["customer_id"],
+          "references": { "schema": "dbo", "table": "customers", "columns": ["id"] }
+        }
+      ],
+      "indexes": [
+        { "name": "IX_orders_customer", "unique": false, "columns": ["customer_id"] }
+      ]
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "customers",
+      "comment": "Customer accounts",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "name", "dataType": "nvarchar", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_customers", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "view",
+      "schema": "dbo",
+      "name": "vw_orders_summary",
+      "comment": "Aggregated order view",
+      "dependencies": [
+        { "target": { "schema": "dbo", "name": "orders", "kind": "table" }, "access": "read", "confidence": "declared" }
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "dbo",
+      "name": "trg_orders_after_insert",
+      "body": "BEGIN\n  UPDATE customers SET last_order_date = GETDATE() WHERE id = inserted.customer_id;\nEND",
+      "hasDynamicSql": false,
+      "trigger": {
+        "timing": "AFTER",
+        "events": ["INSERT"],
+        "table": { "schema": "dbo", "name": "orders" }
+      },
+      "dependencies": [
+        { "target": { "schema": "dbo", "name": "customers", "kind": "table" }, "access": "write", "confidence": "parsed" }
+      ]
+    }
+  ]
+}

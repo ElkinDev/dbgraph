@@ -1,0 +1,64 @@
+schema: spec-driven
+
+context: |
+  Tech stack: TypeScript (strict, ESM) on Node.js >=20, npm
+  Build: tsup. Tests: vitest. Lint: eslint flat config. Format: prettier.
+  Architecture: hexagonal (ports & adapters) - core never imports adapters/mcp/cli (ADR-004)
+  Domain: database schema graph indexed into local SQLite+FTS5, served over MCP, read-only
+  Language policy: everything public in English
+  Requirements: docs/stories/ (38 stories). Decisions: docs/adr/ (001-008). Gotchas: docs/learnings.md
+
+strict_tdd: true
+
+testing:
+  runner:
+    framework: vitest
+    command: npm test
+  layers:
+    unit:
+      available: true
+      tool: vitest
+    integration:
+      available: false
+      tool: "testcontainers (planned, not installed yet)"
+    e2e:
+      available: false
+      tool: none
+  coverage:
+    available: false
+    command: "install @vitest/coverage-v8 first, then: npx vitest run --coverage"
+  quality:
+    linter:
+      available: true
+      command: npm run lint
+    type_checker:
+      available: true
+      command: npx tsc --noEmit
+    formatter:
+      available: true
+      command: npm run format
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Identify affected modules/packages
+  specs:
+    - Use Given/When/Then format for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Reference user story IDs (US-xxx) from docs/stories/
+  design:
+    - Document architecture decisions with rationale (link ADRs)
+    - Respect hexagonal boundaries (ADR-004)
+  tasks:
+    - Group tasks by phase (infrastructure, implementation, testing)
+    - Use hierarchical numbering (1.1, 1.2, etc.)
+    - Keep tasks small enough to complete in one session
+  apply:
+    - Follow existing code patterns and conventions
+    - Apply project skills - dbgraph-conventions, dbgraph-testing, dbgraph-security
+    - STRICT TDD - failing test first for everything under src/core
+  verify:
+    - Run npm test, npm run lint and npx tsc --noEmit
+    - Compare implementation against every spec scenario
+  archive:
+    - Warn before merging destructive deltas (large removals)

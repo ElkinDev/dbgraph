@@ -1,0 +1,23 @@
+[
+  {
+    "schema_name": "dbo",
+    "object_name": "orders",
+    "column_id": 0,
+    "column_name": null,
+    "description": "Stores customer orders"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "orders",
+    "column_id": 1,
+    "column_name": "order_id",
+    "description": "Primary key for orders"
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "orders",
+    "column_id": 2,
+    "column_name": "customer_name",
+    "description": "Name of the customer"
+  }
+]

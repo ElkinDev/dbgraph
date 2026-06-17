@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.dbgraph/
+*.tsbuildinfo
+.env
+
+# Leak-scanner denylist (project-specific sensitive identifiers — never committed)
+.leakscan-denylist.local

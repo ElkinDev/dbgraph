@@ -1,0 +1,56 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "orders",
+      "comment": "Orders table",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "status", "dataType": "nvarchar", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_orders", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "audit",
+      "comment": "Audit log table",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "action", "dataType": "nvarchar", "nullable": false, "ordinal": 2 },
+        { "name": "changed_at", "dataType": "datetime", "nullable": false, "ordinal": 3 }
+      ],
+      "constraints": [
+        { "name": "PK_audit", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "trigger",
+      "schema": "dbo",
+      "name": "trg_orders_after_update_audit",
+      "comment": "AFTER UPDATE trigger on orders that writes to audit",
+      "body": "BEGIN\n  INSERT INTO dbo.audit (action, changed_at) VALUES ('orders_updated', GETDATE());\nEND",
+      "hasDynamicSql": false,
+      "trigger": {
+        "timing": "AFTER",
+        "events": ["UPDATE"],
+        "table": { "schema": "dbo", "name": "orders" }
+      },
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "audit", "kind": "table" },
+          "access": "write",
+          "confidence": "parsed"
+        }
+      ]
+    }
+  ]
+}

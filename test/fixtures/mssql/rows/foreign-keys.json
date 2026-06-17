@@ -1,0 +1,35 @@
+[
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "FK_order_items_orders",
+    "fk_id": 2001,
+    "ref_schema_name": "dbo",
+    "ref_table_name": "orders",
+    "local_column": "order_id",
+    "ref_column": "order_id",
+    "constraint_column_id": 1
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "FK_composite",
+    "fk_id": 2002,
+    "ref_schema_name": "dbo",
+    "ref_table_name": "products",
+    "local_column": "product_id",
+    "ref_column": "product_id",
+    "constraint_column_id": 1
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "FK_composite",
+    "fk_id": 2002,
+    "ref_schema_name": "dbo",
+    "ref_table_name": "products",
+    "local_column": "warehouse_id",
+    "ref_column": "warehouse_id",
+    "constraint_column_id": 2
+  }
+]

@@ -1,0 +1,54 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "ccb5d99be7009a918d8a86ea276e40662fd3f50a",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "dropped_table",
+        "qname": "dbo.dropped_table",
+        "level": "off",
+        "missing": true,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      },
+      {
+        "id": "f6d07dc8042e3626f896e3591d2668b3fbdd39f1",
+        "kind": "view",
+        "schema": "dbo",
+        "name": "vw_orphan",
+        "qname": "dbo.vw_orphan",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "View referencing a dropped table"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "b9efbdc4bb8328dd4946197648eb51a4b1c967d7",
+        "kind": "depends_on",
+        "src": "f6d07dc8042e3626f896e3591d2668b3fbdd39f1",
+        "dst": "ccb5d99be7009a918d8a86ea276e40662fd3f50a",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      }
+    ]
+  },
+  "stubs": [
+    {
+      "id": "ccb5d99be7009a918d8a86ea276e40662fd3f50a",
+      "qname": "dbo.dropped_table",
+      "kind": "table",
+      "reason": "missing",
+      "referencedBy": "f6d07dc8042e3626f896e3591d2668b3fbdd39f1"
+    }
+  ],
+  "warnings": [],
+  "omitted": []
+}

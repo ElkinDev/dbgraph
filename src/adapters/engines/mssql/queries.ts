@@ -1,0 +1,321 @@
+/**
+ * Read-only SQL string constants for SQL Server schema extraction.
+ * Design §queries.ts "catalog query set" — all strings are read-only SELECTs
+ * over sys.* catalog views. NO write verbs anywhere in this file.
+ * US-031: write-verb scanner scans engines/** and WILL fail on write verbs.
+ * ADR-008: every query ends with an explicit ORDER BY for determinism.
+ *
+ * These constants are passed to MssqlReadonlyDriver.query() in map.ts.
+ * No DB execution in Batch A — string constants only, consumed in Batch B.
+ */
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tables and columns (with types, nullability, defaults, computed columns)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Tables: all user tables in the database, with schema name.
+ * Excludes system tables (is_ms_shipped = 0).
+ */
+export const SQL_MSSQL_TABLES = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  t.object_id                     AS object_id
+FROM sys.tables t
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name
+`.trim();
+
+/**
+ * Columns with type info, nullability, computed column flag, and default expression.
+ * Joins: sys.columns → sys.types (for type name), sys.computed_columns,
+ * sys.default_constraints.
+ * One row per column; ordered by table schema/name then column ordinal.
+ */
+export const SQL_MSSQL_COLUMNS = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  c.column_id                     AS column_id,
+  c.name                          AS column_name,
+  tp.name                         AS data_type,
+  c.max_length                    AS max_length,
+  c.precision                     AS precision,
+  c.scale                         AS scale,
+  c.is_nullable                   AS is_nullable,
+  c.is_computed                   AS is_computed,
+  cc.definition                   AS computed_definition,
+  dc.definition                   AS default_definition
+FROM sys.tables t
+JOIN sys.schemas s          ON s.schema_id    = t.schema_id
+JOIN sys.columns c          ON c.object_id    = t.object_id
+JOIN sys.types tp           ON tp.user_type_id = c.user_type_id
+LEFT JOIN sys.computed_columns cc
+  ON cc.object_id = c.object_id AND cc.column_id = c.column_id
+LEFT JOIN sys.default_constraints dc
+  ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name, c.column_id
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Primary key and unique key constraints
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * PK and UNIQUE key constraints with their column membership.
+ * Grouped by constraint — multiple rows per composite constraint.
+ * key_ordinal orders columns within the constraint.
+ */
+export const SQL_MSSQL_KEY_CONSTRAINTS = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  kc.name                         AS constraint_name,
+  kc.type                         AS constraint_type,
+  c.name                          AS column_name,
+  ic.key_ordinal                  AS key_ordinal
+FROM sys.key_constraints kc
+JOIN sys.tables t     ON t.object_id  = kc.parent_object_id
+JOIN sys.schemas s    ON s.schema_id  = t.schema_id
+JOIN sys.indexes i    ON i.object_id  = kc.parent_object_id
+                      AND i.name      = kc.name
+JOIN sys.index_columns ic
+  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns c
+  ON c.object_id = t.object_id AND c.column_id = ic.column_id
+WHERE t.is_ms_shipped = 0
+  AND ic.is_included_column = 0
+ORDER BY s.name, t.name, kc.name, ic.key_ordinal
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Foreign keys
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Foreign keys with local and referenced column pairs.
+ * One row per FK column pair; grouped by FK id in map.ts.
+ * constraint_column_id orders columns within the constraint.
+ */
+export const SQL_MSSQL_FOREIGN_KEYS = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  fk.name                         AS constraint_name,
+  fk.object_id                    AS fk_id,
+  rs.name                         AS ref_schema_name,
+  rt.name                         AS ref_table_name,
+  cc.name                         AS local_column,
+  rc.name                         AS ref_column,
+  fkc.constraint_column_id        AS constraint_column_id
+FROM sys.foreign_keys fk
+JOIN sys.tables t           ON t.object_id   = fk.parent_object_id
+JOIN sys.schemas s          ON s.schema_id   = t.schema_id
+JOIN sys.tables rt          ON rt.object_id  = fk.referenced_object_id
+JOIN sys.schemas rs         ON rs.schema_id  = rt.schema_id
+JOIN sys.foreign_key_columns fkc
+  ON fkc.constraint_object_id = fk.object_id
+JOIN sys.columns cc
+  ON cc.object_id = t.object_id AND cc.column_id = fkc.parent_column_id
+JOIN sys.columns rc
+  ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name, fk.name, fkc.constraint_column_id
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Check constraints
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Check constraints with their predicate definition.
+ */
+export const SQL_MSSQL_CHECK_CONSTRAINTS = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  chk.name                        AS constraint_name,
+  chk.definition                  AS definition
+FROM sys.check_constraints chk
+JOIN sys.tables t  ON t.object_id = chk.parent_object_id
+JOIN sys.schemas s ON s.schema_id = t.schema_id
+WHERE t.is_ms_shipped = 0
+ORDER BY s.name, t.name, chk.name
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Indexes (including clustered/nonclustered, filtered, included columns)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Indexes with column membership.
+ * Excludes heap pseudo-index (index_id = 0).
+ * is_included_column distinguishes key columns from INCLUDE'd columns.
+ * filter_definition is non-null for filtered (partial) indexes.
+ * type_desc: 'CLUSTERED' | 'NONCLUSTERED' | 'XML' | 'SPATIAL' | etc.
+ */
+export const SQL_MSSQL_INDEXES = `
+SELECT
+  s.name                          AS schema_name,
+  t.name                          AS table_name,
+  i.name                          AS index_name,
+  i.is_unique                     AS is_unique,
+  i.is_primary_key                AS is_primary_key,
+  i.is_unique_constraint          AS is_unique_constraint,
+  i.type_desc                     AS type_desc,
+  i.filter_definition             AS filter_definition,
+  c.name                          AS column_name,
+  ic.key_ordinal                  AS key_ordinal,
+  ic.index_column_id              AS index_column_id,
+  ic.is_included_column           AS is_included_column
+FROM sys.indexes i
+JOIN sys.tables t   ON t.object_id  = i.object_id
+JOIN sys.schemas s  ON s.schema_id  = t.schema_id
+JOIN sys.index_columns ic
+  ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns c
+  ON c.object_id = t.object_id AND c.column_id = ic.column_id
+WHERE t.is_ms_shipped = 0
+  AND i.index_id > 0
+ORDER BY s.name, t.name, i.name, ic.index_column_id
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Views, procedures, functions, triggers (with bodies from sys.sql_modules)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * All programmable modules: views (V), stored procedures (P), scalar
+ * functions (FN), inline table-valued functions (IF), multi-statement
+ * table-valued functions (TF), and triggers (TR).
+ * Body (definition) is joined from sys.sql_modules.
+ * type: 'V'=view, 'P'=procedure, 'FN'=scalar function,
+ *       'IF'=inline TVF, 'TF'=multi-statement TVF, 'TR'=trigger.
+ */
+export const SQL_MSSQL_MODULES = `
+SELECT
+  s.name                          AS schema_name,
+  o.name                          AS object_name,
+  o.type                          AS object_type,
+  o.object_id                     AS object_id,
+  sm.definition                   AS definition
+FROM sys.objects o
+JOIN sys.schemas s  ON s.schema_id = o.schema_id
+LEFT JOIN sys.sql_modules sm ON sm.object_id = o.object_id
+WHERE o.is_ms_shipped = 0
+  AND o.type IN ('V', 'P', 'FN', 'IF', 'TF', 'TR')
+ORDER BY s.name, o.name
+`.trim();
+
+/**
+ * Trigger event and timing metadata.
+ * is_instead_of_trigger: 1 = INSTEAD OF, 0 = AFTER.
+ * type_desc on sys.trigger_events: 'INSERT' | 'UPDATE' | 'DELETE'.
+ */
+export const SQL_MSSQL_TRIGGER_EVENTS = `
+SELECT
+  tr.object_id                    AS trigger_id,
+  tr.name                         AS trigger_name,
+  tr.parent_id                    AS parent_object_id,
+  tr.is_instead_of_trigger        AS is_instead_of_trigger,
+  te.type_desc                    AS event_type
+FROM sys.triggers tr
+JOIN sys.trigger_events te ON te.object_id = tr.object_id
+WHERE tr.is_ms_shipped = 0
+ORDER BY tr.name, te.type_desc
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sequences
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * User-defined sequences.
+ * Captures type, start, increment, min/max, and cycle flag in extra.
+ */
+export const SQL_MSSQL_SEQUENCES = `
+SELECT
+  s.name                          AS schema_name,
+  seq.name                        AS sequence_name,
+  tp.name                         AS data_type,
+  seq.start_value                 AS start_value,
+  seq.increment                   AS increment,
+  seq.minimum_value               AS minimum_value,
+  seq.maximum_value               AS maximum_value,
+  seq.is_cycling                  AS is_cycling
+FROM sys.sequences seq
+JOIN sys.schemas s  ON s.schema_id   = seq.schema_id
+JOIN sys.types tp   ON tp.user_type_id = seq.user_type_id
+WHERE seq.is_ms_shipped = 0
+ORDER BY s.name, seq.name
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extended properties (MS_Description comments)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * MS_Description extended properties for objects and columns.
+ * class 1 = object; minor_id 0 = object itself, > 0 = column.
+ * Joins sys.objects and sys.schemas to resolve names.
+ */
+export const SQL_MSSQL_EXTENDED_PROPERTIES = `
+SELECT
+  s.name                          AS schema_name,
+  o.name                          AS object_name,
+  ep.minor_id                     AS column_id,
+  c.name                          AS column_name,
+  CAST(ep.value AS NVARCHAR(MAX)) AS description
+FROM sys.extended_properties ep
+JOIN sys.objects o   ON o.object_id = ep.major_id
+JOIN sys.schemas s   ON s.schema_id = o.schema_id
+LEFT JOIN sys.columns c
+  ON c.object_id = ep.major_id AND c.column_id = ep.minor_id
+WHERE ep.class = 1
+  AND ep.name = 'MS_Description'
+  AND o.is_ms_shipped = 0
+ORDER BY s.name, o.name, ep.minor_id
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SQL expression dependencies (for the body tokenizer / dependency hints)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Object-to-object dependencies from sys.sql_expression_dependencies.
+ * referencing_id: the module (proc/func/view/trigger) that contains the ref.
+ * referenced_schema_name / referenced_entity_name: the target.
+ * referenced_id may be NULL for unresolved cross-database refs.
+ * Feeds the body tokenizer in map.ts (US-007, ADR-007).
+ */
+export const SQL_MSSQL_DEPENDENCIES = `
+SELECT
+  s.name                          AS schema_name,
+  o.name                          AS object_name,
+  o.type                          AS object_type,
+  dep.referenced_schema_name      AS ref_schema_name,
+  dep.referenced_entity_name      AS ref_object_name,
+  dep.referenced_id               AS ref_object_id
+FROM sys.sql_expression_dependencies dep
+JOIN sys.objects o  ON o.object_id = dep.referencing_id
+JOIN sys.schemas s  ON s.schema_id = o.schema_id
+WHERE dep.referenced_class = 1
+  AND o.is_ms_shipped = 0
+ORDER BY s.name, o.name, dep.referenced_schema_name, dep.referenced_entity_name
+`.trim();
+
+/**
+ * Fingerprint query: one cheap aggregate over sys.objects.
+ * Returns {m: MAX(modify_date), c: COUNT(*)} for non-shipped objects.
+ * sha256(`${m}|${c}`) in the adapter class (US-009).
+ */
+export const SQL_MSSQL_FINGERPRINT = `
+SELECT
+  MAX(modify_date) AS m,
+  COUNT(*)         AS c
+FROM sys.objects
+WHERE is_ms_shipped = 0
+`.trim();

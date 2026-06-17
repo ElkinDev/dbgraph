@@ -1,0 +1,34 @@
+[
+  {
+    "schema_name": "dbo",
+    "table_name": "orders",
+    "constraint_name": "PK_orders",
+    "constraint_type": "PK",
+    "column_name": "order_id",
+    "key_ordinal": 1
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "PK_order_items",
+    "constraint_type": "PK",
+    "column_name": "item_id",
+    "key_ordinal": 1
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "products",
+    "constraint_name": "PK_products",
+    "constraint_type": "PK",
+    "column_name": "product_id",
+    "key_ordinal": 1
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "products",
+    "constraint_name": "UQ_products_sku",
+    "constraint_type": "UQ",
+    "column_name": "sku",
+    "key_ordinal": 1
+  }
+]

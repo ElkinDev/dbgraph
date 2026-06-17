@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22.x', '24.x']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm audit --omit=dev --audit-level=high
+
+  # Gated SQL Server integration job: Linux-only (Docker available), independent
+  # of the unit matrix (`needs: []`). Uses an ephemeral Testcontainers instance —
+  # never connects to any persistent database. Gate: DBGRAPH_INTEGRATION=1.
+  # Does NOT block the unit matrix — failures here do not affect `test`.
+  mssql-integration:
+    runs-on: ubuntu-latest
+    # Independent — does not need `test` to pass first
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - name: Run SQL Server integration tests
+        env:
+          DBGRAPH_INTEGRATION: '1'
+        run: npm run test:integration

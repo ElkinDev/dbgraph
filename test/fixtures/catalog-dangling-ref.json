@@ -1,0 +1,20 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "view",
+      "schema": "dbo",
+      "name": "vw_orphan",
+      "comment": "View referencing a dropped table",
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "dropped_table", "kind": "table" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    }
+  ]
+}

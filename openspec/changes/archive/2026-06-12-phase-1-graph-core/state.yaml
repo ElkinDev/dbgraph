@@ -1,0 +1,57 @@
+change: phase-1-graph-core
+schema: spec-driven
+artifact_store: openspec
+created: 2026-06-11
+updated: 2026-06-12
+last_phase: verify
+
+phases:
+  explore:
+    status: skipped
+  proposal:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifacts:
+      - specs/graph-model/spec.md
+      - specs/graph-storage/spec.md
+      - specs/graph-normalization/spec.md
+      - specs/graph-query/spec.md
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: done
+    batch_a: done
+    batch_b: done
+    batch_c: done
+    batch_d: done
+    batch_e: done
+    artifact: apply-progress.md
+  verify:
+    status: done
+    artifact: verify-report.md
+    outcome: PASS
+    last_outcome: PASS
+    reverified: batch-e
+    gates:
+      tests: 262/262 passing (deterministic across two byte-identical runs)
+      lint: clean
+      tsc: clean
+    notes: >
+      Re-verification after Batch E confirms W-1/W-2/W-3 implemented with direct tests,
+      W-1 absence reason queryable end-to-end via store.getMeta(omitted_kinds), W-4 a
+      documented Phase-9 deferral, and F-1..F-9 content-neutral refactors. ZERO carry-over
+      warnings, ZERO CRITICAL. Goldens regenerated in one commit with the type change.
+  archive:
+    status: done
+    artifact: archive-report.md
+    archived_to: openspec/changes/archive/2026-06-12-phase-1-graph-core/
+    archived_date: 2026-06-12
+
+next_recommended: none
+change_closed: true

@@ -1,0 +1,50 @@
+[
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_process_order",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "audit_log",
+    "ref_object_id": 1004
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_process_order",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "orders",
+    "ref_object_id": 1001
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_process_order",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "order_items",
+    "ref_object_id": 1002
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "fn_total",
+    "object_type": "FN",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "order_items",
+    "ref_object_id": 1002
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "tr_audit_orders",
+    "object_type": "TR",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "audit_log",
+    "ref_object_id": 1004
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_dynamic",
+    "object_type": "P",
+    "ref_schema_name": null,
+    "ref_object_name": null,
+    "ref_object_id": null
+  }
+]

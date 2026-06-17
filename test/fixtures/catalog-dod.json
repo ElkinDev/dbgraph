@@ -1,0 +1,98 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "customers",
+      "comment": "Customer accounts",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "name", "dataType": "nvarchar", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_customers", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "orders",
+      "comment": "Customer orders",
+      "columns": [
+        { "name": "order_id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "customer_ref", "dataType": "int", "nullable": false, "ordinal": 2 },
+        { "name": "line_ref", "dataType": "int", "nullable": false, "ordinal": 3 },
+        { "name": "total", "dataType": "decimal", "nullable": true, "ordinal": 4 }
+      ],
+      "constraints": [
+        { "name": "PK_orders", "type": "PK", "columns": ["order_id"] },
+        {
+          "name": "FK_orders_customers_composite",
+          "type": "FK",
+          "columns": ["customer_ref", "line_ref"],
+          "references": {
+            "schema": "dbo",
+            "table": "customers",
+            "columns": ["id", "id"]
+          }
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "view",
+      "schema": "dbo",
+      "name": "vw_order_summary",
+      "comment": "Summary of orders",
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "orders", "kind": "table" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "dbo",
+      "name": "trg_orders_audit",
+      "body": "BEGIN\n  INSERT INTO audit_log SELECT * FROM inserted;\nEND",
+      "hasDynamicSql": false,
+      "trigger": {
+        "timing": "AFTER",
+        "events": ["INSERT", "UPDATE"],
+        "table": { "schema": "dbo", "name": "orders" }
+      },
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "customers", "kind": "table" },
+          "access": "read",
+          "confidence": "parsed"
+        }
+      ]
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_process_order",
+      "comment": "Processes a new order",
+      "hasDynamicSql": false,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "orders", "kind": "table" },
+          "access": "read",
+          "confidence": "parsed"
+        },
+        {
+          "target": { "schema": "dbo", "name": "customers", "kind": "table" },
+          "access": "write",
+          "confidence": "parsed"
+        }
+      ]
+    }
+  ]
+}

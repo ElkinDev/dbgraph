@@ -1,0 +1,58 @@
+[
+  {
+    "schema_name": "dbo",
+    "table_name": "orders",
+    "index_name": "IX_orders_customer",
+    "is_unique": false,
+    "is_primary_key": false,
+    "is_unique_constraint": false,
+    "type_desc": "NONCLUSTERED",
+    "filter_definition": null,
+    "column_name": "customer_name",
+    "key_ordinal": 1,
+    "index_column_id": 1,
+    "is_included_column": false
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "orders",
+    "index_name": "IX_orders_filtered",
+    "is_unique": true,
+    "is_primary_key": false,
+    "is_unique_constraint": false,
+    "type_desc": "NONCLUSTERED",
+    "filter_definition": "([created_at] IS NOT NULL)",
+    "column_name": "order_id",
+    "key_ordinal": 1,
+    "index_column_id": 1,
+    "is_included_column": false
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "orders",
+    "index_name": "IX_orders_filtered",
+    "is_unique": true,
+    "is_primary_key": false,
+    "is_unique_constraint": false,
+    "type_desc": "NONCLUSTERED",
+    "filter_definition": "([created_at] IS NOT NULL)",
+    "column_name": "customer_name",
+    "key_ordinal": 0,
+    "index_column_id": 2,
+    "is_included_column": true
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "products",
+    "index_name": "CX_products",
+    "is_unique": false,
+    "is_primary_key": false,
+    "is_unique_constraint": false,
+    "type_desc": "CLUSTERED",
+    "filter_definition": null,
+    "column_name": "product_id",
+    "key_ordinal": 1,
+    "index_column_id": 1,
+    "is_included_column": false
+  }
+]

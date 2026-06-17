@@ -1,0 +1,7 @@
+# Byte-deterministic checkouts on every platform (ADR-008).
+# Golden tests compare raw bytes: the working tree must materialize LF everywhere,
+# including GitHub Windows runners where core.autocrlf=true would otherwise inject CRLF.
+* text=auto eol=lf
+
+# Binary fixtures (e.g., committed SQLite databases from Phase 2 on) must never be converted.
+*.db -text

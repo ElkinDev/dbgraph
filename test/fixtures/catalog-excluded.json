@@ -1,0 +1,39 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo", "audit"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "invoices",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "audit_id", "dataType": "int", "nullable": true, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_invoices", "type": "PK", "columns": ["id"] },
+        {
+          "name": "FK_invoices_audit",
+          "type": "FK",
+          "columns": ["audit_id"],
+          "references": { "schema": "audit", "table": "log", "columns": ["id"] }
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "audit",
+      "name": "log",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "action", "dataType": "nvarchar", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_audit_log", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    }
+  ]
+}

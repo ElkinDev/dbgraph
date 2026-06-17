@@ -1,0 +1,316 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "d9be5dd6c9be055fc73d01361f2d820691432627",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "order_id",
+        "qname": "dbo.order_items.order_id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "018af79781ca0b52fce8e22af790df332c2499f5",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "product_id",
+        "qname": "dbo.order_items.product_id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "78dd51df5114470475cac8a5131b08311cbc3434",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "quantity",
+        "qname": "dbo.order_items.quantity",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "66465f7648642067296642173be6ab12e109e27d",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "order_ref",
+        "qname": "dbo.product_orders.order_ref",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "2550b304e6803b802e1adf44cbdb5517e070e759",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "product_ref",
+        "qname": "dbo.product_orders.product_ref",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "208031b3325f4a4ce6fe04e5adab8417e2f28a98",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "status",
+        "qname": "dbo.product_orders.status",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "nvarchar",
+          "nullable": true,
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "9e8c024e6d8ac369d43f57cc4084919d984d060c",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "fk_order_items_composite",
+        "qname": "dbo.order_items.fk_order_items_composite",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "FK",
+          "columns": [
+            "order_id",
+            "product_id"
+          ]
+        }
+      },
+      {
+        "id": "bc61f0fc68479e6d0d507fa843cc67b1fec6e3ef",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_order_items",
+        "qname": "dbo.order_items.pk_order_items",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "order_id",
+            "product_id"
+          ]
+        }
+      },
+      {
+        "id": "93bc55670eef22820ca9d47c324ffb8b26c64221",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_product_orders",
+        "qname": "dbo.product_orders.pk_product_orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "order_ref",
+            "product_ref"
+          ]
+        }
+      },
+      {
+        "id": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "order_items",
+        "qname": "dbo.order_items",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      },
+      {
+        "id": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "product_orders",
+        "qname": "dbo.product_orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "64795430e68d819efd926ffd681d71a2c4c03a34",
+        "kind": "has_column",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "018af79781ca0b52fce8e22af790df332c2499f5",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "548b2db49ffb1f503c375a92822e3fa7db838c66",
+        "kind": "has_column",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "78dd51df5114470475cac8a5131b08311cbc3434",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "480719e18985a9717cafa4e4a58091ecf7c75047",
+        "kind": "has_column",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "d9be5dd6c9be055fc73d01361f2d820691432627",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "8cb1d88f8a69fd7216cf05ce9e607318aa1a3de9",
+        "kind": "has_column",
+        "src": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "dst": "208031b3325f4a4ce6fe04e5adab8417e2f28a98",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "9935da4e7cd57757d42f4dd8bcb51d017170711e",
+        "kind": "has_column",
+        "src": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "dst": "2550b304e6803b802e1adf44cbdb5517e070e759",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "e448259b8258a609794a0923656f57e68be4d808",
+        "kind": "has_column",
+        "src": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "dst": "66465f7648642067296642173be6ab12e109e27d",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "444f3433f35d65fb68eae8d11eebc1480d3eb499",
+        "kind": "has_constraint",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "9e8c024e6d8ac369d43f57cc4084919d984d060c",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "f428c54a67e9d8a15b7f54e30d9244f01c7c327b",
+        "kind": "has_constraint",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "bc61f0fc68479e6d0d507fa843cc67b1fec6e3ef",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "044f009eee3219c669db0812753809b936539e12",
+        "kind": "has_constraint",
+        "src": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "dst": "93bc55670eef22820ca9d47c324ffb8b26c64221",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "c5e135fb35a2bdcdfbe0a824bca7a149779f8d7d",
+        "kind": "references",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "aggregate": true,
+          "constraintName": "FK_order_items_composite"
+        }
+      },
+      {
+        "id": "7603295ee5eb090b18e3470a202df5ffbd5bf9e7",
+        "kind": "references",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "srcColumn": "order_id",
+          "dstColumn": "order_ref",
+          "constraintName": "FK_order_items_composite"
+        }
+      },
+      {
+        "id": "c6038335cd4cd6263b29295e8338d88df7fb9cfd",
+        "kind": "references",
+        "src": "056f50ac13db64c56d054e228922cbdf1c32eb16",
+        "dst": "ca2e68aeacc51fe2d16e3c449cf7918aa0ad5002",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "srcColumn": "product_id",
+          "dstColumn": "product_ref",
+          "constraintName": "FK_order_items_composite"
+        }
+      }
+    ]
+  },
+  "stubs": [],
+  "warnings": [],
+  "omitted": []
+}

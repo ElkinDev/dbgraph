@@ -1,0 +1,266 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "a5f3badbfc61f0bfce4d216cf28b70a5ab69517a",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "action",
+        "qname": "dbo.audit.action",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "nvarchar",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "1e8bd4f6ddfcd1ca7448d66aaaacf2463d92cad7",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "changed_at",
+        "qname": "dbo.audit.changed_at",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "datetime",
+          "nullable": false,
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "46c7f7b01aa9b8c120da8da62e83f928b2ca2603",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.audit.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "d1095813fd2889da4d8dd45713c78421fad9ba1f",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.orders.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "b12c92e45b32133457f82513a75021c25e1880ea",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "status",
+        "qname": "dbo.orders.status",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "nvarchar",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "3d9deaba870e59996f50ba84fd6178aa2f04b97f",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_audit",
+        "qname": "dbo.audit.pk_audit",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "85611add4bab96be1aa320d103970a8e7d679458",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_orders",
+        "qname": "dbo.orders.pk_orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "671e2ece09389d9efd149f69711cdab26be58362",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "audit",
+        "qname": "dbo.audit",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Audit log table"
+        }
+      },
+      {
+        "id": "8798e1f9f4868d1136074945565b214327b1d889",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "orders",
+        "qname": "dbo.orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Orders table"
+        }
+      },
+      {
+        "id": "d77c69a806c91e2e64ea48e8ae0d3b0ff29b10d2",
+        "kind": "trigger",
+        "schema": "dbo",
+        "name": "trg_orders_after_update_audit",
+        "qname": "dbo.trg_orders_after_update_audit",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": "118bfe3fe92f55cf74e7464b49e56c563ca1d248",
+        "payload": {
+          "comment": "AFTER UPDATE trigger on orders that writes to audit",
+          "timing": "AFTER",
+          "events": [
+            "UPDATE"
+          ],
+          "body": "BEGIN\n  INSERT INTO dbo.audit (action, changed_at) VALUES ('orders_updated', GETDATE());\nEND",
+          "hasDynamicSql": false
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "6d56f10c2262bfb6dc025621f6d480c6e7fa40c4",
+        "kind": "fires_on",
+        "src": "d77c69a806c91e2e64ea48e8ae0d3b0ff29b10d2",
+        "dst": "8798e1f9f4868d1136074945565b214327b1d889",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "event": "UPDATE"
+        }
+      },
+      {
+        "id": "d7d06b67162c092c0a019c0f94ba13ae783c91d4",
+        "kind": "has_column",
+        "src": "671e2ece09389d9efd149f69711cdab26be58362",
+        "dst": "1e8bd4f6ddfcd1ca7448d66aaaacf2463d92cad7",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "b952a4de288cbd2c1d9edf53206a18e704bbf3c1",
+        "kind": "has_column",
+        "src": "671e2ece09389d9efd149f69711cdab26be58362",
+        "dst": "46c7f7b01aa9b8c120da8da62e83f928b2ca2603",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "ef9feb343b1d4a3d646ee89e6dc3a1cfacc03b8d",
+        "kind": "has_column",
+        "src": "671e2ece09389d9efd149f69711cdab26be58362",
+        "dst": "a5f3badbfc61f0bfce4d216cf28b70a5ab69517a",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "4dce3de05acaf08ad6c86c5a8cb88a204db792f2",
+        "kind": "has_column",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "b12c92e45b32133457f82513a75021c25e1880ea",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "65a017bef7d365336c0ab297e652c38d9ed048b1",
+        "kind": "has_column",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "d1095813fd2889da4d8dd45713c78421fad9ba1f",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "8aaa45afc5f0fa21a43ee8b640ee8b3e4b2f8814",
+        "kind": "has_constraint",
+        "src": "671e2ece09389d9efd149f69711cdab26be58362",
+        "dst": "3d9deaba870e59996f50ba84fd6178aa2f04b97f",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "45c664993f1239ea9770358f1ec4aa871a50480c",
+        "kind": "has_constraint",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "85611add4bab96be1aa320d103970a8e7d679458",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "e00cc44358646c7c44e3a1c7311591c8d1640c40",
+        "kind": "writes_to",
+        "src": "d77c69a806c91e2e64ea48e8ae0d3b0ff29b10d2",
+        "dst": "671e2ece09389d9efd149f69711cdab26be58362",
+        "confidence": "parsed",
+        "score": null,
+        "attrs": {}
+      }
+    ]
+  },
+  "stubs": [],
+  "warnings": [],
+  "omitted": []
+}

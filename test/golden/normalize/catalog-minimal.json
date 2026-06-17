@@ -1,0 +1,376 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "91a7ca774d28146a1769f7cb9a7402fa1e56b705",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.customers.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "f1152fe90b7408e59878c27e6c10838e865c56c7",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "name",
+        "qname": "dbo.customers.name",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "nvarchar",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "f0367e705aa19f2116a16754f0a2bfb7570d00ab",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "customer_id",
+        "qname": "dbo.orders.customer_id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "d1095813fd2889da4d8dd45713c78421fad9ba1f",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.orders.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "e768e88706a68d3df2092284361c451809ad4b07",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "total",
+        "qname": "dbo.orders.total",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "decimal",
+          "nullable": true,
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "0db5e2c8ced6c1ea3e677087bae91a935ff06efd",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_customers",
+        "qname": "dbo.customers.pk_customers",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "b65449131d7ec152acac97b11f263259d3816e71",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "fk_orders_customer",
+        "qname": "dbo.orders.fk_orders_customer",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "FK",
+          "columns": [
+            "customer_id"
+          ]
+        }
+      },
+      {
+        "id": "85611add4bab96be1aa320d103970a8e7d679458",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_orders",
+        "qname": "dbo.orders.pk_orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "524259dc980293feeed14fd5b3b280402ad9318d",
+        "kind": "index",
+        "schema": "dbo",
+        "name": "ix_orders_customer",
+        "qname": "dbo.orders.ix_orders_customer",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "unique": false,
+          "columns": [
+            "customer_id"
+          ]
+        }
+      },
+      {
+        "id": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "customers",
+        "qname": "dbo.customers",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Customer accounts"
+        }
+      },
+      {
+        "id": "8798e1f9f4868d1136074945565b214327b1d889",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "orders",
+        "qname": "dbo.orders",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Customer orders"
+        }
+      },
+      {
+        "id": "18dc1d85bcbec46c12bac66c46c4ef4a915e4ecd",
+        "kind": "trigger",
+        "schema": "dbo",
+        "name": "trg_orders_after_insert",
+        "qname": "dbo.trg_orders_after_insert",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": "4c98955f32b3ba34cfcb0fbc32ca9c5acbf019b8",
+        "payload": {
+          "timing": "AFTER",
+          "events": [
+            "INSERT"
+          ],
+          "body": "BEGIN\n  UPDATE customers SET last_order_date = GETDATE() WHERE id = inserted.customer_id;\nEND",
+          "hasDynamicSql": false
+        }
+      },
+      {
+        "id": "61daf4342ebdfc88ba22b4f3cb4fe8e9b77a6626",
+        "kind": "view",
+        "schema": "dbo",
+        "name": "vw_orders_summary",
+        "qname": "dbo.vw_orders_summary",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Aggregated order view"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "9e50cb3c56451882722b43c887716e7f1b1170ac",
+        "kind": "depends_on",
+        "src": "61daf4342ebdfc88ba22b4f3cb4fe8e9b77a6626",
+        "dst": "8798e1f9f4868d1136074945565b214327b1d889",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "da19e282f18d8503a9cb26011f35f4e4b91f4f02",
+        "kind": "fires_on",
+        "src": "18dc1d85bcbec46c12bac66c46c4ef4a915e4ecd",
+        "dst": "8798e1f9f4868d1136074945565b214327b1d889",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "event": "INSERT"
+        }
+      },
+      {
+        "id": "6d601829c62198c0ca5c125edacb21c8bdc62713",
+        "kind": "has_column",
+        "src": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "dst": "91a7ca774d28146a1769f7cb9a7402fa1e56b705",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "93c34a4f18ed430846704493b7158caa40fbe036",
+        "kind": "has_column",
+        "src": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "dst": "f1152fe90b7408e59878c27e6c10838e865c56c7",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "65a017bef7d365336c0ab297e652c38d9ed048b1",
+        "kind": "has_column",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "d1095813fd2889da4d8dd45713c78421fad9ba1f",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "9744746cedc7a95c7231303fb50daa00c6165872",
+        "kind": "has_column",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "e768e88706a68d3df2092284361c451809ad4b07",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 3
+        }
+      },
+      {
+        "id": "97ae8af2995c829fb4ebe4d51dabd297b07b35f5",
+        "kind": "has_column",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "f0367e705aa19f2116a16754f0a2bfb7570d00ab",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "769f511aa9828b213c1e02a420c0f069bb7207e0",
+        "kind": "has_constraint",
+        "src": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "dst": "0db5e2c8ced6c1ea3e677087bae91a935ff06efd",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "45c664993f1239ea9770358f1ec4aa871a50480c",
+        "kind": "has_constraint",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "85611add4bab96be1aa320d103970a8e7d679458",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "efe0b717f4aaf1c412b784da443130b6efaa494f",
+        "kind": "has_constraint",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "b65449131d7ec152acac97b11f263259d3816e71",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "788f62b7e4466f108c1f2ebe6d9952078f780188",
+        "kind": "has_index",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "524259dc980293feeed14fd5b3b280402ad9318d",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "f268ce78fac2a5295e1ebc66b048eb9fcb5d6b17",
+        "kind": "in_index",
+        "src": "524259dc980293feeed14fd5b3b280402ad9318d",
+        "dst": "f0367e705aa19f2116a16754f0a2bfb7570d00ab",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 0
+        }
+      },
+      {
+        "id": "d4848b56616825cddc08ca1633c5e14524a5cbf3",
+        "kind": "references",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "aggregate": true,
+          "constraintName": "FK_orders_customer"
+        }
+      },
+      {
+        "id": "d8f03b0c23649863a9490b3c5007dbeaca921515",
+        "kind": "references",
+        "src": "8798e1f9f4868d1136074945565b214327b1d889",
+        "dst": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "srcColumn": "customer_id",
+          "dstColumn": "id",
+          "constraintName": "FK_orders_customer"
+        }
+      },
+      {
+        "id": "3d5047aa1d7ff42b52437c10abfd13db498adf31",
+        "kind": "writes_to",
+        "src": "18dc1d85bcbec46c12bac66c46c4ef4a915e4ecd",
+        "dst": "542136a61c768f0e9bb7b81240727ea94964764a",
+        "confidence": "parsed",
+        "score": null,
+        "attrs": {}
+      }
+    ]
+  },
+  "stubs": [],
+  "warnings": [],
+  "omitted": []
+}

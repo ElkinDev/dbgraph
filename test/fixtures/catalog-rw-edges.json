@@ -1,0 +1,66 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "accounts",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "balance", "dataType": "decimal", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_accounts", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "transactions",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "amount", "dataType": "decimal", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_transactions", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_transfer",
+      "comment": "Transfer funds between accounts",
+      "hasDynamicSql": false,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "transactions", "kind": "table" },
+          "access": "read",
+          "confidence": "parsed"
+        },
+        {
+          "target": { "schema": "dbo", "name": "accounts", "kind": "table" },
+          "access": "write",
+          "confidence": "parsed"
+        }
+      ]
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_dynamic_report",
+      "comment": "Report with dynamic SQL",
+      "hasDynamicSql": true,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "accounts", "kind": "table" },
+          "access": "read",
+          "confidence": "parsed"
+        }
+      ]
+    }
+  ]
+}

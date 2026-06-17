@@ -1,0 +1,66 @@
+change: phase-2-sqlite-extraction
+schema: spec-driven
+artifact_store: openspec
+created: 2026-06-12
+updated: 2026-06-12
+last_phase: archive
+
+phases:
+  explore:
+    status: skipped
+  proposal:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifact: specs/
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: done
+    batch_a: done
+    batch_b: done
+    batch_c: done
+    artifact: apply-progress.md
+  verify:
+    status: done
+    verdict: PASS
+    artifact: verify-report.md
+    gates:
+      tests: 379 passed (twice, deterministic)
+      lint: clean
+      tsc: clean
+    findings:
+      critical: 0
+      warning: 3
+      suggestion: 2
+  remediation_c:
+    status: done
+    gates:
+      tests: 394 passed (twice, deterministic)
+      lint: clean
+      tsc: clean
+    findings_resolved:
+      - W-1 (missing driver install-command untested)
+      - W-2 (readonly write-through via parallel connection)
+      - W-3 (extract-after-close unguarded)
+      - S-1 (UPDATE OF branch unexercised)
+      - S-2 (version-gate test no-op on Node >=22.5)
+    carry_over: 0
+  archive:
+    status: done
+    archived_to: openspec/changes/archive/2026-06-12-phase-2-sqlite-extraction/
+    archive_report: openspec/changes/archive/2026-06-12-phase-2-sqlite-extraction/archive-report.md
+
+capabilities:
+  new:
+    - schema-extraction
+    - sqlite-extraction
+  modified: []
+
+next_recommended: none
+change_closed: true

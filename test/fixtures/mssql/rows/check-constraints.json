@@ -1,0 +1,14 @@
+[
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "CK_order_items_qty",
+    "definition": "([qty]>(0))"
+  },
+  {
+    "schema_name": "dbo",
+    "table_name": "order_items",
+    "constraint_name": "CK_order_items_price",
+    "definition": "([price]>=(0))"
+  }
+]

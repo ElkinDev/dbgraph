@@ -1,0 +1,64 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "products",
+      "comment": "Product catalog",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "name", "dataType": "nvarchar", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_products", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_metadata_only",
+      "comment": "Procedure at metadata level (no body exposed)",
+      "hasDynamicSql": false,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "products", "kind": "table" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_full_level",
+      "comment": "Procedure at full level (body exposed)",
+      "body": "BEGIN\n  SELECT * FROM dbo.products WHERE id = @id;\nEND",
+      "hasDynamicSql": false,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "products", "kind": "table" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    },
+    {
+      "kind": "trigger",
+      "schema": "dbo",
+      "name": "trg_products_audit",
+      "comment": "Audit trigger (full level by default)",
+      "body": "BEGIN\n  INSERT INTO audit_log VALUES(GETDATE(), 'product changed');\nEND",
+      "hasDynamicSql": false,
+      "trigger": {
+        "timing": "AFTER",
+        "events": ["INSERT", "UPDATE"],
+        "table": { "schema": "dbo", "name": "products" }
+      },
+      "dependencies": []
+    }
+  ]
+}

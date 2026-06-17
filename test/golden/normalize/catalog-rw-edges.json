@@ -1,0 +1,252 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "id": "e4c87ff30e28a469f78b37ad321b2d260f2d6235",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "balance",
+        "qname": "dbo.accounts.balance",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "decimal",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "c8d9486c0be5345207a22615463d47c87a270a15",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.accounts.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "b1f17923c8ecdec29476498ec0c30606c0ad2523",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "amount",
+        "qname": "dbo.transactions.amount",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "decimal",
+          "nullable": false,
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "d8707d9c25070af8e5e2e34a936d6b98f49cbaca",
+        "kind": "column",
+        "schema": "dbo",
+        "name": "id",
+        "qname": "dbo.transactions.id",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "dataType": "int",
+          "nullable": false,
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "509fb301f961b11424066de63cd505c782b7a1eb",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_accounts",
+        "qname": "dbo.accounts.pk_accounts",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "394e03ea8cb042a9efbdce94ef91f0fdc098285b",
+        "kind": "constraint",
+        "schema": "dbo",
+        "name": "pk_transactions",
+        "qname": "dbo.transactions.pk_transactions",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "type": "PK",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      {
+        "id": "cf8662f502c1bfd1dfdc505be223392430cb8193",
+        "kind": "procedure",
+        "schema": "dbo",
+        "name": "sp_dynamic_report",
+        "qname": "dbo.sp_dynamic_report",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Report with dynamic SQL",
+          "hasDynamicSql": true
+        }
+      },
+      {
+        "id": "8eeda11b00c99f911d8cdd42c8e312d1510704d2",
+        "kind": "procedure",
+        "schema": "dbo",
+        "name": "sp_transfer",
+        "qname": "dbo.sp_transfer",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {
+          "comment": "Transfer funds between accounts",
+          "hasDynamicSql": false
+        }
+      },
+      {
+        "id": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "accounts",
+        "qname": "dbo.accounts",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      },
+      {
+        "id": "65f07801d932c07e45edb97b5a38db6e006f3027",
+        "kind": "table",
+        "schema": "dbo",
+        "name": "transactions",
+        "qname": "dbo.transactions",
+        "level": "full",
+        "missing": false,
+        "excluded": false,
+        "bodyHash": null,
+        "payload": {}
+      }
+    ],
+    "edges": [
+      {
+        "id": "a80e488d4f98119921dfd4cd5c00278fccfd2afb",
+        "kind": "has_column",
+        "src": "65f07801d932c07e45edb97b5a38db6e006f3027",
+        "dst": "b1f17923c8ecdec29476498ec0c30606c0ad2523",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "4132eac92f44037ca7d3b8870f4a249d8d8bce03",
+        "kind": "has_column",
+        "src": "65f07801d932c07e45edb97b5a38db6e006f3027",
+        "dst": "d8707d9c25070af8e5e2e34a936d6b98f49cbaca",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "8fe8ab83ced7749741ceba08677f2d3336a7b094",
+        "kind": "has_column",
+        "src": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "dst": "c8d9486c0be5345207a22615463d47c87a270a15",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 1
+        }
+      },
+      {
+        "id": "660edb77b5e4b260ebd315df1dcb2dc317c5f2d8",
+        "kind": "has_column",
+        "src": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "dst": "e4c87ff30e28a469f78b37ad321b2d260f2d6235",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {
+          "ordinal": 2
+        }
+      },
+      {
+        "id": "591ef2b0e3b82bd945e5628009f57192d42d616c",
+        "kind": "has_constraint",
+        "src": "65f07801d932c07e45edb97b5a38db6e006f3027",
+        "dst": "394e03ea8cb042a9efbdce94ef91f0fdc098285b",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "56d0e8fc64469d95981b869dfac530876d1a13de",
+        "kind": "has_constraint",
+        "src": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "dst": "509fb301f961b11424066de63cd505c782b7a1eb",
+        "confidence": "declared",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "19564d1f946c73b92d95a1e6b449f0377b3b721a",
+        "kind": "reads_from",
+        "src": "8eeda11b00c99f911d8cdd42c8e312d1510704d2",
+        "dst": "65f07801d932c07e45edb97b5a38db6e006f3027",
+        "confidence": "parsed",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "3d83bfdb4596121410e50776f3a7e1c1803ae564",
+        "kind": "reads_from",
+        "src": "cf8662f502c1bfd1dfdc505be223392430cb8193",
+        "dst": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "confidence": "parsed",
+        "score": null,
+        "attrs": {}
+      },
+      {
+        "id": "4f5ccfd4a83c032bfb8acfd5c3a627786c9e200a",
+        "kind": "writes_to",
+        "src": "8eeda11b00c99f911d8cdd42c8e312d1510704d2",
+        "dst": "9d7c8b2390eec7af325f58372266a3b4edebb400",
+        "confidence": "parsed",
+        "score": null,
+        "attrs": {}
+      }
+    ]
+  },
+  "stubs": [],
+  "warnings": [],
+  "omitted": []
+}

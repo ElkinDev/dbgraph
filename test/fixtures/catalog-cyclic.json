@@ -1,0 +1,47 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "view",
+      "schema": "dbo",
+      "name": "vw_a",
+      "comment": "View A depends on view B (creates a cycle)",
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "vw_b", "kind": "view" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    },
+    {
+      "kind": "view",
+      "schema": "dbo",
+      "name": "vw_b",
+      "comment": "View B depends on view A (cycle closes here)",
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "vw_a", "kind": "view" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    },
+    {
+      "kind": "procedure",
+      "schema": "dbo",
+      "name": "sp_cyclic",
+      "comment": "Procedure reading vw_a",
+      "hasDynamicSql": false,
+      "dependencies": [
+        {
+          "target": { "schema": "dbo", "name": "vw_a", "kind": "view" },
+          "access": "read",
+          "confidence": "declared"
+        }
+      ]
+    }
+  ]
+}

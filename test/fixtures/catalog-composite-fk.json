@@ -1,0 +1,45 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "order_items",
+      "columns": [
+        { "name": "order_id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "product_id", "dataType": "int", "nullable": false, "ordinal": 2 },
+        { "name": "quantity", "dataType": "int", "nullable": false, "ordinal": 3 }
+      ],
+      "constraints": [
+        { "name": "PK_order_items", "type": "PK", "columns": ["order_id", "product_id"] },
+        {
+          "name": "FK_order_items_composite",
+          "type": "FK",
+          "columns": ["order_id", "product_id"],
+          "references": {
+            "schema": "dbo",
+            "table": "product_orders",
+            "columns": ["order_ref", "product_ref"]
+          }
+        }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "product_orders",
+      "columns": [
+        { "name": "order_ref", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "product_ref", "dataType": "int", "nullable": false, "ordinal": 2 },
+        { "name": "status", "dataType": "nvarchar", "nullable": true, "ordinal": 3 }
+      ],
+      "constraints": [
+        { "name": "PK_product_orders", "type": "PK", "columns": ["order_ref", "product_ref"] }
+      ],
+      "indexes": []
+    }
+  ]
+}
