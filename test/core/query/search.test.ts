@@ -59,6 +59,7 @@ function makeFakeStore(
     searchFts: async (q, opts) => ftsResponder(q, opts),
     putSnapshot: async () => {},
     listSnapshots: async () => [],
+    getSnapshotObjects: async () => [],
     getMeta: async () => null,
     setMeta: async () => {},
   };

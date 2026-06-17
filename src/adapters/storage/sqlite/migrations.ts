@@ -12,14 +12,14 @@
 
 import type { Database as Db } from 'better-sqlite3';
 import { SchemaVersionError } from '../../../core/errors.js';
-import { SCHEMA_V1_DDL } from './schema.js';
+import { SCHEMA_V1_DDL, SNAPSHOT_OBJECTS_DDL } from './schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Current version constant
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** The highest schema version this build of dbgraph knows about. */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Migration descriptors
@@ -42,6 +42,20 @@ export const MIGRATIONS: readonly Migration[] = [
       // Create all tables and indexes from scratch (fresh database at v0 → v1).
       for (const stmt of SCHEMA_V1_DDL) {
         db.exec(stmt);
+      }
+    },
+  },
+  {
+    version: 2,
+    up(db: Db): void {
+      // Add snapshot_objects manifest table + index (phase-4-cli-config Batch F).
+      // SNAPSHOT_OBJECTS_DDL is a single string with two statements separated by ';\n'.
+      // We exec each statement individually to avoid multi-statement issues.
+      for (const stmt of SNAPSHOT_OBJECTS_DDL.split(';\n')) {
+        const trimmed = stmt.trim();
+        if (trimmed.length > 0) {
+          db.exec(trimmed);
+        }
       }
     },
   },

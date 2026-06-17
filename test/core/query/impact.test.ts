@@ -67,6 +67,7 @@ function makeFakeStore(
     searchFts: async () => ({ hits: [], total: 0 }),
     putSnapshot: async () => {},
     listSnapshots: async () => [],
+    getSnapshotObjects: async () => [],
     getMeta: async () => null,
     setMeta: async () => {},
   };

@@ -45,6 +45,7 @@ function makeFakeStore(opts: {
     async searchFts(_q, _opts) { return { hits, total }; },
     async putSnapshot() {},
     async listSnapshots() { return [] as readonly SnapshotRecord[]; },
+    async getSnapshotObjects() { return []; },
     async getMeta() { return null; },
     async setMeta() {},
   };

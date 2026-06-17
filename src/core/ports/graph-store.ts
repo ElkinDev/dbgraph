@@ -35,6 +35,15 @@ export interface SnapshotRecord {
   readonly counts: Readonly<Record<string, number>>;
 }
 
+/** One row in the snapshot_objects manifest (phase-4-cli-config Batch F). */
+export interface SnapshotObjectRow {
+  readonly snapshotId: string;
+  readonly nodeId: string;
+  readonly kind: string;
+  readonly qname: string;
+  readonly bodyHash: string | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Query param types (for query engine functions — not the port itself)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,6 +136,8 @@ export interface GraphStore {
   // snapshots (US-009 model; written in Phase 4)
   putSnapshot(s: SnapshotRecord): Promise<void>;
   listSnapshots(): Promise<readonly SnapshotRecord[]>;
+  /** Returns the snapshot_objects manifest for the given snapshot (phase-4-cli-config Batch F). */
+  getSnapshotObjects(snapshotId: string): Promise<readonly SnapshotObjectRow[]>;
 
   // meta
   getMeta(key: string): Promise<string | null>;

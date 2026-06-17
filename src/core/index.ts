@@ -60,6 +60,7 @@ export {
   type UpsertResult,
   type SearchHit,
   type SnapshotRecord,
+  type SnapshotObjectRow,
   type NeighborQuery,
   type NeighborGroups,
   type ImpactQuery,

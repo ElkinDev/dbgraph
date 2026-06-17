@@ -13,26 +13,26 @@ import { SchemaVersionError } from '../../../../src/core/errors.js';
 // afterEach: stores opened inside each test are closed in the test itself.
 // This test file does not share store instances across tests.
 
-describe('schema versioning and migrations (task 5.1)', () => {
-  describe('open from v0 → migrates to v1', () => {
-    it('reports schemaVersion() === 1 after opening a fresh database', async () => {
+describe('schema versioning and migrations (task 5.1 — updated for v2)', () => {
+  describe('open from v0 → migrates to v2 (current)', () => {
+    it('reports schemaVersion() === 2 after opening a fresh database', async () => {
       const store = await createSqliteGraphStore({ path: ':memory:' });
       const version = await store.schemaVersion();
       await store.close();
-      expect(version).toBe(1);
+      expect(version).toBe(2);
     });
 
-    it('meta table holds schema_version = "1" after first open', async () => {
+    it('meta table holds schema_version = "2" after first open', async () => {
       const store = await createSqliteGraphStore({ path: ':memory:' });
       const value = await store.getMeta('schema_version');
       await store.close();
-      expect(value).toBe('1');
+      expect(value).toBe('2');
     });
   });
 
   describe('current-version open is a no-op', () => {
     it('opening the same path twice does not change the version', async () => {
-      // Open once to migrate, close, open again — still at v1.
+      // Open once to migrate, close, open again — still at current version (2).
       const store1 = await createSqliteGraphStore({ path: ':memory:' });
       const v1 = await store1.schemaVersion();
       await store1.close();
@@ -42,8 +42,8 @@ describe('schema versioning and migrations (task 5.1)', () => {
       const store2 = await createSqliteGraphStore({ path: ':memory:' });
       const v2 = await store2.schemaVersion();
       await store2.close();
-      expect(v1).toBe(1);
-      expect(v2).toBe(1);
+      expect(v1).toBe(2);
+      expect(v2).toBe(2);
     });
   });
 
@@ -109,7 +109,152 @@ describe('schema versioning and migrations (task 5.1)', () => {
       // Use getMeta to verify meta table works; other tables tested by subsequent tasks
       const version = await store.getMeta('schema_version');
       await store.close();
-      expect(version).toBe('1');
+      expect(version).toBe('2');
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 6.1 — SNAPSHOT_OBJECTS_DDL exported from schema.ts (RED→GREEN)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SNAPSHOT_OBJECTS_DDL constant (task 6.1)', () => {
+  it('SNAPSHOT_OBJECTS_DDL is exported from schema.ts', async () => {
+    const { SNAPSHOT_OBJECTS_DDL } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    expect(typeof SNAPSHOT_OBJECTS_DDL).toBe('string');
+  });
+
+  it('SNAPSHOT_OBJECTS_DDL contains snapshot_objects table DDL', async () => {
+    const { SNAPSHOT_OBJECTS_DDL } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    // Must declare snapshot_objects with all required columns
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/snapshot_objects/i);
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/snapshot_id/i);
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/node_id/i);
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/kind/i);
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/qname/i);
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/body_hash/i);
+  });
+
+  it('SNAPSHOT_OBJECTS_DDL creates an index on snapshot_id', async () => {
+    const { SNAPSHOT_OBJECTS_DDL } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/idx_snapshot_objects_snapshot/i);
+  });
+
+  it('SNAPSHOT_OBJECTS_DDL uses IF NOT EXISTS (idempotent)', async () => {
+    const { SNAPSHOT_OBJECTS_DDL } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    expect(SNAPSHOT_OBJECTS_DDL).toMatch(/IF NOT EXISTS/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 6.2 — v1→v2 migration (RED→GREEN)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('schema v1→v2 auto-migration (task 6.2)', () => {
+  it('fresh database opens at schema version 2', async () => {
+    const store = await createSqliteGraphStore({ path: ':memory:' });
+    const version = await store.schemaVersion();
+    await store.close();
+    expect(version).toBe(2);
+  });
+
+  it('CURRENT_SCHEMA_VERSION equals 2', async () => {
+    const { CURRENT_SCHEMA_VERSION } = await import(
+      '../../../../src/adapters/storage/sqlite/migrations.js'
+    );
+    expect(CURRENT_SCHEMA_VERSION).toBe(2);
+  });
+
+  it('v1 database auto-migrates to v2 with no data loss (nodes preserved)', async () => {
+    // Build a v1 database manually (with schema_version=1, nodes, edges, snapshots, meta),
+    // then open it via createSqliteGraphStore which should auto-migrate.
+    const { openRawDb } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    const { SCHEMA_V1_DDL } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { randomUUID } = await import('node:crypto');
+
+    const tmpPath = join(tmpdir(), `dbgraph-test-v1-${randomUUID()}.db`);
+    const rawDb = openRawDb(tmpPath);
+
+    // Apply v1 DDL
+    for (const stmt of SCHEMA_V1_DDL) {
+      rawDb.exec(stmt);
+    }
+    // Set schema_version = 1
+    rawDb.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '1')`);
+
+    // Insert a sentinel node
+    rawDb.exec(`
+      INSERT INTO nodes (id, kind, schema_name, name, qname, level, missing, excluded, body_hash, payload)
+      VALUES ('node-v1-001', 'table', 'dbo', 'orders', 'dbo.orders', 'metadata', 0, 0, NULL, '{}')
+    `);
+    rawDb.close();
+
+    // Open via factory — must auto-migrate
+    const store = await createSqliteGraphStore({ path: tmpPath });
+    const version = await store.schemaVersion();
+    const node = await store.getNode('node-v1-001');
+    await store.close();
+
+    // Cleanup
+    const { unlink } = await import('node:fs/promises');
+    await unlink(tmpPath);
+
+    expect(version).toBe(2);
+    expect(node).not.toBeNull();
+    expect(node?.qname).toBe('dbo.orders');
+  });
+
+  it('v2 database opens without re-running migrations (no-op)', async () => {
+    // Open twice to verify idempotency on file DB
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { randomUUID } = await import('node:crypto');
+    const tmpPath = join(tmpdir(), `dbgraph-test-v2-${randomUUID()}.db`);
+
+    const store1 = await createSqliteGraphStore({ path: tmpPath });
+    const v1 = await store1.schemaVersion();
+    await store1.close();
+
+    const store2 = await createSqliteGraphStore({ path: tmpPath });
+    const v2 = await store2.schemaVersion();
+    await store2.close();
+
+    const { unlink } = await import('node:fs/promises');
+    await unlink(tmpPath);
+
+    expect(v1).toBe(2);
+    expect(v2).toBe(2);
+  });
+
+  it('snapshot_objects table exists after migration', async () => {
+    const { openRawDb } = await import(
+      '../../../../src/adapters/storage/sqlite/schema.js'
+    );
+    const { runMigrations } = await import(
+      '../../../../src/adapters/storage/sqlite/migrations.js'
+    );
+    const db = openRawDb(':memory:');
+    runMigrations(db);
+
+    const tableExists = db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='snapshot_objects'`)
+      .get();
+    db.close();
+
+    expect(tableExists).toBeDefined();
   });
 });

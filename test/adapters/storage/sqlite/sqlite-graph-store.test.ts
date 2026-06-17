@@ -530,3 +530,148 @@ describe('SqliteGraphStore — snapshots + meta + deleteNodes (task 5.4)', () =>
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 6.3 — putSnapshot manifest write + getSnapshotObjects (RED→GREEN)
+// Design Decision 3: putSnapshot fills snapshot_objects from nodes in same transaction.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SqliteGraphStore — snapshot_objects manifest (task 6.3)', () => {
+  let store: GraphStore;
+
+  beforeEach(async () => {
+    store = await createSqliteGraphStore({ path: ':memory:' });
+  });
+
+  afterEach(async () => {
+    await store.close();
+  });
+
+  it('getSnapshotObjects returns empty array for unknown snapshotId', async () => {
+    const rows = await store.getSnapshotObjects('no-such-snap');
+    expect(rows).toStrictEqual([]);
+  });
+
+  it('putSnapshot populates snapshot_objects with one row per visible node', async () => {
+    const result = normalizeCatalog(minimalFixture as RawCatalog, fullScope);
+    await store.upsertGraph(result.graph);
+
+    const snap: SnapshotRecord = {
+      id: 'snap-manifest-001',
+      takenAt: '2026-06-17T00:00:00Z',
+      engine: 'sqlite',
+      fingerprint: 'fp-manifest',
+      counts: { table: 1 },
+    };
+    await store.putSnapshot(snap);
+
+    const rows = await store.getSnapshotObjects('snap-manifest-001');
+
+    // Must have one row per non-missing, non-excluded node in the graph
+    const visibleNodes = result.graph.nodes.filter((n) => !n.missing && !n.excluded);
+    expect(rows.length).toBe(visibleNodes.length);
+  });
+
+  it('each manifest row carries snapshot_id, node_id, kind, qname, body_hash', async () => {
+    const result = normalizeCatalog(minimalFixture as RawCatalog, fullScope);
+    await store.upsertGraph(result.graph);
+
+    const snap: SnapshotRecord = {
+      id: 'snap-manifest-002',
+      takenAt: '2026-06-17T01:00:00Z',
+      engine: 'sqlite',
+      fingerprint: 'fp-2',
+      counts: { table: 1 },
+    };
+    await store.putSnapshot(snap);
+
+    const rows = await store.getSnapshotObjects('snap-manifest-002') as Array<{
+      snapshotId: string;
+      nodeId: string;
+      kind: string;
+      qname: string;
+      bodyHash: string | null;
+    }>;
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.snapshotId).toBe('snap-manifest-002');
+      expect(typeof row.nodeId).toBe('string');
+      expect(typeof row.kind).toBe('string');
+      expect(typeof row.qname).toBe('string');
+      // bodyHash is string | null
+      expect(row.bodyHash === null || typeof row.bodyHash === 'string').toBe(true);
+    }
+  });
+
+  it('manifest rows match the actual node data (node_id, kind, qname, body_hash)', async () => {
+    const result = normalizeCatalog(minimalFixture as RawCatalog, fullScope);
+    await store.upsertGraph(result.graph);
+
+    const snap: SnapshotRecord = {
+      id: 'snap-manifest-003',
+      takenAt: '2026-06-17T02:00:00Z',
+      engine: 'sqlite',
+      fingerprint: 'fp-3',
+      counts: {},
+    };
+    await store.putSnapshot(snap);
+
+    const rows = await store.getSnapshotObjects('snap-manifest-003') as Array<{
+      snapshotId: string;
+      nodeId: string;
+      kind: string;
+      qname: string;
+      bodyHash: string | null;
+    }>;
+
+    // Spot-check: every row's nodeId should correspond to a real visible node
+    const visibleNodeMap = new Map(
+      result.graph.nodes
+        .filter((n) => !n.missing && !n.excluded)
+        .map((n) => [n.id, n]),
+    );
+
+    for (const row of rows) {
+      const node = visibleNodeMap.get(row.nodeId);
+      expect(node).toBeDefined();
+      expect(row.kind).toBe(node?.kind);
+      expect(row.qname).toBe(node?.qname);
+      expect(row.bodyHash).toBe(node?.bodyHash ?? null);
+    }
+  });
+
+  it('manifest for second snapshot is independent of first snapshot', async () => {
+    const result = normalizeCatalog(minimalFixture as RawCatalog, fullScope);
+    await store.upsertGraph(result.graph);
+
+    const snap1: SnapshotRecord = {
+      id: 'snap-manifest-A',
+      takenAt: '2026-06-17T03:00:00Z',
+      engine: 'sqlite',
+      fingerprint: 'fp-A',
+      counts: {},
+    };
+    await store.putSnapshot(snap1);
+
+    const snap2: SnapshotRecord = {
+      id: 'snap-manifest-B',
+      takenAt: '2026-06-17T04:00:00Z',
+      engine: 'sqlite',
+      fingerprint: 'fp-B',
+      counts: {},
+    };
+    await store.putSnapshot(snap2);
+
+    const rowsA = await store.getSnapshotObjects('snap-manifest-A') as unknown as Array<{ nodeId: string }>;
+    const rowsB = await store.getSnapshotObjects('snap-manifest-B') as unknown as Array<{ nodeId: string }>;
+
+    // Both have rows; they are the same content (same graph state) but stored independently
+    expect(rowsA.length).toBeGreaterThan(0);
+    expect(rowsB.length).toBe(rowsA.length);
+    // All rowsA node ids are for snapA only
+    for (const r of rowsA) {
+      expect(r.nodeId).toBeDefined();
+    }
+  });
+});
