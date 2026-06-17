@@ -24,9 +24,7 @@ import type { BuildConfigInput } from '../config/build-config.js';
 import { runWizard } from '../init/wizard.js';
 import type { CapabilityMatrix } from '../../index.js';
 import type { HandlerOutcome } from '../dispatch.js';
-import { parseConfig } from '../config/parse-config.js';
-import { resolveSecrets } from '../config/resolve-secrets.js';
-import { createSqliteSchemaAdapter, createMssqlSchemaAdapter, createSqliteGraphStore } from '../../index.js';
+import { openConnections } from '../config/open-connections.js';
 import { runSync } from './sync.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,49 +99,14 @@ function ensureGitignored(projectRoot: string): void {
 
 /**
  * Runs the first incremental sync after init.
- * Reads dbgraph.config.json from the project root, resolves secrets, creates the
- * appropriate adapter + store, and delegates to runSync.
+ * Delegates to openConnections (the single source for config → adapter + store wiring)
+ * and then calls runSync.
  *
  * ADR-004: only imports via the public barrel + node builtins.
- * Security: never logs resolved URLs; resolved config is not written to any output.
+ * Security: never logs resolved URLs; openConnections handles resolution internally.
  */
 export async function syncAfterInit(projectRoot: string): Promise<void> {
-  // Read and parse the config written by runInit
-  const configPath = join(projectRoot, 'dbgraph.config.json');
-  const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
-  const cfg = parseConfig(rawJson);
-
-  // Resolve ${env:VAR} references using process.env
-  const resolved = resolveSecrets(cfg);
-
-  // Determine the store path (.dbgraph/dbgraph.db inside the project root)
-  const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
-  // Ensure .dbgraph directory exists
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(join(projectRoot, '.dbgraph'), { recursive: true });
-
-  let adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
-
-  if (resolved.dialect === 'sqlite') {
-    adapter = await createSqliteSchemaAdapter({
-      file: resolved.source.file,
-      ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
-    });
-  } else {
-    // mssql
-    const src = resolved.source;
-    adapter = await createMssqlSchemaAdapter({
-      server: src.server,
-      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
-      database: src.database,
-      authentication: src.domain !== undefined
-        ? { type: 'ntlm', domain: src.domain, user: src.user, password: src.password }
-        : { type: 'sql', user: src.user, password: src.password },
-    });
-  }
-
-  const store = await createSqliteGraphStore({ path: storePath });
-
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     await runSync({ adapter, store, full: false });
   } finally {

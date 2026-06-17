@@ -64,6 +64,7 @@ function makeWizardStreams(answers: string[]): {
 
 // Shared no-op sync override: init tests isolate the init path from the sync step.
 // The sync seam (syncAfterInit) is tested separately in sync.test.ts.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const noSync = async (_root: string): Promise<void> => {};
 
 // ─────────────────────────────────────────────────────────────────────────────

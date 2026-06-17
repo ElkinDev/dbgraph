@@ -17,7 +17,7 @@ import type {
   SnapshotRecord,
   UpsertResult,
 } from '../../../src/index.js';
-import { runQuery, type QueryOptions } from '../../../src/cli/commands/query.js';
+import { runQuery } from '../../../src/cli/commands/query.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fake helpers
@@ -42,6 +42,7 @@ function makeFakeStore(opts: {
     async getNodeByQName() { return null; },
     async getEdgesFrom() { return []; },
     async getEdgesTo() { return []; },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async searchFts(_q, _opts) { return { hits, total }; },
     async putSnapshot() {},
     async listSnapshots() { return [] as readonly SnapshotRecord[]; },

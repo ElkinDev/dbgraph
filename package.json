@@ -21,8 +21,11 @@
       "require": "./dist/index.cjs"
     }
   },
+  "bin": {
+    "dbgraph": "./dist/cli.js"
+  },
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "build": "tsup",
     "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",

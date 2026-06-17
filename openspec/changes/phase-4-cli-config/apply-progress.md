@@ -285,6 +285,56 @@ Storage schema v1→v2 (`snapshot_objects` table + auto-migration), `putSnapshot
 
 ---
 
-## Next batch
+---
 
-Batch G (tasks 7.1–7.6): tsup build wiring, CLI boundaries test, E2E (SQLite + gated MSSQL), final sweep.
+## Batch G (tasks 7.1–7.6) — COMPLETE
+
+Build wiring, CLI boundary test, SQLite E2E, gated MSSQL E2E, cleanup, zero-warning sweep.
+
+### Tasks completed
+
+- [x] 7.1 `tsup.config.ts` created with TWO entries: `index` (esm+cjs+dts, clean) and `cli` (ESM-only, `banner.js='#!/usr/bin/env node'`, no dts, no clean). `package.json` updated: `"bin": { "dbgraph": "./dist/cli.js" }` and `"build": "tsup"`. Design Decision 8. `npx tsc --noEmit` remains clean.
+- [x] 7.2 RED→GREEN `test/cli/boundaries.test.ts`: scans `src/cli/**` via regex import extraction (mirrors `test/core/boundaries.test.ts` pattern). Fails if any CLI file imports `/adapters/`, `/mcp/`, or a forbidden driver. Includes negative-control describe block proving scanner catches planted violations. 8 tests pass.
+- [x] 7.3 `.gitignore` verified: `.dbgraph/` present; `dbgraph.config.json` NOT ignored (committable). Security scan (`npm test security-scan`) 8/8 pass. E2E test validates both conditions.
+- [x] 7.4 RED→GREEN `test/cli/e2e.test.ts` (15 tests, no Docker): drives `runSync`, `runStatus`, `runQuery`, `runDiff`, `runCli` against the SQLite torture fixture in temp `.dbgraph/` dirs. Asserts: sync incremental no-op, `diff --last` exit 1 on mutation, query miss exit 1, bogus command exit 2, status deterministic, JSON query byte-identical on re-run, config file valid, gitignore checked.
+- [x] 7.5 `test/cli/mssql.e2e.integration.test.ts` created (5 tests gated by `DBGRAPH_INTEGRATION=1`): reuses Phase-3 `startMssqlContainer` harness; `init → sync → query` against ephemeral SQL Server 2022. Docker daemon unavailable on dev machine — deferred to CI.
+- [x] 7.6 Cleanup + zero-warning sweep: extracted duplicated config-loading from `syncAfterInit` + `openAdapterAndStore` into `src/cli/config/open-connections.ts` (single source of truth). Both callers (`init.ts` and `dispatch.ts`) route through it. Fixed all 12 pre-existing lint issues across Batches A–F (unused vars, stray `any` suppress comments, orphaned test case). Final gates: `npx tsc --noEmit` CLEAN, `npm test` 882/882 PASS, `npm run lint` 0 errors 0 warnings.
+
+### Files created (Batch G)
+
+- `tsup.config.ts` — two-entry tsup build config (library + CLI executable)
+- `src/cli/config/open-connections.ts` — single source for config → adapter + store wiring
+- `test/cli/boundaries.test.ts` — CLI boundary enforcement (8 tests)
+- `test/cli/e2e.test.ts` — SQLite E2E full lifecycle (15 tests)
+- `test/cli/mssql.e2e.integration.test.ts` — gated MSSQL E2E (5 tests, skips without Docker)
+
+### Files modified (Batch G)
+
+- `package.json` — added `bin` field + updated `build` script to `tsup`
+- `src/cli/dispatch.ts` — replaced inline `openAdapterAndStore` with `openConnections` import; added eslint-disable for `_args`
+- `src/cli/commands/init.ts` — replaced inline `syncAfterInit` body with `openConnections` call; removed unused imports
+- `src/cli/config/build-config.ts` — removed stale `@ts-expect-error` suppressor
+- `test/cli/commands/diff.test.ts` — added test for `MANIFEST_B_CHANGED` (was unused); fixed orphaned describe block
+- `test/cli/commands/init.test.ts` — added eslint-disable for `_root` arrow-function param
+- `test/cli/commands/query.test.ts` — removed unused `QueryOptions` import; added eslint-disable for fake store param
+- `test/cli/commands/sync.test.ts` — removed unused `vi`/`writeFileSync` imports; added eslint-disable for `_scope`
+- `test/cli/init/wizard.test.ts` — removed unused `WizardResult` import; added eslint-disable for loop variable
+
+### Gate result (Batch G)
+
+`npx tsc --noEmit`: CLEAN (no output, exit 0)
+`npm test`: PASS — 61 test files, 882 tests, 0 failures (24 new tests added in Batch G)
+`npm run lint`: CLEAN — 0 errors, 0 warnings
+`npm run test:integration`: DEFERRED — Docker daemon not running on dev machine; 5 gated MSSQL E2E tests will run in CI under `DBGRAPH_INTEGRATION=1`
+
+### Learnings (Batch G)
+
+**`_argName` prefix not respected by this `typescript-eslint` version (L-017):** The typescript-eslint `no-unused-vars` rule in the version used by this project does NOT auto-ignore parameters prefixed with `_`. The conventional fix is either an inline `// eslint-disable-next-line @typescript-eslint/no-unused-vars` comment, or removing the unused parameter from the function signature. Removing parameters works when the function type is compatible (fewer params are assignable to more-params types in TypeScript).
+
+**tsup two-entry `clean` ordering (L-018):** When using two separate tsup config objects in an array, the first entry MUST set `clean: true` and the second MUST set `clean: false`. If both set `clean: true`, the second entry wipes the output of the first (dist/ is cleaned twice — atomic from one entry's perspective, destructive from the other's). Order: library first (cleans), CLI second (does not clean).
+
+---
+
+## Final Status
+
+All 61 test files, 882 tests pass. All 7 phases (tasks 1.x–7.x) are complete. `phase-4-cli-config` is ready for `sdd-verify`.

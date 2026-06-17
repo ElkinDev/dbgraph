@@ -13,8 +13,8 @@
  * TDD: RED → GREEN → TRIANGULATE → REFACTOR.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { GraphNode, GraphStore, SnapshotRecord, UpsertResult } from '../../../src/index.js';
@@ -115,6 +115,7 @@ function makeFakeAdapter(opts: {
       supportsDependencyHints: false,
     },
     async fingerprint() { return fp; },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async extract(_scope: unknown) {
       extractCallCount.count++;
       // Return a minimal RawCatalog with the configured nodes' structure

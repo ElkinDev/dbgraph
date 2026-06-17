@@ -11,22 +11,14 @@
  * ADR-004: no adapter imports here — only types from this module.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { ParsedArgs } from './parse/args.js';
 import { runInit } from './commands/init.js';
 import { runSync } from './commands/sync.js';
 import { runStatus } from './commands/status.js';
 import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
-import { parseConfig } from './config/parse-config.js';
-import { resolveSecrets } from './config/resolve-secrets.js';
 import { runDiff } from './commands/diff.js';
-import {
-  createSqliteSchemaAdapter,
-  createMssqlSchemaAdapter,
-  createSqliteGraphStore,
-} from '../index.js';
+import { openConnections } from './config/open-connections.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler type
@@ -114,7 +106,7 @@ async function handleSync(args: ParsedArgs): Promise<HandlerOutcome> {
   const full = args.flags['full'] === true;
   const projectRoot = process.cwd();
 
-  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     return await runSync({ adapter, store, full });
   } finally {
@@ -127,10 +119,11 @@ async function handleSync(args: ParsedArgs): Promise<HandlerOutcome> {
  * Opens adapter + store from the project config and runs status.
  * Writes formatted output to stdout.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function handleStatus(_args: ParsedArgs): Promise<HandlerOutcome> {
   const projectRoot = process.cwd();
 
-  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     const result = await runStatus({ adapter, store });
     // Write to stdout (cli.ts owns process.exit but handlers own I/O)
@@ -144,45 +137,8 @@ async function handleStatus(_args: ParsedArgs): Promise<HandlerOutcome> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared: open adapter + store from project config
+// (delegates to src/cli/config/open-connections.ts — single source of truth)
 // ─────────────────────────────────────────────────────────────────────────────
-
-type AdapterAndStore = {
-  adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
-  store: Awaited<ReturnType<typeof createSqliteGraphStore>>;
-};
-
-async function openAdapterAndStore(projectRoot: string): Promise<AdapterAndStore> {
-  const configPath = join(projectRoot, 'dbgraph.config.json');
-  const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
-  const cfg = parseConfig(rawJson);
-  const resolved = resolveSecrets(cfg);
-
-  const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
-  const { mkdirSync } = await import('node:fs');
-  mkdirSync(join(projectRoot, '.dbgraph'), { recursive: true });
-
-  let adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
-
-  if (resolved.dialect === 'sqlite') {
-    adapter = await createSqliteSchemaAdapter({
-      file: resolved.source.file,
-      ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
-    });
-  } else {
-    const src = resolved.source;
-    adapter = await createMssqlSchemaAdapter({
-      server: src.server,
-      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
-      database: src.database,
-      authentication: src.domain !== undefined
-        ? { type: 'ntlm', domain: src.domain, user: src.user, password: src.password }
-        : { type: 'sql', user: src.user, password: src.password },
-    });
-  }
-
-  const store = await createSqliteGraphStore({ path: storePath });
-  return { adapter, store };
-}
 
 /**
  * Runs search and prints text or JSON output.
@@ -193,7 +149,7 @@ async function handleQuery(args: ParsedArgs): Promise<HandlerOutcome> {
   const json = args.flags['json'] === true;
   const projectRoot = process.cwd();
 
-  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     const result = await runQuery({ store, term, json });
     process.stdout.write(result.output);
@@ -217,7 +173,7 @@ async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
       : 'normal';
   const projectRoot = process.cwd();
 
-  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     const result = await runExplore({ store, qname, detail });
     process.stdout.write(result.output);
@@ -238,7 +194,7 @@ async function handleDiff(args: ParsedArgs): Promise<HandlerOutcome> {
   const last = args.flags['last'] === true;
   const projectRoot = process.cwd();
 
-  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot);
   try {
     let result;
     if (last) {
