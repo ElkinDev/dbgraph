@@ -10,7 +10,7 @@ Plan references: §4.7 (init contract), §4.8 (configuration), §4.5 (sync).
 **Phase:** 4 · **Depends on:** US-006, US-026 · **Status:** ☐ pending
 
 **Acceptance criteria:**
-- Given `dbgraph init --dialect sqlite --url ./fixture.db`, when I run it, then it validates the connection, writes `.dbgraph/config.json` WITHOUT secrets, adds `.dbgraph/` to `.gitignore`, and runs the first sync; exit code 0.
+- Given `dbgraph init --dialect sqlite --url ./fixture.db`, when I run it, then it validates the connection, writes the committeable `dbgraph.config.json` at the project ROOT WITHOUT secrets (`${env:VAR}` references only), adds `.dbgraph/` (the index + local state) to `.gitignore`, and runs the first sync; exit code 0.
 - Given an unreachable host, when I run init, then exit 2 with a message distinguishing "DNS does not resolve" / "connection refused" / "timeout".
 - Given a user without catalog permissions, when I run init, then exit 3 and the message names the EXACT missing permission and the command to grant it.
 - Given an unsupported `--dialect`, then exit 4 listing the available dialects.
