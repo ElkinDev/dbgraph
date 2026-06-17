@@ -136,6 +136,17 @@ describe('runDiff — explicit snapA/snapB (task 6.5)', () => {
     const result = await runDiff(opts);
     expect(result.output.toLowerCase()).toMatch(/no changes/i);
   });
+
+  it('returns type "negative" when a node body hash changed', async () => {
+    const store = makeFakeStore(
+      [SNAP_A, SNAP_B],
+      new Map([['snap-A', MANIFEST_A], ['snap-B', MANIFEST_B_CHANGED]]),
+    );
+    const opts: DiffOptions = { store, snapA: 'snap-A', snapB: 'snap-B' };
+    const result = await runDiff(opts);
+    expect(result.type).toBe('negative');
+    expect(result.output).toContain('MODIFIED');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

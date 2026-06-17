@@ -113,7 +113,6 @@ export function buildConfig(input: BuildConfigInput): DbgraphConfig {
  */
 export function writeConfig(cfg: DbgraphConfig): string {
   // Build a plain object with a FIXED key order for determinism.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ordered: Record<string, unknown> = {
     dialect: cfg.dialect,
     source: buildOrderedSource(cfg),

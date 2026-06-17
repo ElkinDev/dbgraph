@@ -17,7 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Readable, Writable } from 'node:stream';
-import { runWizard, type WizardResult } from '../../../src/cli/init/wizard.js';
+import { runWizard } from '../../../src/cli/init/wizard.js';
 import {
   SQLITE_CAPABILITIES,
   MSSQL_CAPABILITIES,
@@ -58,7 +58,7 @@ function kindAnswers(
   includeAll = true,
 ): string[] {
   const result: string[] = [];
-  for (const _kind of matrix.supported) {
+  for (const _kind of matrix.supported) { // eslint-disable-line @typescript-eslint/no-unused-vars
     result.push(includeAll ? 'y' : 'n'); // include?
     if (includeAll) {
       result.push(''); // level — empty = full
