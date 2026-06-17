@@ -35,22 +35,23 @@ also keeps the proposal's "byte-identical incremental" promise for unchanged obj
 **Rationale**: the migration framework was built for exactly this; auto-migrate is additive, transactional, and
 reversible (rollback drops the table + restores the constant). The manifest is rebuilt on the first `sync`.
 
-### Decision 2: ONE pure `explore` formatter in `src/cli/format/` consuming core types only
+### Decision 2: ONE pure `explore` formatter in `src/core/present/` consuming core types only
 
 **Choice**: `formatExplore(input: ExploreView, detail: ExploreDetail): string` — a PURE function (no `process`,
-no `Date.now()`, no driver, no adapter/cli-state imports) living at `src/cli/format/explore.ts`. Its input
-`ExploreView` is assembled by the command from the public `GraphNode` + `NeighborGroups` types (both exported
-from `src/index.ts`), so the formatter is import-clean and Phase-5's MCP tool can call the SAME function over
+no `Date.now()`, no driver, no adapter/cli-state imports) living at `src/core/present/explore.ts`. Its input
+`ExploreView` is assembled from the public `GraphNode` + `NeighborGroups` types (both exported
+from `src/index.ts`), so the formatter depends ONLY on core query-result types and Phase-5's MCP tool can call the SAME function over
 the SAME `ExploreView` → identical goldens ("same source, same golden" holds STRUCTURALLY). `--detail` levels:
 `brief` (qname + kind + 1-line counts), `normal` (default: + grouped neighbors by edge kind, in/out, qname-sorted —
 the order `getNeighbors` already guarantees), `full` (+ body presence/hash, level, dynamic-SQL warning).
-**Where (boundary)**: it lives UNDER `src/cli/`, not in core, because core must stay free of presentation; it is
-nonetheless pure and import-free of adapters, so Phase-5 (`src/mcp/`) may import `src/cli/format/explore.ts`
-directly (cli→mcp is not a forbidden edge; only core→cli/adapters and cli→adapters are). If a future ADR forbids
-mcp→cli, the file moves to a neutral `src/format/` with zero code change — flagged as Open Question.
-**Alternatives**: put the formatter in core — REJECTED (presentation in core violates ADR-004's spirit; core has
-`no console`/pure-domain rule). Duplicate the format in CLI and MCP — REJECTED (two goldens drift; the proposal's
-whole point is one shared formatter).
+**Where (boundary)**: it lives in `src/core/present/` — a pure, driver-free presentation submodule importing ONLY
+core query-result TYPES. Both the CLI (Phase 4) and the MCP tool (Phase 5) import the SAME function via the public
+barrel, so NO `cli↔mcp` edge is introduced and the existing `test/core/boundaries.test.ts` (core imports nothing
+outward) keeps passing unchanged. (Orchestrator decision — supersedes the original `src/cli/format/` placement.)
+**Alternatives**: place it under `src/cli/format/` — REJECTED (Phase-5 `mcp → cli` import would be a boundary
+smell and force a relocation = known carry-over). A separate `src/present/` layer — viable but needs a new
+boundary-test rule; deferred for the simpler core/present submodule. Duplicate the format in CLI and MCP —
+REJECTED (two goldens drift; the whole point is one shared formatter).
 **Rationale**: purity + core-only inputs give reuse without a boundary break; goldens pin bytes.
 
 ### Decision 3: `snapshot_objects` written BY the store at `putSnapshot` time from its OWN node rows
@@ -169,7 +170,8 @@ diff:   read snapshot_objects(a) vs (b|--last) → added/removed/changed ┘
 | `src/cli/init/wizard.ts` | Create | `node:readline` wizard, masked secret prompts, matrix-driven object types |
 | `src/cli/sync/incremental.ts` | Create | `body_hash` delta: select stale/changed via `getNodesByKind` |
 | `src/cli/diff/engine.ts` | Create | Pure manifest comparison (added/removed/changed) |
-| `src/cli/format/{explore,query,status,diff}.ts` | Create | Pure golden-pinned formatters; `formatExplore` shared with P5 |
+| `src/core/present/explore.ts` | Create | Pure golden-pinned `formatExplore`, shared with Phase-5 MCP |
+| `src/cli/format/{query,status,diff}.ts` | Create | Pure golden-pinned CLI formatters |
 | `src/adapters/storage/sqlite/schema.ts` | Modify | Add `SNAPSHOT_OBJECTS_DDL` (table + `idx_snapshot_objects_snapshot`) |
 | `src/adapters/storage/sqlite/migrations.ts` | Modify | Append `{version:2,up}`; `CURRENT_SCHEMA_VERSION = 2` |
 | `src/adapters/storage/sqlite/sqlite-graph-store.ts` | Modify | `putSnapshot` also fills `snapshot_objects`; add manifest read for `diff` |
@@ -195,7 +197,7 @@ export interface DbgraphConfig {
   readonly driver?: 'better-sqlite3' | 'node:sqlite';
 }
 
-// src/cli/format/explore.ts — PURE, core-typed input, shared with Phase-5 MCP
+// src/core/present/explore.ts — PURE, core-typed input, shared with Phase-5 MCP
 export type ExploreDetail = 'brief' | 'normal' | 'full';
 export interface ExploreView { readonly node: GraphNode; readonly neighbors: NeighborGroups; }
 export function formatExplore(view: ExploreView, detail: ExploreDetail): string;
@@ -265,8 +267,8 @@ via `sync --full`). No target-DB migration — target stays strictly read-only.
 
 ## Open Questions
 
-- [ ] If a future ADR forbids `mcp → cli` imports, move `src/cli/format/explore.ts` to a neutral `src/format/`
-      (zero code change). Confirm acceptable for Phase-5, or pre-empt by placing it in `src/format/` now.
+- [x] RESOLVED (orchestrator): the shared `explore` formatter lives at `src/core/present/explore.ts` (pure,
+      core-typed), imported by both the CLI and the Phase-5 MCP tool via the public barrel — no `cli↔mcp` edge.
 - [ ] `readline` password masking on Windows terminals: confirm the muting-writer idiom hides echo in the
       target shells during apply (fallback: print a one-time "input hidden" notice, never echo).
 - [ ] US-001's literal `.dbgraph/config.json` wording must be reworded to `dbgraph.config.json` at root (spec edit,
