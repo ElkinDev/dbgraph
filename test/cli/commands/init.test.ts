@@ -9,7 +9,7 @@
  *   - appending .dbgraph/ is idempotent (second run does NOT duplicate the entry)
  *   - init never writes a plaintext credential to disk (ConfigError surfaced)
  *   - byte-identity: flag form and wizard form produce IDENTICAL writeConfig strings
- *   - sync is NOT called here (stubbed — Batch D seam)
+ *   - sync is isolated via _syncFn injection (Batch D seam tested in sync.test.ts)
  *
  * TDD: RED → GREEN.
  */
@@ -62,6 +62,10 @@ function makeWizardStreams(answers: string[]): {
   return { input, output };
 }
 
+// Shared no-op sync override: init tests isolate the init path from the sync step.
+// The sync seam (syncAfterInit) is tested separately in sync.test.ts.
+const noSync = async (_root: string): Promise<void> => {};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Flag form — non-interactive
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,6 +76,7 @@ describe('runInit — flag form (non-interactive)', () => {
       projectRoot: tmpDir,
       dialect: 'sqlite',
       file: './fixture.db',
+      _syncFn: noSync,
     });
 
     expect(existsSync(join(tmpDir, 'dbgraph.config.json'))).toBe(true);
@@ -82,6 +87,7 @@ describe('runInit — flag form (non-interactive)', () => {
       projectRoot: tmpDir,
       dialect: 'sqlite',
       file: './fixture.db',
+      _syncFn: noSync,
     });
 
     const cfg = readConfig() as { dialect: string };
@@ -93,6 +99,7 @@ describe('runInit — flag form (non-interactive)', () => {
       projectRoot: tmpDir,
       dialect: 'sqlite',
       file: './fixture.db',
+      _syncFn: noSync,
     });
 
     const cfg = readConfig() as { source: { file: string } };
@@ -104,6 +111,7 @@ describe('runInit — flag form (non-interactive)', () => {
       projectRoot: tmpDir,
       dialect: 'sqlite',
       file: './fixture.db',
+      _syncFn: noSync,
     });
 
     const gitignore = readGitignore();
@@ -112,8 +120,8 @@ describe('runInit — flag form (non-interactive)', () => {
 
   it('.gitignore append is idempotent — .dbgraph/ not duplicated on second run', async () => {
     // Run twice
-    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db' });
-    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db' });
+    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db', _syncFn: noSync });
+    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db', _syncFn: noSync });
 
     const gitignore = readGitignore();
     const count = gitignore.split('\n').filter((line) => line.trim() === '.dbgraph/').length;
@@ -125,7 +133,7 @@ describe('runInit — flag form (non-interactive)', () => {
     const { writeFileSync } = await import('node:fs');
     writeFileSync(join(tmpDir, '.gitignore'), 'node_modules/\ndist/\n', 'utf-8');
 
-    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db' });
+    await runInit({ projectRoot: tmpDir, dialect: 'sqlite', file: './fixture.db', _syncFn: noSync });
 
     const gitignore = readGitignore();
     expect(gitignore).toContain('node_modules/');
@@ -138,6 +146,7 @@ describe('runInit — flag form (non-interactive)', () => {
       projectRoot: tmpDir,
       dialect: 'sqlite',
       file: './fixture.db',
+      _syncFn: noSync,
     });
 
     expect(outcome.type).toBe('success');
@@ -151,6 +160,7 @@ describe('runInit — flag form (non-interactive)', () => {
       database: '${env:DBGRAPH_DB_NAME}',
       user: '${env:DBGRAPH_DB_USER}',
       password: '${env:DBGRAPH_DB_PASSWORD}',
+      _syncFn: noSync,
     });
 
     const cfg = readConfig() as {
@@ -172,6 +182,7 @@ describe('runInit — flag form (non-interactive)', () => {
         database: '${env:DBGRAPH_DB_NAME}',
         user: '${env:DBGRAPH_DB_USER}',
         password: 'literal_secret',
+        _syncFn: noSync,
       }),
     ).rejects.toThrow(ConfigError);
 
@@ -201,6 +212,7 @@ describe('runInit — interactive form (-i wizard)', () => {
       wizardInput: input,
       wizardOutput: output,
       capabilitiesOverride: SQLITE_CAPABILITIES,
+      _syncFn: noSync,
     });
 
     expect(existsSync(join(tmpDir, 'dbgraph.config.json'))).toBe(true);
@@ -217,6 +229,7 @@ describe('runInit — interactive form (-i wizard)', () => {
       wizardInput: input,
       wizardOutput: output,
       capabilitiesOverride: SQLITE_CAPABILITIES,
+      _syncFn: noSync,
     });
 
     const gitignore = readGitignore();
@@ -250,6 +263,7 @@ describe('byte-identity — flag form and wizard produce IDENTICAL writeConfig o
       wizardInput: input,
       wizardOutput: output,
       capabilitiesOverride: SQLITE_CAPABILITIES,
+      _syncFn: noSync,
     });
 
     const writtenConfig = readFileSync(join(tmpDir, 'dbgraph.config.json'), 'utf-8');
