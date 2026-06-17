@@ -34,7 +34,7 @@
     "url": "git+https://github.com/ElkinDev/dbgraph.git"
   },
   "dependencies": {
-    "better-sqlite3": "12.10.0"
+    "better-sqlite3": "12.11.1"
   },
   "optionalDependencies": {
     "mssql": "12.5.5"
