@@ -124,6 +124,59 @@ Hand-rolled argument parser, dispatch table, exit-code mapper, and `cli.ts` skel
 
 ---
 
+---
+
+## Batch D (tasks 4.1–4.3) — COMPLETE
+
+`sync` incremental selector (pure, fake store) + `sync` command + `syncAfterInit` seam + `status` formatter + `status` command. `dispatch.ts` wired with real `handleSync`/`handleStatus`.
+
+### Tasks completed
+
+- [x] 4.1 RED→GREEN `src/cli/sync/incremental.ts`: pure `computeDelta(existing, fresh): DeltaResult`. Compares nodes by id and `bodyHash`: absent in fresh → `toDelete`, new or `bodyHash` mismatch → `toUpsert`, identical → no-op. Handles null bodyHash correctly (null=null is unchanged; hash→null is changed). 11 unit tests pass.
+- [x] 4.2 RED→GREEN `src/cli/commands/sync.ts` (`SyncOptions`, `runSync`). Fingerprint short-circuit: if `liveFingerprint === lastSnapshot.fingerprint && !full` → skips extraction entirely (no-op). Otherwise: `adapter.extract` → `normalizeCatalog` → `computeDelta` (all node kinds via `NODE_KINDS`) → `deleteNodes` + `upsertGraph` for changed/new → `putSnapshot` with `randomUUID` id + ISO timestamp + per-kind counts. `--full` skips fingerprint check. Filled `syncAfterInit` seam in `init.ts`: reads `dbgraph.config.json` → `parseConfig` → `resolveSecrets` → creates adapter + store → calls `runSync`. Added `_syncFn` injection to `InitOptions` for test isolation (Batch C tests updated). Wired real `handleSync`/`handleStatus` in `dispatch.ts` (shared `openAdapterAndStore` helper). 6 unit tests pass.
+- [x] 4.3 RED→GREEN `src/cli/format/status.ts` (PURE `formatStatus(view: StatusView): string`) + `src/cli/commands/status.ts` (`runStatus` → `StatusOutcome`). Formatter: Graph section (per-kind counts sorted, excluded count when > 0), Last Snapshot section (takenAt/engine/fingerprint/snapshot counts), DRIFT section (uppercase label + "Run: dbgraph sync") — deterministic (sorted keys, no Date.now). Status command gathers all nodes via `NODE_KINDS`, builds kindCounts + excludedCount, gets last snapshot, computes hasDrift from live vs stored fingerprint. 11 formatter tests + 8 command tests pass.
+
+### Files created (Batch D)
+
+- `src/cli/sync/incremental.ts` — created (`computeDelta`, `DeltaResult`)
+- `src/cli/commands/sync.ts` — created (`runSync`, `SyncOptions`)
+- `src/cli/commands/status.ts` — created (`runStatus`, `StatusOptions`, `StatusOutcome`)
+- `src/cli/format/status.ts` — created (`formatStatus`, `StatusView`)
+- `src/cli/commands/init.ts` — modified (filled `syncAfterInit` seam; added `_syncFn` injection to `InitOptions` for test isolation)
+- `src/cli/dispatch.ts` — modified (wired real `handleSync`/`handleStatus`; added `openAdapterAndStore` shared helper)
+
+### Test files created/modified (Batch D)
+
+- `test/cli/sync/incremental.test.ts` — created (11 tests: no-change, new nodes, removed nodes, changed bodyHash, mixed, null bodyHash cases)
+- `test/cli/commands/sync.test.ts` — created (6 tests: fingerprint short-circuit, first sync, --full override, delta application, snapshot counts, success outcome)
+- `test/cli/format/status.test.ts` — created (11 tests: kind counts, last snapshot, no snapshot, excluded count, DRIFT indicator, determinism, golden)
+- `test/cli/commands/status.test.ts` — created (8 tests: table/view counts, snapshot timestamp, never synced, drift detected, no drift, no snapshots no drift, return type)
+- `test/cli/commands/init.test.ts` — modified (added `_syncFn: noSync` to all `runInit` calls to isolate init tests from the now-real sync seam)
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|------|-----------|-------|------------|-----|-------|-------------|----------|
+| 4.1 | `test/cli/sync/incremental.test.ts` | Unit | N/A (new) | Written (module not found) | 11/11 pass | 6 describe blocks: no-change, new, removed, changed, mixed (all 3 at once), null bodyHash | Clean — two-pass O(n) algorithm; no map iteration issues |
+| 4.2 | `test/cli/commands/sync.test.ts` | Unit | N/A (new) | Written (module not found) | 6/6 pass | Fingerprint equal/different/absent, --full, snapshot recorded, success outcome; fake adapter RawCatalog fixed for exactOptionalPropertyTypes | Added _syncFn injection to InitOptions to isolate Batch C tests from real sync |
+| 4.3 (fmt) | `test/cli/format/status.test.ts` | Unit | N/A (new) | Written (module not found) | 11/11 pass | Counts/snapshot/no-snapshot/excluded/DRIFT/no-DRIFT/determinism/golden | Clean — sorted keys, deterministic sections |
+| 4.3 (cmd) | `test/cli/commands/status.test.ts` | Unit | N/A (new) | Written (module not found) | 8/8 pass | table/view counts, snapshot info, never-synced, drift yes/no, no-snapshots-no-drift, return type | Fixed makeNode default kind bug (test fix) |
+
+### Learnings (Batch D)
+
+**`_syncFn` injection for `syncAfterInit` seam (L-011):** When Batch D filled the `syncAfterInit` seam with a real sync, all Batch C init tests failed (ConnectionError: fixture.db doesn't exist in temp dirs). Fix: added `_syncFn?: (root: string) => Promise<void>` to `InitOptions` so tests can inject a no-op, keeping init tests isolated from the sync path. Pattern: injectable sync hook on the options object is cleaner than module-level mocking with vi.mock.
+
+**`exactOptionalPropertyTypes` in fake adapters (L-012):** With `exactOptionalPropertyTypes: true`, you cannot pass `body: undefined` as an optional field — TypeScript treats it as assigning `undefined` to a required-absent key. Fix: use a conditional spread `n.bodyHash !== null ? { body: n.bodyHash } : {}` or a type guard to only include the key when it has a value.
+
+### Gate result (Batch D)
+
+`npx tsc --noEmit`: CLEAN (no output, exit 0)
+`npm test`: PASS — 52 test files, 756 tests, 0 failures (36 new tests added in Batch D)
+
+---
+
 ## Next batch
 
-Batch D (tasks 4.1–4.3): `sync` incremental selector (fake store) + `status` + status formatter.
+Batch E (tasks 5.1–5.3): shared `src/core/present/explore.ts` formatter + `explore` command + `query` command (+ `--json`) + formatters.
+
+Note (design override from tasks.md): The SHARED `explore` formatter lives in `src/core/present/` (NOT `src/cli/format/` as design Decision 2 stated) — PURE, core-types-only, reused by Phase-5 MCP. CLI-only formatters (`query`/`status`/`diff`) stay in `src/cli/format/`.

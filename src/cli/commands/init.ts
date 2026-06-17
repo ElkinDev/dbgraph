@@ -24,6 +24,10 @@ import type { BuildConfigInput } from '../config/build-config.js';
 import { runWizard } from '../init/wizard.js';
 import type { CapabilityMatrix } from '../../index.js';
 import type { HandlerOutcome } from '../dispatch.js';
+import { parseConfig } from '../config/parse-config.js';
+import { resolveSecrets } from '../config/resolve-secrets.js';
+import { createSqliteSchemaAdapter, createMssqlSchemaAdapter, createSqliteGraphStore } from '../../index.js';
+import { runSync } from './sync.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public input types
@@ -48,7 +52,15 @@ type InteractiveInit = {
   capabilitiesOverride?: CapabilityMatrix;
 };
 
-export type InitOptions = { projectRoot: string } & (
+export type InitOptions = {
+  projectRoot: string;
+  /**
+   * Overrides the sync step for testing. When provided, runInit calls this
+   * instead of syncAfterInit. Use to isolate init tests from the sync path.
+   * @internal test use only
+   */
+  _syncFn?: (projectRoot: string) => Promise<void>;
+} & (
   | (NonInteractiveInit & { interactive?: false })
   | InteractiveInit
 );
@@ -88,17 +100,56 @@ function ensureGitignored(projectRoot: string): void {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Stub for the first sync after init.
- * Batch D will replace this with the real sync implementation.
- * Returns success immediately without touching any database.
+ * Runs the first incremental sync after init.
+ * Reads dbgraph.config.json from the project root, resolves secrets, creates the
+ * appropriate adapter + store, and delegates to runSync.
  *
- * The seam is kept as a separate exported function so Batch D can wire it by
- * replacing this file's import — no changes to runInit itself needed.
+ * ADR-004: only imports via the public barrel + node builtins.
+ * Security: never logs resolved URLs; resolved config is not written to any output.
  */
-export async function syncAfterInit(_projectRoot: string): Promise<void> {
-  // Batch D seam: real sync will call createSqliteSchemaAdapter/createMssqlSchemaAdapter
-  // and run the incremental sync. For now, no-op.
-  return Promise.resolve();
+export async function syncAfterInit(projectRoot: string): Promise<void> {
+  // Read and parse the config written by runInit
+  const configPath = join(projectRoot, 'dbgraph.config.json');
+  const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
+  const cfg = parseConfig(rawJson);
+
+  // Resolve ${env:VAR} references using process.env
+  const resolved = resolveSecrets(cfg);
+
+  // Determine the store path (.dbgraph/dbgraph.db inside the project root)
+  const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
+  // Ensure .dbgraph directory exists
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(projectRoot, '.dbgraph'), { recursive: true });
+
+  let adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
+
+  if (resolved.dialect === 'sqlite') {
+    adapter = await createSqliteSchemaAdapter({
+      file: resolved.source.file,
+      ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
+    });
+  } else {
+    // mssql
+    const src = resolved.source;
+    adapter = await createMssqlSchemaAdapter({
+      server: src.server,
+      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
+      database: src.database,
+      authentication: src.domain !== undefined
+        ? { type: 'ntlm', domain: src.domain, user: src.user, password: src.password }
+        : { type: 'sql', user: src.user, password: src.password },
+    });
+  }
+
+  const store = await createSqliteGraphStore({ path: storePath });
+
+  try {
+    await runSync({ adapter, store, full: false });
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -200,7 +251,9 @@ export async function runInit(options: InitOptions): Promise<HandlerOutcome> {
   ensureGitignored(projectRoot);
 
   // ── First sync (Batch D seam) ──────────────────────────────────────────────
-  await syncAfterInit(projectRoot);
+  // Use injected _syncFn if provided (test isolation), otherwise call the real seam.
+  const syncFn = options._syncFn ?? syncAfterInit;
+  await syncFn(projectRoot);
 
   return { type: 'success' };
 }

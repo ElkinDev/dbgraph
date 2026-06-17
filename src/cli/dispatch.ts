@@ -11,8 +11,19 @@
  * ADR-004: no adapter imports here — only types from this module.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ParsedArgs } from './parse/args.js';
 import { runInit } from './commands/init.js';
+import { runSync } from './commands/sync.js';
+import { runStatus } from './commands/status.js';
+import { parseConfig } from './config/parse-config.js';
+import { resolveSecrets } from './config/resolve-secrets.js';
+import {
+  createSqliteSchemaAdapter,
+  createMssqlSchemaAdapter,
+  createSqliteGraphStore,
+} from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler type
@@ -92,12 +103,82 @@ async function handleInit(args: ParsedArgs): Promise<HandlerOutcome> {
   return runInit({ projectRoot, interactive: true });
 }
 
-async function handleSync(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('sync handler not yet implemented — Batch D will fill this in');
+/**
+ * Opens adapter + store from the project config and runs sync.
+ * --full flag forces a full re-extraction regardless of fingerprint.
+ */
+async function handleSync(args: ParsedArgs): Promise<HandlerOutcome> {
+  const full = args.flags['full'] === true;
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  try {
+    return await runSync({ adapter, store, full });
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
 }
 
+/**
+ * Opens adapter + store from the project config and runs status.
+ * Writes formatted output to stdout.
+ */
 async function handleStatus(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('status handler not yet implemented — Batch D will fill this in');
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  try {
+    const result = await runStatus({ adapter, store });
+    // Write to stdout (cli.ts owns process.exit but handlers own I/O)
+    process.stdout.write(result.output);
+    return { type: 'success' };
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared: open adapter + store from project config
+// ─────────────────────────────────────────────────────────────────────────────
+
+type AdapterAndStore = {
+  adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
+  store: Awaited<ReturnType<typeof createSqliteGraphStore>>;
+};
+
+async function openAdapterAndStore(projectRoot: string): Promise<AdapterAndStore> {
+  const configPath = join(projectRoot, 'dbgraph.config.json');
+  const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
+  const cfg = parseConfig(rawJson);
+  const resolved = resolveSecrets(cfg);
+
+  const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
+  const { mkdirSync } = await import('node:fs');
+  mkdirSync(join(projectRoot, '.dbgraph'), { recursive: true });
+
+  let adapter: Awaited<ReturnType<typeof createSqliteSchemaAdapter>> | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
+
+  if (resolved.dialect === 'sqlite') {
+    adapter = await createSqliteSchemaAdapter({
+      file: resolved.source.file,
+      ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
+    });
+  } else {
+    const src = resolved.source;
+    adapter = await createMssqlSchemaAdapter({
+      server: src.server,
+      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
+      database: src.database,
+      authentication: src.domain !== undefined
+        ? { type: 'ntlm', domain: src.domain, user: src.user, password: src.password }
+        : { type: 'sql', user: src.user, password: src.password },
+    });
+  }
+
+  const store = await createSqliteGraphStore({ path: storePath });
+  return { adapter, store };
 }
 
 async function handleQuery(_args: ParsedArgs): Promise<HandlerOutcome> {
