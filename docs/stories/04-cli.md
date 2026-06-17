@@ -7,7 +7,7 @@ Goal: everything the MCP offers, available to humans and scripts. References: §
 
 ### US-020 — dbgraph query
 **As** a developer, **I want** to search from the terminal, **so that** I can use the graph without an agent.
-**Phase:** 4 · **Depends on:** US-011 · **Status:** ☐ pending
+**Phase:** 4 · **Depends on:** US-011 · **Status:** ☑ done (phase-4-cli-config)
 
 **Acceptance criteria:**
 - `dbgraph query orders` prints the hits with type and qualified name (same search engine as US-011).
@@ -15,7 +15,7 @@ Goal: everything the MCP offers, available to humans and scripts. References: §
 
 ### US-021 — dbgraph explore (CLI)
 **As** a developer, **I want** the explore bundle in the terminal, **so that** I can understand an entity without opening SSMS.
-**Phase:** 4 · **Depends on:** US-010 · **Status:** ☐ pending
+**Phase:** 4 · **Depends on:** US-010 · **Status:** ☑ done (phase-4-cli-config)
 
 **Acceptance criteria:**
 - `dbgraph explore dbo.orders` prints the same content as the MCP tool (same source, same golden).
@@ -23,7 +23,7 @@ Goal: everything the MCP offers, available to humans and scripts. References: §
 
 ### US-022 — dbgraph diff
 **As** a developer, **I want** to compare two snapshots, **so that** I can see schema drift between dates.
-**Phase:** 4 · **Depends on:** US-009 · **Status:** ☐ pending
+**Phase:** 4 · **Depends on:** US-009 · **Status:** ☑ done (phase-4-cli-config)
 
 **Acceptance criteria:**
 - `dbgraph diff <snapA> <snapB>` (and `diff --last`) lists added/removed/modified grouped by type.
