@@ -12,7 +12,7 @@
  */
 
 import type { Database as Db, Statement } from 'better-sqlite3';
-import type { GraphStore, UpsertResult, SearchHit, SnapshotRecord } from '../../../core/ports/graph-store.js';
+import type { GraphStore, UpsertResult, SearchHit, SnapshotRecord, SnapshotObjectRow } from '../../../core/ports/graph-store.js';
 import type { GraphNode, NodeKind, NodePayload, IndexLevel } from '../../../core/model/node.js';
 import type { GraphEdge, EdgeKind, EdgeConfidence, EdgeAttrs } from '../../../core/model/edge.js';
 import type { NormalizedGraph } from '../../../core/model/graph.js';
@@ -56,6 +56,14 @@ interface SnapshotRow {
 
 interface MetaRow {
   value: string;
+}
+
+interface SnapshotObjectDbRow {
+  snapshot_id: string;
+  node_id: string;
+  kind: string;
+  qname: string;
+  body_hash: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -114,6 +122,8 @@ export class SqliteGraphStore implements GraphStore {
   private readonly stmtPutSnapshot: Statement;
   private readonly stmtListSnapshots: Statement;
   private readonly stmtGetSchemaVersion: Statement;
+  private readonly stmtInsertSnapshotObject: Statement;
+  private readonly stmtGetSnapshotObjects: Statement;
 
   // FTS read statements cached once per instance (F-7)
   private readonly stmtFtsSearch: Statement;
@@ -195,6 +205,23 @@ export class SqliteGraphStore implements GraphStore {
     this.stmtGetSchemaVersion = db.prepare(
       `SELECT value FROM meta WHERE key = 'schema_version'`,
     );
+
+    // snapshot_objects manifest — phase-4-cli-config Batch F (Decision 3)
+    // INSERT INTO snapshot_objects via SELECT from nodes (same transaction as putSnapshot).
+    this.stmtInsertSnapshotObject = db.prepare(`
+      INSERT INTO snapshot_objects (snapshot_id, node_id, kind, qname, body_hash)
+      SELECT ?, id, kind, qname, body_hash
+      FROM nodes
+      WHERE missing = 0 AND excluded = 0
+      ORDER BY qname, id
+    `);
+
+    this.stmtGetSnapshotObjects = db.prepare(`
+      SELECT snapshot_id, node_id, kind, qname, body_hash
+      FROM snapshot_objects
+      WHERE snapshot_id = ?
+      ORDER BY qname, node_id
+    `);
 
     // FTS read statements — prepared once here to match the cached-statement pattern (F-7)
     this.stmtFtsSearch = db.prepare(`
@@ -464,7 +491,9 @@ export class SqliteGraphStore implements GraphStore {
   // ─── snapshots ──────────────────────────────────────────────────────────────
 
   async putSnapshot(s: SnapshotRecord): Promise<void> {
-    try {
+    // Write the snapshot row AND the snapshot_objects manifest in ONE transaction
+    // (Design Decision 3 — manifest is a faithful photograph of current nodes at snapshot time).
+    const writeSnapshotAndManifest = this.db.transaction(() => {
       this.stmtPutSnapshot.run({
         id: s.id,
         taken_at: s.takenAt,
@@ -473,8 +502,29 @@ export class SqliteGraphStore implements GraphStore {
         fingerprint: s.fingerprint,
         counts: JSON.stringify(s.counts),
       });
+      // Populate snapshot_objects from current visible nodes (missing=0 AND excluded=0).
+      this.stmtInsertSnapshotObject.run(s.id);
+    });
+
+    try {
+      writeSnapshotAndManifest();
     } catch (e) {
       throw new StorageError('putSnapshot failed', e);
+    }
+  }
+
+  async getSnapshotObjects(snapshotId: string): Promise<readonly SnapshotObjectRow[]> {
+    try {
+      const rows = this.stmtGetSnapshotObjects.all(snapshotId) as SnapshotObjectDbRow[];
+      return rows.map((row) => ({
+        snapshotId: row.snapshot_id,
+        nodeId: row.node_id,
+        kind: row.kind,
+        qname: row.qname,
+        bodyHash: row.body_hash,
+      }));
+    } catch (e) {
+      throw new StorageError('getSnapshotObjects failed', e);
     }
   }
 

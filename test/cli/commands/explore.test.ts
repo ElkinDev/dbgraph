@@ -73,6 +73,7 @@ function makeFakeStore(opts: {
     async searchFts() { return { hits: [] as readonly SearchHit[], total: 0 }; },
     async putSnapshot() {},
     async listSnapshots() { return [] as readonly SnapshotRecord[]; },
+    async getSnapshotObjects() { return []; },
     async getMeta() { return null; },
     async setMeta() {},
   };

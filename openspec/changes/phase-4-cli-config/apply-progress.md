@@ -227,8 +227,64 @@ Shared `src/core/present/explore.ts` formatter (pure, core-types-only, boundary-
 
 ---
 
-## Next batch
+---
 
-Batch F (tasks 6.1–6.5): storage schema v1→v2 (`snapshot_objects` DDL, migration), `putSnapshot` manifest write, diff engine + `diff` formatter + command.
+## Batch F (tasks 6.1–6.5) — COMPLETE
+
+Storage schema v1→v2 (`snapshot_objects` table + auto-migration), `putSnapshot` manifest write inside same transaction, `getSnapshotObjects` port method, pure diff engine, PURE golden-pinned `diff` formatter, `diff` command with `--last` and pre-v2 degradation, `dispatch.ts` wired with real `handleDiff`.
+
+### Tasks completed
+
+- [x] 6.1 RED→GREEN `SNAPSHOT_OBJECTS_DDL` added to `src/adapters/storage/sqlite/schema.ts`. Single export constant containing two SQL statements (table DDL + index). `CREATE TABLE IF NOT EXISTS snapshot_objects(snapshot_id, node_id, kind, qname, body_hash)` + `CREATE INDEX IF NOT EXISTS idx_snapshot_objects_snapshot ON snapshot_objects(snapshot_id)`. Tests: 4 unit tests covering export, columns, index name, IF NOT EXISTS.
+- [x] 6.2 RED→GREEN `CURRENT_SCHEMA_VERSION` bumped 1→2. Appended `{ version: 2, up }` migration to `MIGRATIONS` array in `migrations.ts`. v2 `up` runs `SNAPSHOT_OBJECTS_DDL` split by `;\n`. Tests: 5 new tests — fresh DB at v2, v1→v2 auto-migrate with node preservation (file-based temp DB), v2 no-op idempotent open, `snapshot_objects` table exists post-migration. Existing v1 tests updated to expect version=2.
+- [x] 6.3 RED→GREEN `putSnapshot` in `sqlite-graph-store.ts` now wraps snapshot INSERT + `INSERT INTO snapshot_objects ... SELECT ... FROM nodes WHERE missing=0 AND excluded=0 ORDER BY qname,id` in a single `db.transaction()`. Added `getSnapshotObjects(snapshotId): Promise<readonly SnapshotObjectRow[]>` to the port interface (`src/core/ports/graph-store.ts`) and SQLite implementation. `SnapshotObjectRow` added to the port + exported via `src/core/index.ts`. All existing fake `GraphStore` doubles in tests updated with `getSnapshotObjects: async () => []`. Tests: 5 new unit tests on manifest round-trip; existing 31 store tests still green.
+- [x] 6.4 RED→GREEN `src/cli/diff/engine.ts` — pure `diffManifests(a, b): DiffResult`. Comparison by `nodeId`. Added/removed/changed with `oldBodyHash`/`newBodyHash` for changed rows. Types: `DiffAddedRow`, `DiffRemovedRow`, `DiffChangedRow`, `DiffResult`. Tests: 14 unit tests — basic added/removed/changed, all-three-at-once, grouping by kind, null hash edge cases, empty manifests, identity comparison by nodeId not qname, purity/determinism, no-mutation.
+- [x] 6.5 RED→GREEN `src/cli/format/diff.ts` — PURE formatter `formatDiff(result: DiffResult): string`. Sections: ADDED / REMOVED / MODIFIED (sorted by kind then qname). For MODIFIED: `definition changed (hash: X... -> Y...)`. `formatDiffNoManifest(snapA, snapB)` for pre-v2 degradation. `src/cli/commands/diff.ts` — `runDiff(options: DiffOptions): Promise<DiffOutcome>`. Supports explicit `snapA`/`snapB` IDs and `last: true` (two most-recent from `listSnapshots`). Pre-v2 degradation: either manifest empty -> `formatDiffNoManifest`. `dispatch.ts` wired with real `handleDiff` (reads `--last` flag or positionals[0]/[1] as snap IDs). Exit: 'success' (exit 0) when no changes; 'negative' (exit 1) when changes or degradation. Tests: 14 formatter tests + 8 command tests.
+
+### Files created (Batch F)
+
+- `src/adapters/storage/sqlite/schema.ts` — modified (added `SNAPSHOT_OBJECTS_DDL` constant)
+- `src/adapters/storage/sqlite/migrations.ts` — modified (`CURRENT_SCHEMA_VERSION` 1->2, appended v2 migration)
+- `src/adapters/storage/sqlite/sqlite-graph-store.ts` — modified (`putSnapshot` fills manifest in same transaction; added `getSnapshotObjects`; new prepared statements)
+- `src/core/ports/graph-store.ts` — modified (added `SnapshotObjectRow` type; added `getSnapshotObjects` to `GraphStore` interface)
+- `src/core/index.ts` — modified (exported `SnapshotObjectRow` from ports section)
+- `src/cli/diff/engine.ts` — created (`diffManifests`, `DiffResult`, `DiffAddedRow`, `DiffRemovedRow`, `DiffChangedRow`)
+- `src/cli/format/diff.ts` — created (`formatDiff`, `formatDiffNoManifest`)
+- `src/cli/commands/diff.ts` — created (`runDiff`, `DiffOptions`, `DiffOutcome`)
+- `src/cli/dispatch.ts` — modified (wired real `handleDiff` replacing stub; added `runDiff` import)
+
+### Test files created/modified (Batch F)
+
+- `test/adapters/storage/sqlite/schema.test.ts` — modified (existing v1 tests updated to v2; 9 new tests for 6.1 DDL + 5 new tests for 6.2 migration)
+- `test/adapters/storage/sqlite/sqlite-graph-store.test.ts` — modified (5 new tests for 6.3 manifest; removed unused @ts-expect-error directives)
+- `test/cli/diff/engine.test.ts` — created (14 tests)
+- `test/cli/format/diff.test.ts` — created (14 tests)
+- `test/cli/commands/diff.test.ts` — created (8 tests)
+- `test/cli/commands/explore.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/cli/commands/query.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/cli/commands/status.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/cli/commands/sync.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/core/query/impact.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/core/query/neighbors.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/core/query/path.test.ts` — modified (added `getSnapshotObjects` to fake store)
+- `test/core/query/search.test.ts` — modified (added `getSnapshotObjects` to fake store)
+
+### Learnings (Batch F)
+
+**`@ts-expect-error` becomes an error once the type is added (L-014):** When `getSnapshotObjects` was written with `@ts-expect-error`, adding it to the port made those directives into TypeScript errors. Fix: remove `@ts-expect-error` after the port is official.
+
+**Fake store doubles break on new port methods (L-015):** Adding a method to `GraphStore` requires updating every fake double. Quick scan: `grep -rn "async listSnapshots" test/` finds all doubles. Always add a no-op at the same time as the port change.
+
+**`readonly T[]` cannot be cast directly to `T[]` (L-016):** `readonly SnapshotObjectRow[]` cannot be `as Array<{...}>` — TypeScript rejects due to mutability mismatch. Fix: double-cast via `as unknown as Array<{...}>`.
+
+### Gate result (Batch F)
+
+`npx tsc --noEmit`: CLEAN (no output, exit 0)
+`npm test`: PASS — 59 test files, 858 tests, 0 failures (50 new tests added in Batch F)
+`test/core/boundaries.test.ts`: 7/7 pass — boundary-clean
+
+---
+
+## Next batch
 
 Batch G (tasks 7.1–7.6): tsup build wiring, CLI boundaries test, E2E (SQLite + gated MSSQL), final sweep.

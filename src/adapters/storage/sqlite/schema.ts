@@ -82,6 +82,30 @@ export const SCHEMA_V1_DDL: readonly string[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DDL for v2 additions (phase-4-cli-config Batch F)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DDL for the snapshot_objects manifest table (schema version 2).
+ * Stores one row per indexed object per snapshot, enabling per-object diff
+ * without re-querying the target database. LOCAL index ONLY — never written
+ * to the target DB. Includes the supporting index on snapshot_id.
+ *
+ * Design Decision 3 (phase-4-cli-config): populated by putSnapshot from the
+ * store's own nodes table inside the same transaction.
+ */
+export const SNAPSHOT_OBJECTS_DDL = [
+  `CREATE TABLE IF NOT EXISTS snapshot_objects (
+    snapshot_id TEXT NOT NULL REFERENCES snapshots(id),
+    node_id     TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    qname       TEXT NOT NULL,
+    body_hash   TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_snapshot_objects_snapshot ON snapshot_objects(snapshot_id)`,
+].join(';\n');
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Raw database factory (for migrations and tests)
 // ─────────────────────────────────────────────────────────────────────────────
 

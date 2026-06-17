@@ -21,6 +21,7 @@ import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
 import { parseConfig } from './config/parse-config.js';
 import { resolveSecrets } from './config/resolve-secrets.js';
+import { runDiff } from './commands/diff.js';
 import {
   createSqliteSchemaAdapter,
   createMssqlSchemaAdapter,
@@ -227,8 +228,32 @@ async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
   }
 }
 
-async function handleDiff(_args: ParsedArgs): Promise<HandlerOutcome> {
-  throw new Error('diff handler not yet implemented — Batch F will fill this in');
+/**
+ * Compares two snapshot manifests and returns the per-object diff.
+ * --last: compare the two most-recent snapshots.
+ * <snapA> <snapB>: compare explicit snapshot IDs.
+ * Exit 0 when no changes, exit 1 when changes exist (CI-gate, Decision 9).
+ */
+async function handleDiff(args: ParsedArgs): Promise<HandlerOutcome> {
+  const last = args.flags['last'] === true;
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openAdapterAndStore(projectRoot);
+  try {
+    let result;
+    if (last) {
+      result = await runDiff({ store, last: true });
+    } else {
+      const snapA = args.positionals[0] ?? '';
+      const snapB = args.positionals[1] ?? '';
+      result = await runDiff({ store, snapA, snapB });
+    }
+    process.stdout.write(result.output);
+    return result;
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

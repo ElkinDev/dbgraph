@@ -82,6 +82,7 @@ function makeFakeStore(opts: {
       return [...snapshots].reverse(); // most-recent first
     },
 
+    async getSnapshotObjects() { return []; },
     async getMeta() { return null; },
     async setMeta() {},
   };
