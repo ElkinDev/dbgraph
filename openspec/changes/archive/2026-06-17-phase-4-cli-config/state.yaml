@@ -1,0 +1,56 @@
+change: phase-4-cli-config
+schema: spec-driven
+artifact_store: openspec
+created: 2026-06-16
+updated: 2026-06-17
+last_phase: archive
+
+phases:
+  explore:
+    status: skipped
+  proposal:
+    status: done
+    artifact: proposal.md
+  spec:
+    status: done
+    artifacts:
+      - specs/cli-config/spec.md
+      - specs/graph-storage/spec.md
+  design:
+    status: done
+    artifact: design.md
+  tasks:
+    status: done
+    artifact: tasks.md
+  apply:
+    status: done
+    batch_a: done
+    batch_b: done
+    batch_c: done
+    batch_d: done
+    batch_e: done
+    batch_f: done
+    batch_g: done
+    artifact: apply-progress.md
+  verify:
+    status: done
+    artifact: verify-report.md
+    outcome: PASS
+    last_outcome: PASS
+    gates:
+      tests: 882/882 passing
+      lint: clean
+      tsc: clean
+      mssql_integration: green (CI)
+    notes: >
+      PASS with zero carry-over. 0 CRITICAL, 0 WARNING. 5 informational SUGGESTIONS deferred
+      to backlog (not carry-over). All 38 spec scenarios (cli-config 31 + graph-storage 7)
+      COMPLIANT. All 5 CI jobs green on main (ubuntu/windows x 22.x/24.x + mssql-integration).
+  archive:
+    status: done
+    artifact: archive-report.md
+    archived_to: openspec/changes/archive/2026-06-17-phase-4-cli-config/
+    archived_date: 2026-06-17
+
+next_recommended: none
+change_closed: true

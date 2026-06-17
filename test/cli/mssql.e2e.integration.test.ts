@@ -5,7 +5,7 @@
  * Uses the Phase-3 Testcontainers harness (test/fixtures/mssql/container.ts).
  *
  * IMPORTANT SECURITY CONSTRAINTS:
- *   - NEVER touches a real or named validation database or any real database.
+ *   - NEVER touches a real or named validation database — ephemeral container only.
  *   - Uses an EPHEMERAL SQL Server container (startMssqlContainer).
  *   - torture.sql is applied to the ephemeral container — ONLY reads via the adapter.
  *   - Read-only against target is INVIOLABLE (ADR-005).
