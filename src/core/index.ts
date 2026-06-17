@@ -94,6 +94,14 @@ export { getImpact } from './query/impact.js';
 export { findJoinPath } from './query/path.js';
 export { search, LEVENSHTEIN_THRESHOLD, TYPO_CAP, type SearchResult } from './query/search.js';
 
+// ── Presentation (present/) — pure formatters shared across CLI + MCP ────────
+// ADR-004: present/ imports ONLY core model/port types — no adapters/cli/mcp.
+export {
+  formatExplore,
+  type ExploreDetail,
+  type ExploreView,
+} from './present/explore.js';
+
 // ── Error classes ─────────────────────────────────────────────────────────────
 export {
   DbgraphError,

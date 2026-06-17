@@ -103,6 +103,12 @@ describe('src/core/index.ts — exports', () => {
   });
 });
 
+describe('src/core/index.ts — formatExplore (task 5.1)', () => {
+  it('exports formatExplore as a function', () => {
+    expect(typeof CoreBarrel.formatExplore).toBe('function');
+  });
+});
+
 describe('src/index.ts — package root exports', () => {
   it('exports DBGRAPH_VERSION', () => {
     expect(typeof RootBarrel.DBGRAPH_VERSION).toBe('string');
