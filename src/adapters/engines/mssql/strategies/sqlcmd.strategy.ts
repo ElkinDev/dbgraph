@@ -81,7 +81,7 @@ const CATALOG_FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
 
 const DETECT_TIMEOUT_MS = 3000;
 const CONNECT_TIMEOUT_MS = 10000;
-const CATALOG_TIMEOUT_MS = 60000;
+const CATALOG_TIMEOUT_MS = 300000; // 5 min — large enterprise catalog families (e.g. columns) exceed 60s
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -360,6 +360,7 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
         throw new Error(
           `sqlcmd: query for family "${family.key}" failed. ` +
           `Exit: ${result.status ?? 'null'}. ` +
+          `Error: ${result.error?.message ?? 'none'}. ` +
           `Stderr: ${stderr}`,
         );
       }
@@ -415,6 +416,7 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       throw new Error(
         `sqlcmd: fingerprint query failed. ` +
         `Exit: ${result.status ?? 'null'}. ` +
+        `Error: ${result.error?.message ?? 'none'}. ` +
         `Stderr: ${stderr}`,
       );
     }
