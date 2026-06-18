@@ -107,6 +107,10 @@ export interface MssqlSchemaAdapterDeps {
   readonly NativeTedious?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
   /** Override SqlcmdStrategy constructor — for testing only. */
   readonly Sqlcmd?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+  /** Override ManualDumpStrategy constructor — for testing only. */
+  readonly ManualDump?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+  /** Override ConsentedInstallStrategy constructor — for testing only. */
+  readonly ConsentedInstall?: new (config: MssqlAdapterConfig, logger: Logger, os?: string) => ConnectivityStrategy;
 }
 
 /**
@@ -132,10 +136,13 @@ export async function createMssqlSchemaAdapter(
   const logger = deps.logger ?? noopLogger;
 
   // Build ordered strategy list and select the first viable one.
-  // Pass strategy constructor overrides if provided (for testing).
+  // Pass strategy constructor overrides and logger if provided (for testing/transparency).
   const strategies = buildMssqlStrategies(config, {
+    logger,
     ...(deps.NativeTedious !== undefined ? { NativeTedious: deps.NativeTedious } : {}),
     ...(deps.Sqlcmd !== undefined ? { Sqlcmd: deps.Sqlcmd } : {}),
+    ...(deps.ManualDump !== undefined ? { ManualDump: deps.ManualDump } : {}),
+    ...(deps.ConsentedInstall !== undefined ? { ConsentedInstall: deps.ConsentedInstall } : {}),
   });
   const strategy = await selectStrategy(strategies, logger);
 
