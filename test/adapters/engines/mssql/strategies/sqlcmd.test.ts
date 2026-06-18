@@ -377,7 +377,7 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     await expect(strategy.runCatalog(FULL_SCOPE)).rejects.toThrow();
   });
 
-  it('spawns each catalog query with -y 0 -h -1 -W flags', async () => {
+  it('spawns each catalog query with -y 0 -h -1 (NOT -W — mutually exclusive with -y; Phase-6 fix)', async () => {
     const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
     const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
 
@@ -390,7 +390,9 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(args).toContain('0');
     expect(args).toContain('-h');
     expect(args).toContain('-1');
-    expect(args).toContain('-W');
+    // -W and -y/-Y are mutually exclusive in real sqlcmd (surfaced in Phase-6); -y 0 already
+    // suppresses fixed-width padding, so -W is both redundant and rejected when combined.
+    expect(args).not.toContain('-W');
   });
 
   it('wraps each query in FOR JSON PATH', async () => {
