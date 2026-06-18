@@ -25,14 +25,22 @@ export interface SqliteSource {
  * ALL identity fields (server, database, user, domain, password) MUST be
  * ${env:VAR} references. The plaintext-rejection rule is enforced by
  * buildConfig / parseConfig when writing or reading identity fields.
+ *
+ * auth discriminant (connectivity-strategies A1.5):
+ *   'sql'        — SQL Server auth (user + password required)
+ *   'ntlm'       — Windows/NTLM auth (domain + user + password required)
+ *   'integrated' — Windows Integrated Security; user/password/domain NOT required
+ *   undefined    — inferred: domain present → 'ntlm', else → 'sql' (back-compat)
  */
 export interface MssqlSource {
   readonly server: string;
   readonly port?: string;
   readonly database: string;
-  readonly user: string;
+  readonly user?: string;
   readonly domain?: string;
-  readonly password: string;
+  readonly password?: string;
+  /** Auth mode discriminant. When absent, inferred from field presence (back-compat). */
+  readonly auth?: 'sql' | 'ntlm' | 'integrated';
 }
 
 /**

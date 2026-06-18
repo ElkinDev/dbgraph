@@ -28,3 +28,9 @@ export type {
   SqliteAdapterConfig,
   MssqlAdapterConfig,
 } from './schema-adapter.js';
+
+export type {
+  ConnectivityStrategy,
+  DetectResult,
+  StrategyAttempt,
+} from './connectivity-strategy.js';

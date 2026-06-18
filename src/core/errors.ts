@@ -111,6 +111,32 @@ export class UnsupportedDialectError extends DbgraphError {
   }
 }
 
+// Forward import — type-only to stay within core boundary (ADR-004).
+// StrategyAttempt is defined in the port file; we re-use the type here.
+import type { StrategyAttempt } from './ports/connectivity-strategy.js';
+
+/**
+ * Thrown when all connectivity strategies for an engine have been exhausted —
+ * none could both detect their prerequisite AND successfully probe a connection.
+ * Carries the ordered list of attempts and their individual reasons so callers
+ * and the CLI presenter can surface actionable guidance.
+ *
+ * Code: E_STRATEGY_EXHAUSTION.
+ * connectivity-strategies A1.3.
+ */
+export class StrategyExhaustionError extends DbgraphError {
+  constructor(readonly attempts: readonly StrategyAttempt[]) {
+    const list =
+      attempts.length === 0
+        ? 'No strategies were attempted.'
+        : attempts.map((a) => `${a.id} — ${a.reason}`).join('; ');
+    super(
+      `All connectivity strategies exhausted. ${list}`,
+      'E_STRATEGY_EXHAUSTION',
+    );
+  }
+}
+
 /**
  * Thrown when the engine adapter cannot connect to the source database.
  * Covers: file not found, file not a valid database, database locked/busy,

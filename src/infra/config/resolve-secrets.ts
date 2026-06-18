@@ -11,6 +11,13 @@
  */
 
 import { ConfigError } from '../../core/errors.js';
+
+// Internal helper to throw a ConfigError for missing credential fields.
+function missingCredential(field: string): never {
+  throw new ConfigError(
+    `source (mssql): field "${field}" is required for sql/ntlm authentication.`,
+  );
+}
 import type { DbgraphConfig, SqliteSource, MssqlSource } from './schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +63,25 @@ function resolveMssqlSource(
   source: MssqlSource,
   envMap: Record<string, string | undefined>,
 ): MssqlSource {
+  // integrated mode: only server + database are required; no credential fields.
+  if (source.auth === 'integrated') {
+    const resolved: {
+      server: string;
+      database: string;
+      auth: 'integrated';
+      port?: string;
+    } = {
+      server: resolveValue(source.server, envMap),
+      database: resolveValue(source.database, envMap),
+      auth: 'integrated',
+    };
+    if (source.port !== undefined) {
+      resolved.port = resolveValue(source.port, envMap);
+    }
+    return resolved;
+  }
+
+  // sql / ntlm / inferred — all credential fields present and required.
   const resolved: {
     server: string;
     database: string;
@@ -63,17 +89,22 @@ function resolveMssqlSource(
     password: string;
     port?: string;
     domain?: string;
+    auth?: 'sql' | 'ntlm';
   } = {
     server: resolveValue(source.server, envMap),
     database: resolveValue(source.database, envMap),
-    user: resolveValue(source.user, envMap),
-    password: resolveValue(source.password, envMap),
+    // Guard each credential field — only resolve when present (A1.6).
+    user: source.user !== undefined ? resolveValue(source.user, envMap) : missingCredential('user'),
+    password: source.password !== undefined ? resolveValue(source.password, envMap) : missingCredential('password'),
   };
   if (source.port !== undefined) {
     resolved.port = resolveValue(source.port, envMap);
   }
   if (source.domain !== undefined) {
     resolved.domain = resolveValue(source.domain, envMap);
+  }
+  if (source.auth !== undefined) {
+    resolved.auth = source.auth;
   }
   return resolved;
 }

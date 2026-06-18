@@ -111,6 +111,132 @@ describe('parseConfig — valid mssql', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A1.5: integrated auth mode — no credentials required
+// connectivity-strategies Batch A
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseConfig — mssql integrated auth (A1.5)', () => {
+  const integratedCfg = {
+    dialect: 'mssql',
+    source: {
+      server: '${env:DBGRAPH_DB_HOST}',
+      database: '${env:DBGRAPH_DB_NAME}',
+      auth: 'integrated',
+    },
+  };
+
+  it('parses an integrated config with only server and database', () => {
+    const cfg = parseConfig(integratedCfg);
+    expect(cfg.dialect).toBe('mssql');
+  });
+
+  it('parsed integrated source carries server and database', () => {
+    const cfg = parseConfig(integratedCfg);
+    if (cfg.dialect === 'mssql') {
+      expect(cfg.source.server).toBe('${env:DBGRAPH_DB_HOST}');
+      expect(cfg.source.database).toBe('${env:DBGRAPH_DB_NAME}');
+    }
+  });
+
+  it('parsed integrated source has auth = "integrated"', () => {
+    const cfg = parseConfig(integratedCfg);
+    if (cfg.dialect === 'mssql') {
+      expect(cfg.source.auth).toBe('integrated');
+    }
+  });
+
+  it('integrated source has no user, password, or domain', () => {
+    const cfg = parseConfig(integratedCfg);
+    if (cfg.dialect === 'mssql') {
+      expect(cfg.source.user).toBeUndefined();
+      expect(cfg.source.password).toBeUndefined();
+      expect(cfg.source.domain).toBeUndefined();
+    }
+  });
+
+  it('does NOT throw when user/password absent in integrated mode', () => {
+    expect(() => parseConfig(integratedCfg)).not.toThrow();
+  });
+
+  it('sql mode still requires user', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:S}',
+          database: '${env:D}',
+          auth: 'sql',
+          // user missing
+          password: '${env:P}',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('sql mode still requires password', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:S}',
+          database: '${env:D}',
+          auth: 'sql',
+          user: '${env:U}',
+          // password missing
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('ntlm mode still requires user and password', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:S}',
+          database: '${env:D}',
+          auth: 'ntlm',
+          domain: '${env:DOM}',
+          // user missing
+          password: '${env:P}',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('default inference: domain present → ntlm (no auth field)', () => {
+    const cfg = parseConfig({
+      dialect: 'mssql',
+      source: {
+        server: '${env:S}',
+        database: '${env:D}',
+        user: '${env:U}',
+        domain: '${env:DOM}',
+        password: '${env:P}',
+      },
+    });
+    if (cfg.dialect === 'mssql') {
+      expect(cfg.source.auth).toBe('ntlm');
+    }
+  });
+
+  it('default inference: no domain → sql (no auth field)', () => {
+    const cfg = parseConfig({
+      dialect: 'mssql',
+      source: {
+        server: '${env:S}',
+        database: '${env:D}',
+        user: '${env:U}',
+        password: '${env:P}',
+      },
+    });
+    if (cfg.dialect === 'mssql') {
+      expect(cfg.source.auth).toBe('sql');
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Unknown dialect → UnsupportedDialectError
 // ─────────────────────────────────────────────────────────────────────────────
 

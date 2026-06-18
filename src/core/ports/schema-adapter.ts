@@ -32,11 +32,15 @@ export interface SqliteAdapterConfig {
  * presence of `server`, `database`, and `authentication` (no `dialect` field
  * needed; each engine keeps its own factory taking its concrete config type).
  *
- * authentication.type 'sql'  — SQL Server authentication (user + password).
- * authentication.type 'ntlm' — Windows/NTLM authentication (domain + user + password).
- * Integrated Kerberos SSO is NOT supported (ADR-006).
+ * authentication.type 'sql'      — SQL Server authentication (user + password).
+ * authentication.type 'ntlm'     — Windows/NTLM authentication (domain + user + password).
+ * authentication.type 'integrated' — Windows Integrated Security; NO credentials required.
+ *                                    The current OS session identity is used (ADR-006 note:
+ *                                    tedious cannot handle this; the strategy registry will
+ *                                    skip the native strategy and use an external tool instead).
  *
  * US-027 (SQL Server adapter), ADR-007 (no new generic config shape).
+ * connectivity-strategies A1.4: integrated member added additively.
  */
 export interface MssqlAdapterConfig {
   readonly server: string;
@@ -49,7 +53,8 @@ export interface MssqlAdapterConfig {
         readonly domain: string;
         readonly user: string;
         readonly password: string;
-      };
+      }
+    | { readonly type: 'integrated' };  // no user/password/domain — current Windows session
   readonly encrypt?: boolean;              // default true (recommended for production)
   readonly trustServerCertificate?: boolean; // default true for dev; set false in production
 }

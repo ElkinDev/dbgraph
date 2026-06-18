@@ -181,3 +181,101 @@ describe('resolveSecrets — env map injection', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A1.6: resolveSecrets — integrated mode skips absent credential fields
+// connectivity-strategies Batch A
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resolveSecrets — integrated mode (A1.6)', () => {
+  const integratedCfg: DbgraphConfig = {
+    dialect: 'mssql',
+    source: {
+      server: '${env:DBGRAPH_DB_HOST}',
+      database: '${env:DBGRAPH_DB_NAME}',
+      auth: 'integrated',
+    },
+  };
+
+  const env = {
+    DBGRAPH_DB_HOST: 'corp-sql.example.com',
+    DBGRAPH_DB_NAME: 'my_db',
+  };
+
+  it('resolves server and database for integrated config', () => {
+    const resolved = resolveSecrets(integratedCfg, env);
+    if (resolved.dialect === 'mssql') {
+      expect(resolved.source.server).toBe('corp-sql.example.com');
+      expect(resolved.source.database).toBe('my_db');
+    } else {
+      expect.fail('Expected mssql dialect');
+    }
+  });
+
+  it('does NOT require user, password, or domain env vars for integrated', () => {
+    expect(() => resolveSecrets(integratedCfg, env)).not.toThrow();
+  });
+
+  it('resolved integrated source has no user, password, or domain', () => {
+    const resolved = resolveSecrets(integratedCfg, env);
+    if (resolved.dialect === 'mssql') {
+      expect(resolved.source.user).toBeUndefined();
+      expect(resolved.source.password).toBeUndefined();
+      expect(resolved.source.domain).toBeUndefined();
+    }
+  });
+
+  it('resolved integrated source retains auth = "integrated"', () => {
+    const resolved = resolveSecrets(integratedCfg, env);
+    if (resolved.dialect === 'mssql') {
+      expect(resolved.source.auth).toBe('integrated');
+    }
+  });
+
+  it('still throws ConfigError when server env var is missing in integrated mode', () => {
+    let caught: unknown;
+    try {
+      resolveSecrets(integratedCfg, { DBGRAPH_DB_NAME: 'my_db' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    if (caught instanceof ConfigError) {
+      expect(caught.message).toContain('DBGRAPH_DB_HOST');
+    }
+  });
+});
+
+describe('resolveSecrets — sql mode credentials still required (A1.6)', () => {
+  const sqlCfg: DbgraphConfig = {
+    dialect: 'mssql',
+    source: {
+      server: '${env:S}',
+      database: '${env:D}',
+      user: '${env:U}',
+      password: '${env:P}',
+      auth: 'sql',
+    },
+  };
+
+  it('resolves sql credentials when all env vars are present', () => {
+    const resolved = resolveSecrets(sqlCfg, { S: 'srv', D: 'db', U: 'usr', P: 'pw' });
+    if (resolved.dialect === 'mssql') {
+      expect(resolved.source.user).toBe('usr');
+      expect(resolved.source.password).toBe('pw');
+    }
+  });
+
+  it('throws ConfigError when user env var is missing in sql mode', () => {
+    let caught: unknown;
+    try {
+      resolveSecrets(sqlCfg, { S: 'srv', D: 'db', P: 'pw' });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    if (caught instanceof ConfigError) {
+      expect(caught.message).toContain('U');
+    }
+  });
+});

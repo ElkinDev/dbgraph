@@ -96,12 +96,12 @@ function buildPoolConfig(config: MssqlAdapterConfig): Record<string, unknown> {
   if (auth.type === 'sql') {
     baseConfig['user'] = auth.user;
     baseConfig['password'] = auth.password;
-  } else {
-    // ntlm
+  } else if (auth.type === 'ntlm') {
     baseConfig['domain'] = auth.domain;
     baseConfig['user'] = auth.user;
     baseConfig['password'] = auth.password;
   }
+  // integrated: no credentials — the strategy registry (Batch C) handles this path
 
   return baseConfig;
 }

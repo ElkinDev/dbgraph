@@ -17,7 +17,9 @@ import {
   PermissionError,
   ConfigError,
   UnsupportedDialectError,
+  StrategyExhaustionError,
 } from '../../src/core/errors.js';
+import type { StrategyAttempt } from '../../src/core/ports/connectivity-strategy.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DbgraphError base
@@ -303,5 +305,76 @@ describe('UnsupportedDialectError', () => {
   it('message lists available dialects', () => {
     const err = new UnsupportedDialectError('oracle');
     expect(err.message).toMatch(/sqlite|mssql/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StrategyExhaustionError — connectivity-strategies A1.3
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('StrategyExhaustionError', () => {
+  const attempts: StrategyAttempt[] = [
+    { id: 'native-tedious', reason: 'integrated auth not supported by driver' },
+    { id: 'sqlcmd', reason: 'not detected on PATH' },
+    { id: 'manual-dump', reason: 'dump file not found' },
+  ];
+
+  it('is an instance of Error', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it('is an instance of DbgraphError', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err).toBeInstanceOf(DbgraphError);
+  });
+
+  it('is an instance of StrategyExhaustionError', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err).toBeInstanceOf(StrategyExhaustionError);
+  });
+
+  it('carries stable code E_STRATEGY_EXHAUSTION', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.code).toBe('E_STRATEGY_EXHAUSTION');
+  });
+
+  it('name is StrategyExhaustionError', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.name).toBe('StrategyExhaustionError');
+  });
+
+  it('carries the attempts array', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.attempts).toBe(attempts);
+  });
+
+  it('attempts is readonly and has correct length', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.attempts).toHaveLength(3);
+  });
+
+  it('message lists each attempt id', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.message).toContain('native-tedious');
+    expect(err.message).toContain('sqlcmd');
+    expect(err.message).toContain('manual-dump');
+  });
+
+  it('message lists each attempt reason', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.message).toContain('not detected on PATH');
+    expect(err.message).toContain('dump file not found');
+  });
+
+  it('message format is "{id} — {reason}" for each attempt', () => {
+    const err = new StrategyExhaustionError(attempts);
+    expect(err.message).toContain('sqlcmd — not detected on PATH');
+  });
+
+  it('works with an empty attempts array', () => {
+    const err = new StrategyExhaustionError([]);
+    expect(err).toBeInstanceOf(StrategyExhaustionError);
+    expect(err.attempts).toHaveLength(0);
   });
 });
