@@ -98,19 +98,21 @@ const CATALOG_FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Wraps a catalog SELECT in FOR JSON PATH, INCLUDE_NULL_VALUES.
- * The ORDER BY from the inner query is preserved inside the subquery (ADR-008).
+ * Emits a labeled SQL block for one catalog family.
  *
- * Produces a single wide JSON column per row (standard FOR JSON PATH output).
- * The key alias matches the MssqlRowInput family name so the output can be
- * assembled by the operator into the combined JSON object.
+ * FOR JSON PATH, INCLUDE_NULL_VALUES is appended DIRECTLY to the top-level
+ * query (each queries.ts constant already ends with a top-level ORDER BY).
+ * Top-level ORDER BY + FOR JSON PATH at the same level is valid SQL Server.
+ *
+ * The subquery-wrap pattern (SELECT * FROM (...) AS _rows FOR JSON PATH) is
+ * intentionally NOT used because ORDER BY inside a derived table is illegal in
+ * SQL Server (Msg 1033) unless TOP or OFFSET-FETCH is present.
  */
 function wrapFamily(key: string, sql: string): string {
   return [
     `-- ── family: ${key} ───────────────────────────────────────────────────────`,
-    `SELECT * FROM (`,
     sql,
-    `) AS _rows FOR JSON PATH, INCLUDE_NULL_VALUES;`,
+    `FOR JSON PATH, INCLUDE_NULL_VALUES;`,
     `-- ── end: ${key} ─────────────────────────────────────────────────────────`,
     '',
   ].join('\n');
