@@ -213,6 +213,18 @@ Entry format:
 - **Solution:** Use the async iterator API (`for await (const line of rl)` or `rl[Symbol.asyncIterator]()`) instead of `rl.question()`. The async iterator consumes lines lazily — one per iteration step — regardless of how quickly the underlying stream emits them. Create readline with `terminal: false` and a real (non-null) output writable. Write prompt labels manually via `outputWritable.write(label)` before each `nextLine()` call.
 - **Derived rule (L-010):** For testable readline wizards: (1) use `readline.createInterface({ terminal: false, input, output })` — never `output: null`; (2) use the async iterator (`rl[Symbol.asyncIterator]()`) for sequential line reading; (3) write prompt labels to the output writable directly, NOT via `rl.question(label, ...)`. This pattern works with both real TTYs (non-null output is fine) and injected `Readable.from()` test streams.
 
+## 2026-06-18 — Legacy sqlcmd 15.x: -y 0 is mutually exclusive with -h and -W (L-011)
+- **Context:** Phase-6 sync — `runCatalog` and `fingerprint` were spawning with `-y 0 -h -1`, which failed on the user's real sqlcmd (`C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\SQLCMD.EXE`, version 15.0.1300.359).
+- **What failed:** sqlcmd 15.x (legacy ODBC sqlcmd, NOT go-sqlcmd) treats `-h` and `-y`/`-Y` as mutually exclusive flags. Passing both causes a runtime error. `-W` (remove trailing spaces) is also mutually exclusive with `-y`. The earlier removal of `-W` was correct but insufficient — `-h` also needed removal.
+- **Root cause:** `-y 0` (unlimited variable-type width) is REQUIRED to prevent FOR JSON output (nvarchar(max)) from being truncated. But legacy sqlcmd 15.x forbids combining `-y 0` with either `-h` (suppress header) or `-W` (trim trailing spaces).
+- **Solution:**
+  1. Use `-y 0` ALONE for catalog/fingerprint spawns (drop `-h`, `-1`, `-W`).
+  2. Prefix the executed SQL with `SET NOCOUNT ON;\n` to suppress the `(N rows affected)` row-count trailer (previously suppressed implicitly by `-h`).
+  3. Update `reassembleJsonOutput` and `reassembleSingleObjectOutput` to skip the header line + dashes separator that legacy sqlcmd emits when `-h` is absent (it prints the FOR JSON auto-column name, e.g. `JSON_F52E2B61-...`, followed by a dashes-only separator line, then the JSON data).
+  4. Extract the common "skip header/separator, collect JSON lines" logic into `extractJsonContent()` to eliminate duplication between the two reassemble helpers.
+- **canConnect is NOT affected:** the `SELECT 1` probe uses `-h -1` WITHOUT `-y` — no mutual-exclusion conflict. Left unchanged.
+- **Derived rule (L-011):** Legacy sqlcmd 15.x flag matrix: `-y 0` CANNOT coexist with `-h` OR `-W`. Use `-y 0` alone for FOR JSON queries. Pair with `SET NOCOUNT ON` in SQL. Strip the header+separator lines in reassembly. go-sqlcmd and sqlcmd ≥ 18 may differ — do not assume flag compat across variants.
+
 ## 2026-06-16 — mssql 12.x ships no bundled type declarations (L-005)
 - **Context:** Task 3.3 — factory.ts uses `await import('mssql')` inside a try/catch. tsc reported TS7016 "Could not find a declaration file for module 'mssql'".
 - **What failed:** `mssql@12.5.5` does not ship a `types` field in package.json and there is no `@types/mssql` package. Direct `await import('mssql') as SomeType` causes tsc error.

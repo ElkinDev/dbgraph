@@ -229,11 +229,11 @@ describe('SqlcmdStrategy.canConnect() — B2.4', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Minimal valid row sets for each family (as sqlcmd FOR JSON would emit)
-const MINIMAL_TABLES = JSON.stringify([
+const MINIMAL_TABLES_JSON = JSON.stringify([
   { schema_name: 'dbo', table_name: 'Accounts', object_id: 10 },
 ]);
 
-const MINIMAL_COLUMNS = JSON.stringify([
+const MINIMAL_COLUMNS_JSON = JSON.stringify([
   {
     schema_name: 'dbo', table_name: 'Accounts', column_id: 1,
     column_name: 'id', data_type: 'int', max_length: 4,
@@ -245,33 +245,55 @@ const MINIMAL_COLUMNS = JSON.stringify([
 const EMPTY_JSON = JSON.stringify([]);
 
 /**
+ * Wraps raw JSON in the legacy sqlcmd 15.x output shape:
+ *   Line 1: column header (e.g. "JSON_F52E2B61-18A1-11d1-B105-00805F49916B")
+ *   Line 2: dashes separator ("----...----")
+ *   Lines 3+: the JSON value (possibly split across lines)
+ *
+ * This is the real stdout shape when -h is omitted (which is required when
+ * -y 0 is used — the two flags are mutually exclusive in legacy sqlcmd 15.x).
+ */
+function legacySqlcmdOutput(jsonValue: string, guidSuffix = 'F52E2B61-18A1-11d1-B105-00805F49916B'): string {
+  const header = `JSON_${guidSuffix}`;
+  const separator = '-'.repeat(header.length);
+  return `${header}\r\n${separator}\r\n${jsonValue}\r\n\r\n`;
+}
+
+// Pre-built legacy-shaped constants used by most tests
+const MINIMAL_TABLES = legacySqlcmdOutput(MINIMAL_TABLES_JSON);
+const MINIMAL_COLUMNS = legacySqlcmdOutput(MINIMAL_COLUMNS_JSON);
+const EMPTY_LEGACY = legacySqlcmdOutput(EMPTY_JSON);
+
+/**
  * Builds a fake spawnSync that returns the given stdout for the n-th call.
  * Calls are ordered by the 11 catalog families in runCatalog().
  * We only need real data for tables + columns; everything else is [].
  * fingerprint() is a separate method, NOT called by runCatalog.
+ *
+ * All responses are in legacy sqlcmd 15.x shape (header + separator + JSON).
  */
-function makeCatalogSpawnSync(tableJson: string, columnJson: string): MockedFunction<SpawnSyncFn> {
+function makeCatalogSpawnSync(tableOutput: string, columnOutput: string): MockedFunction<SpawnSyncFn> {
   // Order of calls in runCatalog matches the queries.ts import order:
   // tables, columns, keyConstraints, foreignKeys, checkConstraints,
   // indexes, modules, triggerEvents, sequences, extendedProperties,
   // dependencies (11 families total — fingerprint is separate)
   const responses = [
-    tableJson,   // tables
-    columnJson,  // columns
-    EMPTY_JSON,  // keyConstraints
-    EMPTY_JSON,  // foreignKeys
-    EMPTY_JSON,  // checkConstraints
-    EMPTY_JSON,  // indexes
-    EMPTY_JSON,  // modules
-    EMPTY_JSON,  // triggerEvents
-    EMPTY_JSON,  // sequences
-    EMPTY_JSON,  // extendedProperties
-    EMPTY_JSON,  // dependencies
+    tableOutput,    // tables
+    columnOutput,   // columns
+    EMPTY_LEGACY,   // keyConstraints
+    EMPTY_LEGACY,   // foreignKeys
+    EMPTY_LEGACY,   // checkConstraints
+    EMPTY_LEGACY,   // indexes
+    EMPTY_LEGACY,   // modules
+    EMPTY_LEGACY,   // triggerEvents
+    EMPTY_LEGACY,   // sequences
+    EMPTY_LEGACY,   // extendedProperties
+    EMPTY_LEGACY,   // dependencies
   ];
 
   let callIdx = 0;
   return vi.fn<SpawnSyncFn>().mockImplementation(() => {
-    const stdout = Buffer.from(responses[callIdx] ?? EMPTY_JSON);
+    const stdout = Buffer.from(responses[callIdx] ?? EMPTY_LEGACY);
     callIdx += 1;
     return makeSpawnResult({ status: 0, stdout });
   });
@@ -296,28 +318,60 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(catalog.objects.some((o) => o.name === 'Accounts')).toBe(true);
   });
 
-  it('reassembles multi-line split JSON stdout into one document', async () => {
-    // Simulate sqlcmd splitting a JSON at line boundaries (~2033 byte chunks)
-    const fullJson = JSON.stringify([
-      { schema_name: 'dbo', table_name: 'Split', object_id: 99 },
+  it('Phase-6 fix: strips legacy sqlcmd header+separator before JSON.parse', async () => {
+    // Legacy sqlcmd 15.x without -h emits a GUID column header + dashes separator
+    // before the JSON data. reassembleJsonOutput must strip these two lines.
+    const tableJson = JSON.stringify([
+      { schema_name: 'dbo', table_name: 'HeaderTest', object_id: 55 },
     ]);
-    // Split the JSON string into 3 parts across separate stdout lines
-    const part1 = fullJson.slice(0, 10);
-    const part2 = fullJson.slice(10, 20);
-    const part3 = fullJson.slice(20);
-    const multiLinestdout = `${part1}\r\n${part2}\r\n${part3}\r\n(1 rows affected)\r\n`;
+    // Simulate exact real legacy sqlcmd output: header + separator + JSON data
+    const legacyOutput = legacySqlcmdOutput(tableJson);
 
     let callIdx = 0;
     const responses = [
-      multiLinestdout,    // tables — split across lines
-      MINIMAL_COLUMNS,    // columns
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,         // dependencies (11th family — end of runCatalog)
+      legacyOutput,      // tables — has header + separator
+      MINIMAL_COLUMNS,   // columns
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY,      // dependencies (11th)
     ];
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
-      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_JSON);
+      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_LEGACY);
+      callIdx += 1;
+      return makeSpawnResult({ status: 0, stdout });
+    });
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    const catalog = await strategy.runCatalog(FULL_SCOPE);
+
+    expect(catalog.objects.some((o) => o.name === 'HeaderTest')).toBe(true);
+  });
+
+  it('reassembles multi-line split JSON stdout (legacy shape: header+separator+split data)', async () => {
+    // Simulate legacy sqlcmd splitting a JSON at line boundaries (~2033 byte chunks)
+    const fullJson = JSON.stringify([
+      { schema_name: 'dbo', table_name: 'Split', object_id: 99 },
+    ]);
+    // Split the JSON string into 3 parts across separate stdout lines, with header+separator
+    const part1 = fullJson.slice(0, 10);
+    const part2 = fullJson.slice(10, 20);
+    const part3 = fullJson.slice(20);
+    const header = 'JSON_F52E2B61-18A1-11d1-B105-00805F49916B';
+    const sep = '-'.repeat(header.length);
+    const multiLineStdout = `${header}\r\n${sep}\r\n${part1}\r\n${part2}\r\n${part3}\r\n\r\n`;
+
+    let callIdx = 0;
+    const responses = [
+      multiLineStdout,   // tables — header + separator + split JSON
+      MINIMAL_COLUMNS,   // columns
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY,      // dependencies (11th family)
+    ];
+
+    const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
+      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_LEGACY);
       callIdx += 1;
       return makeSpawnResult({ status: 0, stdout });
     });
@@ -328,35 +382,10 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(catalog.objects.some((o) => o.name === 'Split')).toBe(true);
   });
 
-  it('strips (N rows affected) footer lines before JSON.parse', async () => {
-    // The footer line must not cause JSON.parse failure
-    const jsonWithFooter = `${MINIMAL_TABLES}\r\n(1 rows affected)\r\n\r\n`;
-
-    let callIdx = 0;
-    const responses = [
-      jsonWithFooter,  // tables
-      MINIMAL_COLUMNS,
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,      // dependencies (11th family — end of runCatalog)
-    ];
-
+  it('treats empty legacy output (header+separator+[]) as empty array', async () => {
+    // All families return empty result in legacy shape
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
-      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_JSON);
-      callIdx += 1;
-      return makeSpawnResult({ status: 0, stdout });
-    });
-
-    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
-    await expect(strategy.runCatalog(FULL_SCOPE)).resolves.toBeTruthy();
-  });
-
-  it('treats empty stdout (after stripping) as empty array', async () => {
-    // All families return empty result (no rows)
-    const emptyWithFooter = `\r\n(0 rows affected)\r\n`;
-
-    const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
-      return makeSpawnResult({ status: 0, stdout: Buffer.from(emptyWithFooter) });
+      return makeSpawnResult({ status: 0, stdout: Buffer.from(EMPTY_LEGACY) });
     });
 
     const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
@@ -365,9 +394,11 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(catalog.objects).toHaveLength(0);
   });
 
-  it('throws a descriptive error on malformed (non-JSON) stdout output', async () => {
-    // Simulate sqlcmd emitting an error message instead of JSON
-    const badOutput = 'Sqlcmd: Error: Microsoft ODBC Driver\r\n';
+  it('throws a descriptive error on malformed (non-JSON) content after header stripping', async () => {
+    // Simulate sqlcmd emitting an error message in place of JSON data (after separator)
+    const header = 'JSON_F52E2B61-18A1-11d1-B105-00805F49916B';
+    const sep = '-'.repeat(header.length);
+    const badOutput = `${header}\r\n${sep}\r\nSqlcmd: Error: Microsoft ODBC Driver\r\n`;
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
       return makeSpawnResult({ status: 0, stdout: Buffer.from(badOutput) });
@@ -377,7 +408,31 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     await expect(strategy.runCatalog(FULL_SCOPE)).rejects.toThrow();
   });
 
-  it('spawns each catalog query with -y 0 -h -1 (NOT -W — mutually exclusive with -y; Phase-6 fix)', async () => {
+  it('Phase-6 fix: spawns catalog queries with -y 0 ONLY — no -h, no -1, no -W', async () => {
+    // Legacy sqlcmd 15.x: -y 0 is mutually exclusive with both -h and -W.
+    // Using -y 0 alone (no -h, no -W) is the correct invocation.
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+
+    await strategy.runCatalog(FULL_SCOPE);
+
+    // Every catalog family call must have the correct flags
+    for (const call of spawnSync.mock.calls) {
+      const args: string[] = (call[1] ?? []) as string[];
+      expect(args).toContain('-y');
+      expect(args).toContain('0');
+      // -h and -1 MUST NOT be present — mutually exclusive with -y 0 in legacy sqlcmd 15.x
+      expect(args).not.toContain('-h');
+      expect(args).not.toContain('-1');
+      // -W also must not be present — also mutually exclusive with -y 0
+      expect(args).not.toContain('-W');
+    }
+  });
+
+  it('Phase-6 fix: catalog SQL is prefixed with SET NOCOUNT ON to suppress row-count trailer', async () => {
+    // Without SET NOCOUNT ON, legacy sqlcmd prints "(N rows affected)" which
+    // pollutes the JSON output. -h was previously suppressing this via column
+    // header suppression but it's now removed due to -y 0 conflict.
     const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
     const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
 
@@ -386,13 +441,10 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     // Check the first catalog query call (tables)
     const firstCall = spawnSync.mock.calls[0]!;
     const args: string[] = (firstCall[1] ?? []) as string[];
-    expect(args).toContain('-y');
-    expect(args).toContain('0');
-    expect(args).toContain('-h');
-    expect(args).toContain('-1');
-    // -W and -y/-Y are mutually exclusive in real sqlcmd (surfaced in Phase-6); -y 0 already
-    // suppresses fixed-width padding, so -W is both redundant and rejected when combined.
-    expect(args).not.toContain('-W');
+    const qIdx = args.indexOf('-Q');
+    expect(qIdx).toBeGreaterThanOrEqual(0);
+    const query = args[qIdx + 1] ?? '';
+    expect(query).toMatch(/^SET NOCOUNT ON;/);
   });
 
   it('wraps each query in FOR JSON PATH', async () => {
@@ -453,9 +505,9 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(query).toContain('INCLUDE_NULL_VALUES');
   });
 
-  it('multi-line split-JSON golden: exact object reconstruction', async () => {
-    // This is the key golden test: a FOR JSON response split across many lines
-    // must reassemble to produce the exact same catalog as if it were one line.
+  it('Phase-6 golden: legacy sqlcmd header+separator+split-JSON exact object reconstruction', async () => {
+    // Key golden test: legacy sqlcmd output (header+separator+split-JSON) must reassemble
+    // to produce the exact same catalog as if it were one plain JSON line.
     const tableObj = { schema_name: 'dbo', table_name: 'GoldenTable', object_id: 77 };
     const colObj = {
       schema_name: 'dbo', table_name: 'GoldenTable', column_id: 1,
@@ -467,30 +519,32 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     const tableJson = JSON.stringify([tableObj]);
     const colJson = JSON.stringify([colObj]);
 
-    // Split at arbitrary boundary to simulate sqlcmd line splitting
-    // Use 5-char chunks to force many splits
-    function splitIntoLines(s: string, chunkSize: number): string {
+    // Split at 5-char chunks to force many line splits — legacy sqlcmd splits at ~2033 bytes
+    // but we use smaller chunks to stress-test the reassembly logic
+    function splitLegacyOutput(s: string, chunkSize: number): string {
+      const header = 'JSON_F52E2B61-18A1-11d1-B105-00805F49916B';
+      const sep = '-'.repeat(header.length);
       const parts: string[] = [];
       for (let i = 0; i < s.length; i += chunkSize) {
         parts.push(s.slice(i, i + chunkSize));
       }
-      return parts.join('\r\n') + '\r\n(1 rows affected)\r\n';
+      return `${header}\r\n${sep}\r\n${parts.join('\r\n')}\r\n\r\n`;
     }
 
-    const splitTableOutput = splitIntoLines(tableJson, 5);
-    const splitColOutput = splitIntoLines(colJson, 5);
+    const splitTableOutput = splitLegacyOutput(tableJson, 5);
+    const splitColOutput = splitLegacyOutput(colJson, 5);
 
     let callIdx = 0;
     const responses = [
       splitTableOutput,
       splitColOutput,
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,      // dependencies (11th family — end of runCatalog)
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY, EMPTY_LEGACY,
+      EMPTY_LEGACY,    // dependencies (11th family — end of runCatalog)
     ];
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
-      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_JSON);
+      const stdout = Buffer.from(responses[callIdx] ?? EMPTY_LEGACY);
       callIdx += 1;
       return makeSpawnResult({ status: 0, stdout });
     });
@@ -502,5 +556,84 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     expect(tableEntry).toBeDefined();
     expect(tableEntry?.kind).toBe('table');
     expect(tableEntry?.schema).toBe('dbo');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B2.5b — fingerprint(): Phase-6 flag fix + legacy header stripping
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SqlcmdStrategy.fingerprint() — Phase-6 flag fix', () => {
+  it('Phase-6 fix: fingerprint spawns with -y 0 ONLY — no -h, no -1, no -W', async () => {
+    // Legacy sqlcmd 15.x: -y 0 mutually exclusive with -h; fingerprint must use -y 0 alone.
+    const fingerprintObj = { m: '2024-01-01T00:00:00', c: 42 };
+    const fingerprintJson = JSON.stringify(fingerprintObj);
+    const legacyFingerprint = legacySqlcmdOutput(fingerprintJson);
+
+    const spawnSync = vi.fn<SpawnSyncFn>().mockReturnValue(
+      makeSpawnResult({ status: 0, stdout: Buffer.from(legacyFingerprint) }),
+    );
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    await strategy.fingerprint();
+
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    const args: string[] = (spawnSync.mock.calls[0]![1] ?? []) as string[];
+    expect(args).toContain('-y');
+    expect(args).toContain('0');
+    // -h and -1 MUST NOT be present — mutually exclusive with -y 0 in legacy sqlcmd 15.x
+    expect(args).not.toContain('-h');
+    expect(args).not.toContain('-1');
+    expect(args).not.toContain('-W');
+  });
+
+  it('Phase-6 fix: fingerprint SQL is prefixed with SET NOCOUNT ON', async () => {
+    const fingerprintObj = { m: '2024-01-01T00:00:00', c: 10 };
+    const legacyFingerprint = legacySqlcmdOutput(JSON.stringify(fingerprintObj));
+
+    const spawnSync = vi.fn<SpawnSyncFn>().mockReturnValue(
+      makeSpawnResult({ status: 0, stdout: Buffer.from(legacyFingerprint) }),
+    );
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    await strategy.fingerprint();
+
+    const args: string[] = (spawnSync.mock.calls[0]![1] ?? []) as string[];
+    const qIdx = args.indexOf('-Q');
+    expect(qIdx).toBeGreaterThanOrEqual(0);
+    const query = args[qIdx + 1] ?? '';
+    expect(query).toMatch(/^SET NOCOUNT ON;/);
+  });
+
+  it('Phase-6 fix: fingerprint strips legacy header+separator and returns valid hash', async () => {
+    // fingerprint() calls reassembleSingleObjectOutput — must strip header+separator
+    const fingerprintObj = { m: '2024-06-17T10:00:00', c: 7 };
+    const legacyFingerprint = legacySqlcmdOutput(JSON.stringify(fingerprintObj));
+
+    const spawnSync = vi.fn<SpawnSyncFn>().mockReturnValue(
+      makeSpawnResult({ status: 0, stdout: Buffer.from(legacyFingerprint) }),
+    );
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    const hash = await strategy.fingerprint();
+
+    // Must be a 64-char hex string (SHA-256)
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('canConnect still uses -h -1 (SELECT 1 probe — no -y conflict, correct behavior preserved)', async () => {
+    // canConnect's SELECT 1 probe does NOT use -y 0, so -h -1 is valid and correct.
+    // This test ensures we did NOT accidentally remove -h -1 from canConnect.
+    const spawnSync = vi.fn<SpawnSyncFn>()
+      .mockReturnValue(makeSpawnResult({ status: 0, stdout: Buffer.from('1\n') }));
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    await strategy.canConnect();
+
+    const args: string[] = (spawnSync.mock.calls[0]![1] ?? []) as string[];
+    expect(args).toContain('-h');
+    expect(args).toContain('-1');
+    // canConnect does NOT use -y 0 (no FOR JSON)
+    expect(args).not.toContain('-y');
   });
 });
