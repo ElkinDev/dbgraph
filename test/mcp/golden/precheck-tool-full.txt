@@ -1,0 +1,16 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [table]  main.employees  (confidence: parsed)
+
+READERS
+  [table]  main.assignments  (confidence: parsed)
+
+WHAT TO TEST
+  - main.assignments
+
+UNMATCHED IDENTIFIERS
+  idx_emp_dept  (no matching graph node)
+  priority  (no matching graph node)
+

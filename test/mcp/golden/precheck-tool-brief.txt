@@ -1,0 +1,6 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [table]  main.employees
+

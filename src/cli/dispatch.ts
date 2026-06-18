@@ -18,6 +18,7 @@ import { runStatus } from './commands/status.js';
 import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
 import { runDiff } from './commands/diff.js';
+import { runAffected } from './commands/affected.js';
 import { openConnections } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,6 +186,35 @@ async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
 }
 
 /**
+ * Reads a .sql file, runs the precheck engine, prints text or JSON output.
+ * Exit 1 when any graph objects are affected (CI change-detection gate, US-023).
+ * Exit 0 when no graph objects matched.
+ */
+async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
+  const sqlFile = args.positionals[0] ?? '';
+  if (sqlFile === '') {
+    throw new Error('dbgraph affected: <script.sql> argument is required');
+  }
+  const json = args.flags['json'] === true;
+  const detailRaw = args.flags['detail'];
+  const detail =
+    detailRaw === 'brief' || detailRaw === 'normal' || detailRaw === 'full'
+      ? detailRaw
+      : 'normal';
+  const projectRoot = process.cwd();
+
+  const { adapter, store } = await openConnections(projectRoot);
+  try {
+    const result = await runAffected({ store, sqlFile, json, detail });
+    process.stdout.write(result.output);
+    return result;
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
+}
+
+/**
  * Compares two snapshot manifests and returns the per-object diff.
  * --last: compare the two most-recent snapshots.
  * <snapA> <snapB>: compare explicit snapshot IDs.
@@ -223,6 +253,7 @@ const COMMAND_TABLE: Readonly<Record<string, CommandHandler>> = {
   query: handleQuery,
   explore: handleExplore,
   diff: handleDiff,
+  affected: handleAffected,
 };
 
 /**

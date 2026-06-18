@@ -43,6 +43,11 @@ import { runRelatedTool } from './tools/related.js';
 import { runPathTool } from './tools/path.js';
 import { runStatusTool } from './tools/status.js';
 
+// ── Batch D tool handlers ─────────────────────────────────────────────────────
+import { runObjectTool } from './tools/object.js';
+import { runImpactTool } from './tools/impact.js';
+import { runPrecheckTool } from './tools/precheck.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool definition type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,23 +63,6 @@ type ToolDefinition = {
   inputSchema: JsonSchemaObject;
   run: (args: Record<string, unknown>) => Promise<CallToolResult>;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stub tool handler — returns "not implemented" for Batch D/E tools
-// ─────────────────────────────────────────────────────────────────────────────
-
-function stubHandler(name: string): ToolDefinition['run'] {
-  return async (): Promise<CallToolResult> => {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `[${name}] Tool handler not yet implemented. Available in Batch D.`,
-        },
-      ],
-    };
-  };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // buildToolTable — constructs the tool table wired to a given store (or stubs)
@@ -180,7 +168,7 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
         },
         required: ['qname'],
       },
-      run: stubHandler('dbgraph_object'),
+      run: withStore(runObjectTool),
     },
 
     dbgraph_related: {
@@ -237,7 +225,7 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
         },
         required: ['qname'],
       },
-      run: stubHandler('dbgraph_impact'),
+      run: withStore(runImpactTool),
     },
 
     dbgraph_path: {
@@ -290,7 +278,7 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
         },
         required: ['ddl'],
       },
-      run: stubHandler('dbgraph_precheck'),
+      run: withStore(runPrecheckTool),
     },
 
     dbgraph_status: {

@@ -1,0 +1,3 @@
+main.employees  [table]  [4 idx, 5 trg!]
+───────────────────────
+
