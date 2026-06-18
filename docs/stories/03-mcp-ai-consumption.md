@@ -7,7 +7,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-010 — dbgraph_explore
 **As** an AI agent, **I want** to request the full context of an entity or topic, **so that** I understand its neighborhood in a single call.
-**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given `explore("orders")`, then it returns: the pivot table(s) with summarized columns, inbound/outbound FKs, views using it, procs/triggers reading/writing it — grouped and in compact format.
@@ -16,7 +16,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-011 — dbgraph_search
 **As** an agent, **I want** to search objects by approximate name or comment, **so that** I can locate things without knowing the exact name.
-**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given `search("custmer")` (typo), then FTS returns `customers` and related objects, ranked.
@@ -25,7 +25,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-012 — dbgraph_object
 **As** an agent, **I want** the full detail of ONE object, **so that** I can go deep after explore/search.
-**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given `object("dbo.orders")`, then: columns with types/nullability/defaults, PK/FKs/checks, indexes with columns and kind, triggers with event, comments.
@@ -34,7 +34,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-013 — dbgraph_related
 **As** an agent, **I want** the direct neighbors of a node, **so that** I can walk the graph step by step.
-**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-006, US-019 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Returns neighbors grouped by edge kind (references in/out, depends_on, reads/writes, fires_on), with explicit direction.
@@ -43,7 +43,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-014 — dbgraph_impact
 **As** an agent, **I want** the transitive blast radius of a change to a table or column, **so that** I know what breaks BEFORE proposing the change.
-**Phase:** 5 · **Depends on:** US-007 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-007 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given `impact("orders.status")`, then it transitively lists: indexes containing it, FKs, views selecting it, procs/triggers reading or writing it — with the dependency CHAIN visible (a→b→c), not just the set.
@@ -53,7 +53,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-015 — dbgraph_path
 **As** an agent writing queries, **I want** the join path between two tables, **so that** I can generate correct JOINs without guessing.
-**Phase:** 5 · **Depends on:** US-006, US-008 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-006, US-008 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given `path("customers", "shipments")`, then it returns the shortest route via FKs with the exact join columns of each hop.
@@ -62,7 +62,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-016 — dbgraph_precheck
 **As** an agent about to execute a change, **I want** a pre-flight of the proposed change, **so that** I know what to test and what could break — the database "PR check".
-**Phase:** 5 · **Depends on:** US-014 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-014 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Accepts an object/column ("I will alter orders.status") OR a DDL script.
@@ -72,7 +72,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-017 — dbgraph_status
 **As** an agent, **I want** to know whether the index is trustworthy RIGHT NOW, **so that** I can decide to request a re-sync before acting.
-**Phase:** 5 · **Depends on:** US-009 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-009 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Reports: engine and version, last sync timestamp, drift detected yes/no, per-type counts, configured levels, objects excluded by filters.
@@ -80,7 +80,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-018 — Instructions in initialize
 **As** a freshly connected agent, **I want** to receive the MCP usage instructions automatically, **so that** I use the tools well without an external instructions file.
-**Phase:** 5 · **Depends on:** US-010..017 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-010..017 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - The `initialize` response includes guidance: when to use explore vs search vs object, and the recommended pre-change flow (status → explore → precheck).
@@ -89,7 +89,7 @@ Plan references: §4.6 (tools), Phase 5. The compact format (US-019) governs ALL
 
 ### US-019 — Compact format with token budget
 **As** the project, **I want** an output format designed and PINNED by spec, **so that** the "fewer tokens" promise is measurable and stable.
-**Phase:** 5 (step 1 — BEFORE the server) · **Depends on:** US-006 · **Status:** ☐ pending
+**Phase:** 5 (step 1 — BEFORE the server) · **Depends on:** US-006 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - `docs/format-spec.md` exists with the grammar of each line (table, column, edge, annotations `[3 idx, 1 trg!]`) and a token budget per tool × `detail` level.

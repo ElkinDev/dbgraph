@@ -32,7 +32,7 @@ Goal: everything the MCP offers, available to humans and scripts. References: §
 
 ### US-023 — dbgraph affected
 **As** a developer with a written migration, **I want** `dbgraph affected migration.sql` BEFORE running it, **so that** I know the impact — analogous to `codegraph affected`.
-**Phase:** 5 · **Depends on:** US-016 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-016 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Given a script with `ALTER TABLE` + `DROP INDEX`, then it prints the aggregated precheck of all statements (same engine as US-016).
@@ -41,7 +41,7 @@ Goal: everything the MCP offers, available to humans and scripts. References: §
 
 ### US-024 — dbgraph install
 **As** a new user, **I want** `dbgraph install`, **so that** the MCP gets wired into my agent without editing JSON by hand.
-**Phase:** 5 · **Depends on:** US-018 · **Status:** ☐ pending
+**Phase:** 5 · **Depends on:** US-018 · **Status:** ☑ done (phase-5-mcp-server)
 
 **Acceptance criteria:**
 - Detects an installed Claude Code and registers the MCP server pointing at the current project; idempotent (re-running does not duplicate).
