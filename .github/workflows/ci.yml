@@ -24,7 +24,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: npm test
+      - name: Run unit tests (leak-scanner enforces LEAKSCAN_DENYLIST when set)
+        run: npm test
+        env:
+          LEAKSCAN_DENYLIST: ${{ secrets.LEAKSCAN_DENYLIST }}
       - run: npm audit --omit=dev --audit-level=high
 
   # Gated SQL Server integration job: Linux-only (Docker available), independent
