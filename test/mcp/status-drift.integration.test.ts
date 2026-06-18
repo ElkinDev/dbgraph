@@ -94,30 +94,54 @@ describe('dbgraph_status — live drift detection (INTEGRATION)', () => {
     const adapter = await createSqliteSchemaAdapter({ file: mat.path });
 
     try {
-      // Get the live fingerprint
+      // Verify the raw fingerprint diff to confirm the test setup is correct
       const liveFp = await adapter.fingerprint();
-
-      // Get the stored snapshot fingerprint
       const snapshots = await store.listSnapshots();
       const lastSnapshot = snapshots[0];
       expect(lastSnapshot).toBeDefined();
-
-      // Fingerprints should differ (we added a table)
       expect(liveFp).not.toBe(lastSnapshot?.fingerprint);
 
-      // Now run the status tool — but since the tool itself is connectionless by design,
-      // we verify drift detection via the adapter + snapshot comparison directly.
-      // The tool would need an adapter override to check live drift, which is Batch E scope.
-      // For this task we verify the core logic (live fingerprint ≠ stored fingerprint → drift).
-      const hasDrift = lastSnapshot !== undefined && liveFp !== lastSnapshot.fingerprint;
-      expect(hasDrift).toBe(true);
-
-      // Verify that the connectionless tool reports "could not be checked live"
-      const result = await runStatusTool(store, { detail: 'full' });
+      // W-1 fix: run the tool WITH the live adapter — it must compute drift and report it
+      const result = await runStatusTool(store, { detail: 'full' }, adapter);
       const text = (result.content[0] as { text: string }).text;
-      expect(text).toContain('could not be checked live');
+      // The tool must report drift detected (not "could not be checked live")
+      expect(text).toContain('detected (schema changed since last sync)');
+      expect(text).not.toContain('could not be checked live');
     } finally {
       await adapter.close();
+    }
+  });
+
+  it.skipIf(!INTEGRATION)('reports no-drift when schema unchanged since last sync', async () => {
+    // Re-open the adapter to the same store (no mutation since initial sync)
+    // We need a fresh materialized db in its original state for this test
+    const mat2 = materializeTorture();
+    const adapter2 = await createSqliteSchemaAdapter({ file: mat2.path });
+    const projectRoot2 = join(tmpdir(), `dbgraph-drift-nodrift-${randomUUID()}`);
+    mkdirSync(join(projectRoot2, '.dbgraph'), { recursive: true });
+    const storePath2 = join(projectRoot2, '.dbgraph', 'dbgraph.db');
+    const store2 = await createSqliteGraphStore({ path: storePath2 });
+
+    try {
+      await runSync({ adapter: adapter2, store: store2, full: false });
+
+      // Re-open a second adapter to the same (un-mutated) db
+      const adapter2b = await createSqliteSchemaAdapter({ file: mat2.path });
+      try {
+        const result = await runStatusTool(store2, { detail: 'full' }, adapter2b);
+        const text = (result.content[0] as { text: string }).text;
+        // No mutation → none detected
+        expect(text).toContain('none detected');
+        expect(text).not.toContain('could not be checked live');
+        expect(text).not.toContain('detected (schema changed');
+      } finally {
+        await adapter2b.close();
+      }
+    } finally {
+      await adapter2.close();
+      await store2.close();
+      mat2.cleanup();
+      if (existsSync(projectRoot2)) rmSync(projectRoot2, { recursive: true, force: true });
     }
   });
 });

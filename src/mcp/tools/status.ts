@@ -17,6 +17,7 @@ import {
   type NodeKind,
   type StatusDetail,
   type McpStatusView,
+  type SchemaAdapter,
 } from '../../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -36,12 +37,17 @@ function parseArgs(raw: Record<string, unknown>): StatusArgs {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// runStatusTool — main handler called by the server (connectionless variant)
+// runStatusTool — main handler called by the server
+//
+// adapter (optional): when provided (production stdio path), a live fingerprint
+// is computed and compared to the last snapshot to detect schema drift.
+// When absent (connectionless harness path), driftChecked remains false.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function runStatusTool(
   store: GraphStore,
   rawArgs: Record<string, unknown>,
+  adapter?: SchemaAdapter,
 ): Promise<CallToolResult> {
   const args = parseArgs(rawArgs);
 
@@ -74,7 +80,23 @@ export async function runStatusTool(
     // Unknown dialect — levels stay empty ({} already set)
   }
 
-  // ── Step 4: assemble McpStatusView (connectionless — drift not checked) ───
+  // ── Step 4: compute live drift when adapter is available ──────────────────
+  let driftChecked = false;
+  let driftDetected: boolean | null = null;
+
+  if (adapter !== undefined && lastSnapshot !== null) {
+    try {
+      const liveFp = await adapter.fingerprint();
+      driftChecked = true;
+      driftDetected = liveFp !== lastSnapshot.fingerprint;
+    } catch {
+      // If fingerprint fails, fall back to connectionless reporting
+      driftChecked = false;
+      driftDetected = null;
+    }
+  }
+
+  // ── Step 5: assemble McpStatusView ────────────────────────────────────────
   const view: McpStatusView = {
     engine: lastSnapshot?.engine ?? 'unknown',
     engineVersion: lastSnapshot?.engineVersion,
@@ -82,8 +104,8 @@ export async function runStatusTool(
     counts,
     levels,
     excludedObjects: [...excludedObjects].sort(),
-    driftChecked: false,
-    driftDetected: null,
+    driftChecked,
+    driftDetected,
   };
 
   const text = formatStatus(view, args.detail);

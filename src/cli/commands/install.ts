@@ -14,7 +14,7 @@
  *   NEVER imports src/mcp/** or src/adapters/**.
  */
 
-import { join } from 'node:path';
+import { win32 as pathWin32, posix as pathPosix } from 'node:path';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // File-system seam — injected to make unit tests FS-free
@@ -76,13 +76,17 @@ export function resolveConfigPath(
   if (platform === 'win32') {
     const appData = env['APPDATA'];
     if (appData === undefined || appData === '') return undefined;
-    return join(appData, 'Claude', CLAUDE_CONFIG_FILE);
+    // Use path.win32.join so the result always has backslash separators,
+    // regardless of the host OS this code runs on (fixes Linux CI).
+    return pathWin32.join(appData, 'Claude', CLAUDE_CONFIG_FILE);
   }
 
   // Linux, macOS, and other POSIX platforms
   const home = env['HOME'];
   if (home === undefined || home === '') return undefined;
-  return join(home, '.config', 'Claude', CLAUDE_CONFIG_FILE);
+  // Use path.posix.join so the result always has forward-slash separators,
+  // regardless of the host OS this code runs on.
+  return pathPosix.join(home, '.config', 'Claude', CLAUDE_CONFIG_FILE);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

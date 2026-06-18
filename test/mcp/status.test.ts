@@ -83,9 +83,12 @@ describe('dbgraph_status — content assertions', () => {
     expect(text).toContain('Last sync');
   });
 
-  it('connectionless output states drift could not be checked', async () => {
+  it('connectionless output states drift could not be checked (driftChecked:false path)', async () => {
     const text = await harness.callTool('dbgraph_status', { detail: 'full' });
     expect(text).toContain('could not be checked live');
+    // Must NOT say "detected" or "none detected" — only the false/no-connection branch
+    expect(text).not.toContain('detected (schema changed');
+    expect(text).not.toContain('none detected');
   });
 
   it('normal detail includes object counts', async () => {

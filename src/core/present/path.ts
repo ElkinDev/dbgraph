@@ -55,15 +55,15 @@ export function formatPath(view: PathView): string {
     if (nearest) {
       if (nearest.from.length > 0) {
         lines.push(`  Neighbors of ${view.from}:`);
-        for (const qname of nearest.from) {
-          lines.push(`    → ${qname}`);
+        for (const id of nearest.from) {
+          lines.push(`    → ${view.resolveTable(id)}`);
         }
       }
       if (nearest.to.length > 0) {
         lines.push('');
         lines.push(`  Neighbors of ${view.to}:`);
-        for (const qname of nearest.to) {
-          lines.push(`    → ${qname}`);
+        for (const id of nearest.to) {
+          lines.push(`    → ${view.resolveTable(id)}`);
         }
       }
     }

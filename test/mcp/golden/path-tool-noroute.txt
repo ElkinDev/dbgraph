@@ -3,6 +3,6 @@ PATH: main.employees  →  main.projects
   No join path found between these endpoints.
 
   Neighbors of main.employees:
-    → 495398fc41b604f1ffa40837c6b66c51beaba632
-    → 96a3ebad2a31144c0eb186a26ac5b4b977af7f72
+    → main.departments
+    → main.assignments
 

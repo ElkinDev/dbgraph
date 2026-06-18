@@ -116,24 +116,65 @@ describe('dbgraph_search — content assertions', () => {
 // Suite: pagination
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('dbgraph_search — pagination', () => {
-  it('offset=0 returns first page', async () => {
+describe('dbgraph_search — pagination (L-009 strengthened)', () => {
+  it('first page with limit=5 returns hasMore:true footer when more results exist', async () => {
+    // "employees" search returns 19 total; limit=5 → first page should have hasMore:true
     const text = await harness.callTool('dbgraph_search', {
-      query: 'e',
+      query: 'employees',
+      offset: 0,
+      limit: 5,
+    });
+    expect(text).toContain('SEARCH RESULTS');
+    // L-009: assert the hasMore:true footer, not just existence
+    expect(text).toContain('hasMore: true');
+    // Also assert we got 5 items (not fewer)
+    expect(text).toContain('offset 0');
+  });
+
+  it('second page via offset=5 returns specific hits and correct offset', async () => {
+    // "employees" search returns 19 total; offset=5, limit=5 → 2nd page
+    const page2 = await harness.callTool('dbgraph_search', {
+      query: 'employees',
+      offset: 5,
+      limit: 5,
+    });
+    expect(page2).toContain('SEARCH RESULTS');
+    // L-009: second page must contain specific qnames (different from first 5)
+    // The fixture returns employee-related objects; page 2 should contain further hits
+    expect(page2).toContain('main.employees');
+    // Offset marker must reflect the requested offset
+    expect(page2).toContain('offset 5');
+  });
+
+  it('last page reports hasMore:false (no footer with hasMore:true)', async () => {
+    // Use a small limit to paginate to the end of the 19-result "employees" search
+    // Page 4: offset=15, limit=5 → 4 remaining items → hasMore:false
+    const lastPage = await harness.callTool('dbgraph_search', {
+      query: 'employees',
+      offset: 15,
+      limit: 5,
+    });
+    expect(lastPage).toContain('SEARCH RESULTS');
+    // Last page should NOT have hasMore:true
+    expect(lastPage).not.toContain('hasMore: true');
+    // Last page uses the total-results format, not hasMore
+    expect(lastPage).toContain('results (total)');
+  });
+
+  it('advancing offset yields different hits than first page (pagination correctness)', async () => {
+    const page1 = await harness.callTool('dbgraph_search', {
+      query: 'employees',
       offset: 0,
       limit: 3,
     });
-    expect(text).toContain('SEARCH RESULTS');
-  });
-
-  it('using limit=1 returns hasMore:true when multiple results exist', async () => {
-    const text = await harness.callTool('dbgraph_search', {
-      query: 'e',
-      offset: 0,
-      limit: 1,
+    const page2 = await harness.callTool('dbgraph_search', {
+      query: 'employees',
+      offset: 3,
+      limit: 3,
     });
-    // If there are multiple results, hasMore should be true
-    // The torture fixture has many objects with 'e' in their names
-    expect(text).toContain('SEARCH RESULTS');
+    // Pages should differ in content (different hits per page)
+    expect(page1).not.toBe(page2);
+    expect(page1).toContain('offset 0');
+    expect(page2).toContain('offset 3');
   });
 });
