@@ -417,6 +417,115 @@ describe('parseJsonRows — malformed input → throw', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// sql_variant coercion: SequenceRow numeric fields → string (F-9 FOR JSON path)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseJsonRows — SequenceRow sql_variant coercion (FOR JSON emits numbers)', () => {
+  it('coerces numeric start_value 1000620314 → string "1000620314"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: 1000620314 })],
+    }));
+    expect(result.sequences[0]!.start_value).toBe('1000620314');
+    expect(typeof result.sequences[0]!.start_value).toBe('string');
+  });
+
+  it('coerces numeric increment 1 → string "1"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ increment: 1 })],
+    }));
+    expect(result.sequences[0]!.increment).toBe('1');
+    expect(typeof result.sequences[0]!.increment).toBe('string');
+  });
+
+  it('coerces numeric minimum_value 1 → string "1"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ minimum_value: 1 })],
+    }));
+    expect(result.sequences[0]!.minimum_value).toBe('1');
+    expect(typeof result.sequences[0]!.minimum_value).toBe('string');
+  });
+
+  it('coerces numeric maximum_value 2147483647 → string "2147483647"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ maximum_value: 2147483647 })],
+    }));
+    expect(result.sequences[0]!.maximum_value).toBe('2147483647');
+    expect(typeof result.sequences[0]!.maximum_value).toBe('string');
+  });
+
+  it('passes through string start_value unchanged', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: '9223372036854775807' })],
+    }));
+    expect(result.sequences[0]!.start_value).toBe('9223372036854775807');
+  });
+
+  it('throws when start_value is null', () => {
+    const input = makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: null })],
+    });
+    expect(() => parseJsonRows(input)).toThrow(/start_value/i);
+  });
+
+  it('throws when start_value is an object', () => {
+    const input = makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: { nested: true } })],
+    });
+    expect(() => parseJsonRows(input)).toThrow(/start_value/i);
+  });
+
+  it('coerces bigint start_value → string', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: BigInt('9007199254740993') })],
+    }));
+    expect(result.sequences[0]!.start_value).toBe('9007199254740993');
+    expect(typeof result.sequences[0]!.start_value).toBe('string');
+  });
+
+  it('coerces boolean true start_value → string "true"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      sequences: [makeSequenceRow({ start_value: true })],
+    }));
+    expect(result.sequences[0]!.start_value).toBe('true');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sql_variant coercion: ExtendedPropRow.description numeric → string
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseJsonRows — ExtendedPropRow sql_variant description coercion', () => {
+  it('coerces numeric description 42 → string "42"', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      extendedProperties: [makeExtendedPropRow({ description: 42 })],
+    }));
+    expect(result.extendedProperties[0]!.description).toBe('42');
+    expect(typeof result.extendedProperties[0]!.description).toBe('string');
+  });
+
+  it('passes through string description unchanged', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      extendedProperties: [makeExtendedPropRow({ description: 'User accounts table' })],
+    }));
+    expect(result.extendedProperties[0]!.description).toBe('User accounts table');
+  });
+
+  it('throws when description is null', () => {
+    const input = makeMinimalInput({
+      extendedProperties: [makeExtendedPropRow({ description: null })],
+    });
+    expect(() => parseJsonRows(input)).toThrow(/description/i);
+  });
+
+  it('throws when description is an object', () => {
+    const input = makeMinimalInput({
+      extendedProperties: [makeExtendedPropRow({ description: { tag: 'unexpected' } })],
+    });
+    expect(() => parseJsonRows(input)).toThrow(/description/i);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Complete round-trip: all families present and coerced correctly
 // ─────────────────────────────────────────────────────────────────────────────
 

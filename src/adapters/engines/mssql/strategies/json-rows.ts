@@ -94,6 +94,43 @@ function requireString(value: unknown, fieldName: string): string {
 }
 
 /**
+ * Coerces a sql_variant scalar field to string.
+ *
+ * SQL Server FOR JSON renders sql_variant columns as their native JSON type
+ * (number, boolean, etc.) rather than as a quoted string. This helper coerces
+ * those scalars to the string representation that the *Row types expect.
+ *
+ * Supported coercions:
+ *   string  → returned as-is
+ *   number  → String(value)  (finite numbers only; NaN/Infinity throw)
+ *   bigint  → value.toString()
+ *   boolean → String(value)  ("true" | "false")
+ *
+ * Throws an actionable error for null, undefined, or object values.
+ *
+ * NOTE: bigint values that exceed Number.MAX_SAFE_INTEGER (2^53-1) lose
+ * precision when serialised as JSON numbers. SQL Server will emit them as
+ * lossy floats. The canonical fix is to CAST those columns to varchar in the
+ * query; this coercion handles the case where that cast was not applied.
+ */
+function coerceStringy(value: unknown, fieldName: string): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw new Error(
+        `json-rows: sql_variant field "${fieldName}" is a non-finite number: got ${String(value)}`,
+      );
+    }
+    return String(value);
+  }
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'boolean') return String(value);
+  throw new Error(
+    `json-rows: sql_variant field "${fieldName}" cannot be coerced to string: got ${JSON.stringify(value)}`,
+  );
+}
+
+/**
  * Coerces an optional text field: if value is null/undefined, returns null.
  * If it is a string, returns it. Throws on other types.
  */
@@ -284,10 +321,10 @@ function coerceSequenceRow(raw: unknown, idx: number): SequenceRow {
       schema_name: requireString(getField(raw, 'schema_name'), 'schema_name'),
       sequence_name: requireString(getField(raw, 'sequence_name'), 'sequence_name'),
       data_type: requireString(getField(raw, 'data_type'), 'data_type'),
-      start_value: requireString(getField(raw, 'start_value'), 'start_value'),
-      increment: requireString(getField(raw, 'increment'), 'increment'),
-      minimum_value: requireString(getField(raw, 'minimum_value'), 'minimum_value'),
-      maximum_value: requireString(getField(raw, 'maximum_value'), 'maximum_value'),
+      start_value: coerceStringy(getField(raw, 'start_value'), 'start_value'),
+      increment: coerceStringy(getField(raw, 'increment'), 'increment'),
+      minimum_value: coerceStringy(getField(raw, 'minimum_value'), 'minimum_value'),
+      maximum_value: coerceStringy(getField(raw, 'maximum_value'), 'maximum_value'),
       is_cycling: coerceBit(getField(raw, 'is_cycling'), 'is_cycling'),
     };
   } catch (e) {
@@ -302,7 +339,7 @@ function coerceExtendedPropRow(raw: unknown, idx: number): ExtendedPropRow {
       object_name: requireString(getField(raw, 'object_name'), 'object_name'),
       column_id: coerceNumber(getField(raw, 'column_id'), 'column_id'),
       column_name: optionalString(getField(raw, 'column_name'), 'column_name'),
-      description: requireString(getField(raw, 'description'), 'description'),
+      description: coerceStringy(getField(raw, 'description'), 'description'),
     };
   } catch (e) {
     throw new Error(`json-rows: ExtendedPropRow[${idx}]: ${(e as Error).message}`, { cause: e });
