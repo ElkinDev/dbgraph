@@ -1,0 +1,20 @@
+RELATED: dbo.orders  [table]
+───────────────────────────
+
+  depends_on
+    in:
+      ← dbo.order_summary  [view]
+
+  fires_on
+    in:
+      ← dbo.trg_audit  [trigger]
+
+  references
+    out:
+      → dbo.customers  [table]
+    in:
+      ← dbo.order_items  [table]
+
+  inferred  (confidence: inferred)
+      → dbo.shipments  [table]  score=0.85
+

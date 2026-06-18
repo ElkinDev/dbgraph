@@ -1,0 +1,28 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [index]  dbo.IX_orders_status  (confidence: parsed)
+  [table]  dbo.orders  (confidence: parsed)
+
+TRIGGERS FIRING ON AFFECTED OBJECTS
+  [trigger]  dbo.trg_orders_audit  (confidence: parsed)
+
+WRITERS
+  [procedure]  dbo.usp_ProcessOrder  (confidence: parsed)
+
+READERS
+  [view]  dbo.order_summary  (confidence: parsed)
+  [procedure]  dbo.usp_GetOrders  (confidence: parsed)
+
+CONSTRAINTS AND INDEXES AFFECTED
+  [constraint]  dbo.PK_orders  (confidence: parsed)
+
+WHAT TO TEST
+  - Test trigger dbo.trg_orders_audit fires correctly after DDL change
+  - Verify dbo.order_summary view returns expected results
+
+UNMATCHED IDENTIFIERS
+  dbo.nonexistent_table  (no matching graph node)
+  ix_unknown  (no matching graph node)
+

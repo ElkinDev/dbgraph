@@ -103,6 +103,49 @@ export {
   type ExploreView,
 } from './present/explore.js';
 
+export {
+  formatSearch,
+  type SearchDetail,
+  type SearchView,
+} from './present/search.js';
+
+export {
+  formatObject,
+  type ObjectDetail,
+  type ObjectView,
+} from './present/object.js';
+
+export {
+  formatRelated,
+  type RelatedDetail,
+  type RelatedView,
+} from './present/related.js';
+
+export {
+  formatImpact,
+  type ImpactDetail,
+  type ImpactView,
+} from './present/impact.js';
+
+export {
+  formatPath,
+  type PathView,
+} from './present/path.js';
+
+export {
+  formatStatus,
+  type StatusDetail,
+  type McpStatusView,
+} from './present/status.js';
+
+export {
+  formatPrecheck,
+  type PrecheckDetail,
+  type PrecheckView,
+  type PrecheckItem,
+  type PrecheckImpactSection,
+} from './present/precheck.js';
+
 // ── Error classes ─────────────────────────────────────────────────────────────
 export {
   DbgraphError,

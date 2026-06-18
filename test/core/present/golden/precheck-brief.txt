@@ -1,0 +1,7 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [index]  dbo.IX_orders_status
+  [table]  dbo.orders
+

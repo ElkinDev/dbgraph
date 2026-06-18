@@ -1,0 +1,11 @@
+IMPACT: dbo.orders.status  [column]
+─────────────────────────────────
+
+READ IMPACT
+  dbo.orders.status → dbo.IX_orders_status
+  dbo.orders.status → dbo.order_summary
+  dbo.orders.status → dbo.order_summary → dbo.usp_GetOrdersByStatus
+
+WRITE IMPACT
+  dbo.orders.status → dbo.trg_orders_audit
+

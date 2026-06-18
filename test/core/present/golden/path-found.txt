@@ -1,0 +1,7 @@
+PATH: dbo.customers  →  dbo.shipments
+──────────────────────────────────
+  dbo.customers  →  dbo.orders
+      JOIN ON dbo.customers.customer_id = dbo.orders.customer_id
+  dbo.orders  →  dbo.shipments
+      JOIN ON dbo.orders.order_id = dbo.shipments.order_id
+

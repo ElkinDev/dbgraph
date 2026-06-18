@@ -1,0 +1,24 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [index]  dbo.IX_orders_status
+  [table]  dbo.orders
+
+TRIGGERS FIRING ON AFFECTED OBJECTS
+  [trigger]  dbo.trg_orders_audit
+
+WRITERS
+  [procedure]  dbo.usp_ProcessOrder
+
+READERS
+  [view]  dbo.order_summary
+  [procedure]  dbo.usp_GetOrders
+
+CONSTRAINTS AND INDEXES AFFECTED
+  [constraint]  dbo.PK_orders
+
+WHAT TO TEST
+  - Test trigger dbo.trg_orders_audit fires correctly after DDL change
+  - Verify dbo.order_summary view returns expected results
+

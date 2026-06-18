@@ -1,0 +1,18 @@
+dbo.orders  [table]  [1 idx, 1 trg!]
+───────────────────
+
+COLUMNS
+  order_id  int  [PK]
+  customer_id  int  [FK→dbo.customers.customer_id]  [NN]
+  status  varchar(20)  DEFAULT 'pending'
+
+CONSTRAINTS
+  [FK]  FK_orders_customers  (customer_id → dbo.customers.customer_id)
+  [PK]  PK_orders  (order_id)
+
+INDEXES
+  IX_orders_status  (status) [BTREE]
+
+TRIGGERS
+  trg_orders_audit  AFTER INSERT, UPDATE
+
