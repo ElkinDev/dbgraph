@@ -82,6 +82,7 @@ export {
   type SchemaAdapterConfig,
   type SqliteAdapterConfig,
   type MssqlAdapterConfig,
+  type PgAdapterConfig,
 } from './ports/schema-adapter.js';
 
 export {

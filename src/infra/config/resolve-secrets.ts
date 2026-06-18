@@ -18,7 +18,7 @@ function missingCredential(field: string): never {
     `source (mssql): field "${field}" is required for sql/ntlm authentication.`,
   );
 }
-import type { DbgraphConfig, SqliteSource, MssqlSource } from './schema.js';
+import type { DbgraphConfig, SqliteSource, MssqlSource, PgSource } from './schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ${env:VAR} expansion
@@ -146,5 +146,41 @@ export function resolveSecrets(
           : { dialect: 'mssql', source: resolvedSource };
       return result;
     }
+    case 'pg': {
+      const resolvedSource = resolvePgSource(cfg.source, envMap);
+      const result: DbgraphConfig =
+        cfg.levels !== undefined
+          ? { dialect: 'pg', source: resolvedSource, levels: cfg.levels }
+          : { dialect: 'pg', source: resolvedSource };
+      return result;
+    }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PgSource resolver (added by phase-8a-pg Batch 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function resolvePgSource(
+  source: PgSource,
+  envMap: Record<string, string | undefined>,
+): PgSource {
+  const resolved: {
+    host: string;
+    database: string;
+    user: string;
+    password: string;
+    port?: string;
+    ssl?: string;
+    schema?: string;
+  } = {
+    host: resolveValue(source.host, envMap),
+    database: resolveValue(source.database, envMap),
+    user: resolveValue(source.user, envMap),
+    password: resolveValue(source.password, envMap),
+  };
+  if (source.port !== undefined) resolved.port = resolveValue(source.port, envMap);
+  if (source.ssl !== undefined) resolved.ssl = resolveValue(source.ssl, envMap);
+  if (source.schema !== undefined) resolved.schema = resolveValue(source.schema, envMap);
+  return resolved;
 }
