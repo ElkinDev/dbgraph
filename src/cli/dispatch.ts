@@ -19,6 +19,7 @@ import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
 import { runDiff } from './commands/diff.js';
 import { runAffected } from './commands/affected.js';
+import { runInstall, realFsSeam } from './commands/install.js';
 import { openConnections } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +216,16 @@ async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
 }
 
 /**
+ * Idempotently wires the dbgraph-mcp server entry into Claude Code's MCP config.
+ * --remove undoes it. Prints manual snippet when no agent config is found.
+ */
+async function handleInstall(args: ParsedArgs): Promise<HandlerOutcome> {
+  const remove = args.flags['remove'] === true;
+  await runInstall({ remove, fs: realFsSeam });
+  return { type: 'success' };
+}
+
+/**
  * Compares two snapshot manifests and returns the per-object diff.
  * --last: compare the two most-recent snapshots.
  * <snapA> <snapB>: compare explicit snapshot IDs.
@@ -254,6 +265,7 @@ const COMMAND_TABLE: Readonly<Record<string, CommandHandler>> = {
   explore: handleExplore,
   diff: handleDiff,
   affected: handleAffected,
+  install: handleInstall,
 };
 
 /**
