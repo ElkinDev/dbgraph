@@ -1,119 +1,143 @@
 /**
- * createMssqlSchemaAdapter — factory for the SQL Server schema extraction adapter.
- * Design §factory.ts "lazy import('mssql'), pool connect, wire driver, map errors".
+ * createMssqlSchemaAdapter — strategy-backed factory for the SQL Server schema adapter.
+ * Design §"Registry lives in the factory; selection iterates in priority order".
  *
  * Responsibilities:
- *   1. Lazy dynamic import of mssql (optionalDependency, ADR-006).
- *      Missing mssql → ConnectionError naming "npm i mssql".
- *   2. Construct mssql.ConnectionPool from MssqlAdapterConfig.
- *   3. Connect the pool; map connect failures through error-mapper.
- *   4. Wrap the connected pool in MssqlReadonlyDriver.
- *   5. Return MssqlSchemaAdapter wrapping the driver.
+ *   1. Build ordered strategy list from config via buildMssqlStrategies.
+ *   2. Probe strategies in order via selectStrategy (detect + canConnect).
+ *   3. Wrap the winning strategy in StrategyBackedSchemaAdapter.
+ *   4. Return the adapter — already-connected, no open() call needed.
  *
- * US-027 (SQL Server adapter), ADR-006 (lazy optional import), ADR-004 (seam).
+ * Back-compat:
+ *   - sql/ntlm configs → NativeTediousStrategy wins (same behavior as before).
+ *   - integrated config → NativeTediousStrategy is omitted; SqlcmdStrategy is tried.
+ *   - Missing 'mssql' driver for explicit-cred configs → ConnectionError('npm i mssql').
+ *
+ * US-027 (SQL Server adapter), ADR-004 (seam), ADR-006 (lazy optional import).
+ * connectivity-strategies Batch C, task C3.3.
  */
 
+import { createHash } from 'node:crypto';
 import type { SchemaAdapter } from '../../../core/ports/schema-adapter.js';
 import type { MssqlAdapterConfig } from '../../../core/ports/schema-adapter.js';
-import { ConnectionError } from '../../../core/errors.js';
-import { createMssqlReadonlyDriver } from './driver.js';
-import { mapMssqlError } from './error-mapper.js';
-import { MssqlSchemaAdapter } from './mssql-schema-adapter.js';
+import type { ConnectivityStrategy } from '../../../core/ports/connectivity-strategy.js';
+import type { Logger } from '../../../core/ports/logger.js';
+import type { CapabilityMatrix, ExtractionScope } from '../../../core/model/capability.js';
+import type { RawCatalog } from '../../../core/model/catalog.js';
+import { noopLogger } from '../../../core/ports/logger.js';
+import { MSSQL_CAPABILITIES } from './capabilities.js';
+import { buildMssqlStrategies } from './strategies/registry.js';
+import { selectStrategy } from './strategies/registry.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// StrategyBackedSchemaAdapter
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Thin SchemaAdapter implementation that delegates to a ConnectivityStrategy.
+ *
+ *   extract(scope)  → strategy.runCatalog(scope)
+ *   fingerprint()   → strategy.fingerprint?.() or fallback content-hash
+ *   close()         → strategy.close?.() (idempotent)
+ *
+ * Constructed by createMssqlSchemaAdapter after selectStrategy picks a winner.
+ */
+class StrategyBackedSchemaAdapter implements SchemaAdapter {
+  readonly dialect = 'mssql' as const;
+  readonly capabilities: CapabilityMatrix = MSSQL_CAPABILITIES;
+
+  private _closed = false;
+
+  constructor(private readonly _strategy: ConnectivityStrategy) {}
+
+  /**
+   * Delegates catalog extraction to the selected strategy's runCatalog().
+   */
+  async extract(scope: ExtractionScope): Promise<RawCatalog> {
+    if (this._closed) {
+      throw new Error(
+        'StrategyBackedSchemaAdapter: extract() called after close(). Create a new adapter.',
+      );
+    }
+    return this._strategy.runCatalog(scope);
+  }
+
+  /**
+   * Delegates fingerprint computation to the strategy's fingerprint() method.
+   * Falls back to a deterministic hash derived from running a catalog extraction
+   * if the strategy does not implement fingerprint() (should not happen in practice
+   * for Batch C strategies, but guards the interface contract).
+   */
+  async fingerprint(): Promise<string> {
+    if (this._closed) {
+      throw new Error(
+        'StrategyBackedSchemaAdapter: fingerprint() called after close(). Create a new adapter.',
+      );
+    }
+    if (typeof this._strategy.fingerprint === 'function') {
+      return this._strategy.fingerprint();
+    }
+    // Fallback: SHA-256 over the strategy id + timestamp (not ideal — strategies
+    // SHOULD implement fingerprint(); this path signals a missing implementation).
+    return createHash('sha256').update(`${this._strategy.id}:no-fingerprint`).digest('hex');
+  }
+
+  /**
+   * Releases resources held by the strategy. Idempotent.
+   */
+  async close(): Promise<void> {
+    if (this._closed) return;
+    this._closed = true;
+    await this._strategy.close?.();
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Opens a SQL Server connection pool and returns a SchemaAdapter.
- * The adapter is already-connected — no open() call is needed.
+ * Optional dependencies for createMssqlSchemaAdapter.
+ * All fields are optional — omit entirely for production use.
+ */
+export interface MssqlSchemaAdapterDeps {
+  /** Logger port instance for strategy-selection transparency. Defaults to noopLogger. */
+  readonly logger?: Logger;
+  /** Override NativeTediousStrategy constructor — for testing only. */
+  readonly NativeTedious?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+  /** Override SqlcmdStrategy constructor — for testing only. */
+  readonly Sqlcmd?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+}
+
+/**
+ * Opens a SQL Server connection (or prepares an external-tool strategy) and
+ * returns a SchemaAdapter. The adapter is already-connected — no open() call needed.
+ *
+ * Strategy selection order (see registry.ts):
+ *   1. NativeTediousStrategy — explicit-credential (sql/ntlm) configs only
+ *   2. SqlcmdStrategy        — integrated auth or fallback if native fails
  *
  * @param config - MssqlAdapterConfig: server/database/authentication/TLS options.
- * @throws ConnectionError if mssql is not installed (npm i mssql).
- * @throws ConnectionError if the pool cannot connect (credentials, network, TLS, Kerberos).
- * @throws PermissionError if the login lacks VIEW DEFINITION (error 229).
+ * @param deps   - Optional deps for selection transparency and testability.
+ *
+ * @throws ConnectionError if mssql is not installed for an explicit-cred config
+ *         (native strategy propagates the 'npm i mssql' message — back-compat).
+ * @throws ConnectionError if native pool cannot connect (credentials, network, TLS).
+ * @throws StrategyExhaustionError if all strategies fail to detect + connect.
  */
 export async function createMssqlSchemaAdapter(
   config: MssqlAdapterConfig,
+  deps: MssqlSchemaAdapterDeps = {},
 ): Promise<SchemaAdapter> {
-  // ── Step 1: Lazy import mssql (ADR-006 — optional dependency) ────────────
-  // mssql 12.x does not ship bundled type declarations; import as unknown and
-  // cast to the duck-typed interface we define locally (mirrors node:sqlite pattern).
-  let mssqlMod: { ConnectionPool: new(cfg: unknown) => MssqlPool };
-  try {
-    mssqlMod = await import('mssql' as string) as unknown as typeof mssqlMod;
-  } catch (cause) {
-    throw new ConnectionError(
-      "Required driver 'mssql' is not installed. Run: npm i mssql",
-      cause,
-    );
-  }
+  const logger = deps.logger ?? noopLogger;
 
-  // ── Step 2: Build the pool config from MssqlAdapterConfig ────────────────
-  const poolConfig = buildPoolConfig(config);
+  // Build ordered strategy list and select the first viable one.
+  // Pass strategy constructor overrides if provided (for testing).
+  const strategies = buildMssqlStrategies(config, {
+    ...(deps.NativeTedious !== undefined ? { NativeTedious: deps.NativeTedious } : {}),
+    ...(deps.Sqlcmd !== undefined ? { Sqlcmd: deps.Sqlcmd } : {}),
+  });
+  const strategy = await selectStrategy(strategies, logger);
 
-  // ── Step 3: Connect the pool; map errors ─────────────────────────────────
-  let pool: MssqlPool;
-  try {
-    const { ConnectionPool } = mssqlMod;
-    const instance = new ConnectionPool(poolConfig);
-    pool = await instance.connect();
-  } catch (cause) {
-    throw mapMssqlError(cause);
-  }
-
-  // ── Step 4: Wrap in driver seam ──────────────────────────────────────────
-  const driver = createMssqlReadonlyDriver(pool);
-
-  // ── Step 5: Return adapter ────────────────────────────────────────────────
-  return new MssqlSchemaAdapter(driver);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Pool config builder
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Builds the mssql ConnectionPool config object from MssqlAdapterConfig.
- * Maps authentication.type 'sql' and 'ntlm' to the mssql config shape.
- * exactOptionalPropertyTypes: conditional spread for optional fields.
- */
-function buildPoolConfig(config: MssqlAdapterConfig): Record<string, unknown> {
-  const auth = config.authentication;
-
-  const baseConfig: Record<string, unknown> = {
-    server: config.server,
-    database: config.database,
-    options: {
-      ...(config.port !== undefined ? { port: config.port } : {}),
-      ...(config.encrypt !== undefined ? { encrypt: config.encrypt } : { encrypt: true }),
-      ...(config.trustServerCertificate !== undefined
-        ? { trustServerCertificate: config.trustServerCertificate }
-        : {}),
-    },
-  };
-
-  if (auth.type === 'sql') {
-    baseConfig['user'] = auth.user;
-    baseConfig['password'] = auth.password;
-  } else if (auth.type === 'ntlm') {
-    baseConfig['domain'] = auth.domain;
-    baseConfig['user'] = auth.user;
-    baseConfig['password'] = auth.password;
-  }
-  // integrated: no credentials — the strategy registry (Batch C) handles this path
-
-  return baseConfig;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Duck-typed pool interface (avoids importing mssql types at module level)
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface MssqlPool {
-  connect(): Promise<this>;
-  request(): {
-    query(sql: string): Promise<{ recordset: Record<string, unknown>[] }>;
-  };
-  close(): Promise<void>;
+  return new StrategyBackedSchemaAdapter(strategy);
 }

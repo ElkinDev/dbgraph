@@ -1,26 +1,31 @@
 /**
- * Factory tests — createMssqlSchemaAdapter with vi.mock('mssql').
- * Covers: successful construct, login-failed, Kerberos-attempted.
+ * Factory tests — createMssqlSchemaAdapter with strategy-backed registry.
+ * Covers: successful construct, login-failed, Kerberos-attempted, exhaustion.
  *
- * vi.mock is hoisted by Vitest so the factory sees the mock when it calls
- * await import('mssql'). Factory is in a separate test file from the
- * missing-driver test to avoid mock contamination.
+ * After the Batch C rewrite, createMssqlSchemaAdapter calls buildMssqlStrategies
+ * + selectStrategy. The NativeTediousStrategy does the lazy import('mssql') so
+ * vi.mock('mssql') is still hoisted and intercepted at the right seam.
  *
- * Design §"factory.ts: lazy import('mssql'), pool connect, error map".
- * TDD: RED → GREEN. US-027 (SQL Server adapter).
+ * SqlcmdStrategy is injected via the deps.Sqlcmd seam so tests remain deterministic
+ * regardless of whether sqlcmd is present on the CI machine.
+ *
+ * Design §"factory.ts becomes the registry selector".
+ * TDD: GREEN (seam adjustment). US-027 (SQL Server adapter).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { ConnectionError } from '../../../../src/core/errors.js';
+import { StrategyExhaustionError } from '../../../../src/core/errors.js';
+import type { ConnectivityStrategy, DetectResult } from '../../../../src/core/ports/connectivity-strategy.js';
+import type { MssqlAdapterConfig } from '../../../../src/core/ports/schema-adapter.js';
+import type { RawCatalog } from '../../../../src/core/model/catalog.js';
+import type { ExtractionScope } from '../../../../src/core/model/capability.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mock mssql with a controllable ConnectionPool
+// Mock mssql with a controllable ConnectionPool (same as before — still used by
+// NativeTediousStrategy._ensureConnected() which lazy-imports 'mssql')
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Mutable state for the mock — modified per-test via connectBehavior
 let connectBehavior: 'ok' | 'login-failed' | 'kerberos' = 'ok';
-
-// Track the last constructed pool for inspection
 let lastPoolConfig: Record<string, unknown> | null = null;
 
 vi.mock('mssql', () => {
@@ -60,6 +65,28 @@ vi.mock('mssql', () => {
 import { createMssqlSchemaAdapter } from '../../../../src/adapters/engines/mssql/factory.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stub SqlcmdStrategy — injected via deps.Sqlcmd to keep tests deterministic
+// (avoids real 'where sqlcmd' / 'which sqlcmd' calls on CI machines).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Creates a SqlcmdStrategy stub class whose detect() returns the given result. */
+function makeSqlcmdStub(detectResult: DetectResult): new (config: MssqlAdapterConfig) => ConnectivityStrategy {
+  return class StubSqlcmd implements ConnectivityStrategy {
+    readonly id = 'sqlcmd';
+    async detect(): Promise<DetectResult> { return detectResult; }
+    async canConnect(): Promise<boolean> { return false; }
+    async runCatalog(scope: ExtractionScope): Promise<RawCatalog> {
+      void scope;
+      throw new Error('StubSqlcmd.runCatalog not implemented');
+    }
+    async close(): Promise<void> {}
+  };
+}
+
+/** Sqlcmd stub that reports unavailable — used in login-failed/kerberos/exhaustion tests. */
+const SqlcmdUnavailable = makeSqlcmdStub({ available: false, detail: 'sqlcmd not installed (stubbed for test)' });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Test configs
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -92,7 +119,8 @@ describe('createMssqlSchemaAdapter() — successful construct', () => {
   });
 
   it('returns a SchemaAdapter with dialect "mssql"', async () => {
-    const adapter = await createMssqlSchemaAdapter(SQL_CONFIG);
+    // SqlcmdStrategy injected but never reached: native wins when connectBehavior='ok'
+    const adapter = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable });
 
     expect(adapter.dialect).toBe('mssql');
 
@@ -100,7 +128,7 @@ describe('createMssqlSchemaAdapter() — successful construct', () => {
   });
 
   it('returns an adapter with capabilities.engine "mssql"', async () => {
-    const adapter = await createMssqlSchemaAdapter(SQL_CONFIG);
+    const adapter = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable });
 
     expect(adapter.capabilities.engine).toBe('mssql');
 
@@ -108,20 +136,20 @@ describe('createMssqlSchemaAdapter() — successful construct', () => {
   });
 
   it('constructs pool with server from config', async () => {
-    await createMssqlSchemaAdapter(SQL_CONFIG);
+    await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable });
 
     expect(lastPoolConfig).not.toBeNull();
     expect(lastPoolConfig).toMatchObject({ server: 'localhost' });
   });
 
   it('constructs pool with database from config', async () => {
-    await createMssqlSchemaAdapter(SQL_CONFIG);
+    await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable });
 
     expect(lastPoolConfig).toMatchObject({ database: 'testdb' });
   });
 
   it('accepts NTLM authentication config', async () => {
-    const adapter = await createMssqlSchemaAdapter(NTLM_CONFIG);
+    const adapter = await createMssqlSchemaAdapter(NTLM_CONFIG, { Sqlcmd: SqlcmdUnavailable });
 
     expect(adapter.dialect).toBe('mssql');
 
@@ -130,7 +158,7 @@ describe('createMssqlSchemaAdapter() — successful construct', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Login failed → ConnectionError
+// Login failed → native strategy skipped → all exhausted → StrategyExhaustionError
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('createMssqlSchemaAdapter() — login failed', () => {
@@ -139,28 +167,24 @@ describe('createMssqlSchemaAdapter() — login failed', () => {
     lastPoolConfig = null;
   });
 
-  it('throws ConnectionError (E_CONNECTION) on ELOGIN', async () => {
+  it('throws StrategyExhaustionError when native login fails and sqlcmd unavailable', async () => {
     await expect(
-      createMssqlSchemaAdapter(SQL_CONFIG),
-    ).rejects.toSatisfy(
-      (e: unknown): e is ConnectionError =>
-        e instanceof ConnectionError && e.code === 'E_CONNECTION',
-    );
+      createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable }),
+    ).rejects.toBeInstanceOf(StrategyExhaustionError);
   });
 
-  it('ConnectionError message mentions credentials', async () => {
-    await expect(
-      createMssqlSchemaAdapter(SQL_CONFIG),
-    ).rejects.toSatisfy(
-      (e: unknown): e is ConnectionError =>
-        e instanceof ConnectionError &&
-        /credential|login|password|user/i.test(e.message),
-    );
+  it('StrategyExhaustionError lists native-tedious as an attempt', async () => {
+    const error = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StrategyExhaustionError);
+    const ex = error as StrategyExhaustionError;
+    const ids = ex.attempts.map((a) => a.id);
+    expect(ids).toContain('native-tedious');
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Kerberos attempted → ConnectionError (SSO unsupported)
+// Kerberos attempted → native skipped → all exhausted → StrategyExhaustionError
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('createMssqlSchemaAdapter() — Kerberos / SSO unsupported', () => {
@@ -169,22 +193,18 @@ describe('createMssqlSchemaAdapter() — Kerberos / SSO unsupported', () => {
     lastPoolConfig = null;
   });
 
-  it('throws ConnectionError when Kerberos auth is attempted', async () => {
+  it('throws StrategyExhaustionError when Kerberos auth fails and sqlcmd unavailable', async () => {
     await expect(
-      createMssqlSchemaAdapter(SQL_CONFIG),
-    ).rejects.toSatisfy(
-      (e: unknown): e is ConnectionError =>
-        e instanceof ConnectionError && e.code === 'E_CONNECTION',
-    );
+      createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable }),
+    ).rejects.toBeInstanceOf(StrategyExhaustionError);
   });
 
-  it('ConnectionError message mentions SSO or Kerberos', async () => {
-    await expect(
-      createMssqlSchemaAdapter(SQL_CONFIG),
-    ).rejects.toSatisfy(
-      (e: unknown): e is ConnectionError =>
-        e instanceof ConnectionError &&
-        /sso|kerberos|sql|ntlm|unsupported/i.test(e.message),
-    );
+  it('StrategyExhaustionError lists native-tedious as an attempt', async () => {
+    const error = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StrategyExhaustionError);
+    const ex = error as StrategyExhaustionError;
+    const ids = ex.attempts.map((a) => a.id);
+    expect(ids).toContain('native-tedious');
   });
 });

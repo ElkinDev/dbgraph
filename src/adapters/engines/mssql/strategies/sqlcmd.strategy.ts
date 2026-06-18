@@ -21,6 +21,7 @@
 import { spawnSync as defaultSpawnSync } from 'node:child_process';
 import type { SpawnSyncOptions, SpawnSyncReturns } from 'node:child_process';
 import type { ConnectivityStrategy, DetectResult } from '../../../../core/ports/connectivity-strategy.js';
+import { createHash } from 'node:crypto';
 import type { RawCatalog } from '../../../../core/model/catalog.js';
 import type { ExtractionScope } from '../../../../core/model/capability.js';
 import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.js';
@@ -37,6 +38,7 @@ import {
   SQL_MSSQL_SEQUENCES,
   SQL_MSSQL_EXTENDED_PROPERTIES,
   SQL_MSSQL_DEPENDENCIES,
+  SQL_MSSQL_FINGERPRINT,
 } from '../queries.js';
 import { parseJsonRows } from './json-rows.js';
 
@@ -294,6 +296,42 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     });
 
     return buildMssqlRawCatalog(input, scope);
+  }
+
+  // ─── fingerprint() ─────────────────────────────────────────────────────────
+
+  /**
+   * Computes a DDL-sensitive fingerprint by running SQL_MSSQL_FINGERPRINT via sqlcmd.
+   * Formula (mirrors MssqlSchemaAdapter): sha256(`${MAX(modify_date)}|${COUNT(*)}`)
+   * over sys.objects WHERE is_ms_shipped=0.
+   * Issues exactly ONE query — does NOT walk all objects.
+   */
+  async fingerprint(): Promise<string> {
+    const result = this._spawnSync(
+      'sqlcmd',
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', SQL_MSSQL_FINGERPRINT, '-y', '0', '-h', '-1', '-W'],
+      {
+        encoding: 'buffer',
+        timeout: CATALOG_TIMEOUT_MS,
+        shell: false,
+      },
+    );
+
+    if (result.error !== undefined || result.status !== 0) {
+      const stderr = result.stderr.toString('utf8').slice(0, 200);
+      throw new Error(
+        `sqlcmd: fingerprint query failed. ` +
+        `Exit: ${result.status ?? 'null'}. ` +
+        `Stderr: ${stderr}`,
+      );
+    }
+
+    const rows = reassembleJsonOutput(result.stdout);
+    const row = rows[0] as Record<string, unknown> | undefined;
+    const m = row !== undefined ? String(row['m'] ?? 'null') : 'null';
+    const c = row !== undefined ? String(row['c'] ?? '0') : '0';
+
+    return createHash('sha256').update(`${m}|${c}`).digest('hex');
   }
 
   // ─── close() ───────────────────────────────────────────────────────────────

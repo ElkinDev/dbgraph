@@ -82,6 +82,15 @@ export interface ConnectivityStrategy {
   runCatalog(scope: ExtractionScope): Promise<RawCatalog>;
 
   /**
+   * Compute a cheap DDL-sensitive fingerprint for the current schema.
+   * Optional. When absent, StrategyBackedSchemaAdapter falls back to a
+   * content-hash over the extracted catalog (if available in the future).
+   * When present, MUST change on DDL changes and be stable on DML (US-009).
+   * Issues exactly ONE catalog query — does NOT walk all objects.
+   */
+  fingerprint?(): Promise<string>;
+
+  /**
    * Release any held resources (connection pool, file handle, etc.).
    * Optional. When present, MUST be idempotent — a second call MUST NOT throw.
    */
