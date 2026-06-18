@@ -34,7 +34,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { DBGRAPH_INSTRUCTIONS } from './instructions.js';
-import { DbgraphError, type GraphStore } from '../index.js';
+import { DbgraphError, openConnections, type GraphStore } from '../index.js';
 
 // ── Batch C tool handlers ─────────────────────────────────────────────────────
 import { runExploreTool } from './tools/explore.js';
@@ -76,18 +76,20 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
   ): ToolDefinition['run'] => {
     return async (args: Record<string, unknown>): Promise<CallToolResult> => {
       if (store !== undefined) {
+        // In-process harness path: use the injected store directly (tasks 3.x–5.x)
         return handler(store, args);
       }
-      // Stdio path: open connections per call — placeholder for Batch E
-      return {
-        content: [
-          {
-            type: 'text',
-            text: 'stdio connection not yet wired (Batch E). Pass a store via createDbgraphServer(store) for in-process testing.',
-          },
-        ],
-        isError: true,
-      };
+
+      // Stdio production path (Batch E): open connections from dbgraph.config.json per call.
+      // Project root = cwd of the process that launched the stdio server (the user's project).
+      // The store is opened and closed within each request for safety.
+      const { adapter, store: s } = await openConnections(process.cwd());
+      try {
+        return await handler(s, args);
+      } finally {
+        await s.close();
+        await adapter.close();
+      }
     };
   };
 

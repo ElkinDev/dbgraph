@@ -171,19 +171,40 @@ Measurement procedure (performed in Batch E, task 5.4):
 
 ## 5. Per-Tool / Per-Detail Token Budget Table
 
-All ceilings marked **TBD until measured** are replaced by Batch E (task 5.4) after
-empirical measurement on the torture fixture.
+All ceilings are EMPIRICALLY measured (Batch E, task 5.4) on the committed SQLite torture fixture
+(`test/fixtures/sqlite/torture.sql`) using `main.employees` (a table with ≤ 30 relationships) as
+the representative entity. Formula: `ceil(chars / 4)`. Ceilings include a ~25–50% headroom
+margin above the measured value to accommodate slightly larger entities.
+
+Measured raw values and headroom ceilings:
+
+| Tool              | brief measured / ceiling | normal measured / ceiling | full measured / ceiling |
+|-------------------|--------------------------|---------------------------|-------------------------|
+| `dbgraph_explore` | 53 chars→14 tk / 75      | 291 chars→73 tk / 400     | 303 chars→76 tk / 420   |
+| `dbgraph_search`  | 209 chars→53 tk / 275    | 209 chars→53 tk / 275     | 294 chars→74 tk / 400   |
+| `dbgraph_object`  | 17 chars→5 tk / 30       | 82 chars→21 tk / 110      | 168 chars→42 tk / 225   |
+| `dbgraph_related` | 57 chars→15 tk / 80      | 296 chars→74 tk / 400     | 296 chars→74 tk / 400   |
+| `dbgraph_impact`  | 29 chars→8 tk / 50       | 34 chars→9 tk / 55        | 34 chars→9 tk / 55      |
+| `dbgraph_path`    | 62 chars→16 tk / 80      | 62 chars→16 tk / 80       | 62 chars→16 tk / 80     |
+| `dbgraph_status`  | 44 chars→11 tk / 65      | 190 chars→48 tk / 250     | 198 chars→50 tk / 265   |
+| `dbgraph_precheck`| 25 chars→7 tk / 40       | 43 chars→11 tk / 65       | 79 chars→20 tk / 110    |
+
+Simplified ceiling table (tokens — use these for budget assertions):
 
 | Tool              | `brief` (tokens) | `normal` (tokens) | `full` (tokens) |
 |-------------------|------------------|-------------------|-----------------|
-| `dbgraph_explore` | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_search`  | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_object`  | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_related` | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_impact`  | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_path`    | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_status`  | TBD until measured | TBD until measured | TBD until measured |
-| `dbgraph_precheck`| TBD until measured | TBD until measured | TBD until measured |
+| `dbgraph_explore` | 75               | 400               | 420             |
+| `dbgraph_search`  | 275              | 275               | 400             |
+| `dbgraph_object`  | 30               | 110               | 225             |
+| `dbgraph_related` | 80               | 400               | 400             |
+| `dbgraph_impact`  | 50               | 55                | 55              |
+| `dbgraph_path`    | 80               | 80                | 80              |
+| `dbgraph_status`  | 65               | 250               | 265             |
+| `dbgraph_precheck`| 40               | 65                | 110             |
+
+Note: `dbgraph_path` only has found/no-route variants, not brief/normal/full; the ceiling uses the
+larger no-route output (62 chars). `dbgraph_status` includes a non-deterministic ISO timestamp
+(~25 chars) that is excluded from deterministic golden comparisons but included in budget accounting.
 
 ---
 
