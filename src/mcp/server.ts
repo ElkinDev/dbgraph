@@ -1,0 +1,378 @@
+#!/usr/bin/env node
+/**
+ * dbgraph MCP stdio server — task 2.7 (phase-5-mcp-server).
+ *
+ * Exposes the dbgraph graph as 8 MCP tools over stdio transport:
+ *   dbgraph_explore, dbgraph_search, dbgraph_object, dbgraph_related,
+ *   dbgraph_impact, dbgraph_path, dbgraph_precheck, dbgraph_status
+ *
+ * Design Decision 7 (phase-5-mcp-server):
+ *   - Uses the low-level SDK Server class with ListTools/CallTool request handlers
+ *   - One tool-name → { description, inputSchema, run } table
+ *   - DbgraphError → MCP tool error result (isError: true, never throw)
+ *   - Static initialize instructions from src/mcp/instructions.ts
+ *   - openConnections from the barrel (ADR-004: MCP imports barrel only)
+ *
+ * ADR-004: imports ONLY src/index.ts (barrel) + Node builtins +
+ *          @modelcontextprotocol/sdk. NEVER src/adapters/** or src/cli/**.
+ */
+
+import {
+  Server,
+  type ServerOptions,
+} from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+  type CallToolResult,
+} from '@modelcontextprotocol/sdk/types.js';
+
+import { DBGRAPH_INSTRUCTIONS } from './instructions.js';
+import { DbgraphError } from '../index.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool definition type
+// ─────────────────────────────────────────────────────────────────────────────
+
+type JsonSchemaObject = {
+  type: 'object';
+  properties?: Record<string, Record<string, unknown>>;
+  required?: string[];
+};
+
+type ToolDefinition = {
+  description: string;
+  inputSchema: JsonSchemaObject;
+  run: (args: Record<string, unknown>) => Promise<CallToolResult>;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stub tool handler — returns "not implemented" for Batch B
+// ─────────────────────────────────────────────────────────────────────────────
+
+function stubHandler(name: string): ToolDefinition['run'] {
+  return async (): Promise<CallToolResult> => {
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `[${name}] Tool handler not yet implemented. Available in Batch C/D.`,
+        },
+      ],
+    };
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool table
+// One entry per tool with description (including one example call), input
+// schema, and stub run function.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TOOL_TABLE: Readonly<Record<string, ToolDefinition>> = {
+  dbgraph_explore: {
+    description:
+      'Returns a compact neighborhood (direct neighbors grouped by edge kind) for a given ' +
+      'table, view, or procedure. Use when you know the object name and want to see what ' +
+      'it connects to. Returns a disambiguation list when the name is ambiguous. ' +
+      'Example: dbgraph_explore({ target: "orders", detail: "normal" })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        target: {
+          type: 'string',
+          description: 'Table, view, or procedure name (qualified or unqualified).',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['target'],
+    },
+    run: stubHandler('dbgraph_explore'),
+  },
+
+  dbgraph_search: {
+    description:
+      'Full-text search over database object names and bodies (FTS5 with typo tolerance). ' +
+      'Returns ranked hits with type and qualified name. Paginate via offset/limit. ' +
+      'Example: dbgraph_search({ query: "customer invoice", offset: 0, limit: 10 })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search term (supports typo tolerance).',
+        },
+        offset: {
+          type: 'integer',
+          description: 'Pagination offset. Default: 0.',
+        },
+        limit: {
+          type: 'integer',
+          description: 'Maximum results per page. Default: 20.',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['query'],
+    },
+    run: stubHandler('dbgraph_search'),
+  },
+
+  dbgraph_object: {
+    description:
+      'Assembles full detail for one database object: columns with type/nullability/default, ' +
+      'PK/FK/check constraints, indexes, triggers, and (at full detail) the body. ' +
+      'Returns a disambiguation list when the name matches multiple schemas. ' +
+      'Example: dbgraph_object({ qname: "dbo.orders", detail: "full" })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        qname: {
+          type: 'string',
+          description: 'Qualified or unqualified object name (e.g. "dbo.orders").',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['qname'],
+    },
+    run: stubHandler('dbgraph_object'),
+  },
+
+  dbgraph_related: {
+    description:
+      'Returns neighbors of a database object grouped by edge kind and direction ' +
+      '(references in/out, depends_on, reads_from/writes_to, fires_on). ' +
+      'Inferred edges appear in a separate group with their score. ' +
+      'Example: dbgraph_related({ qname: "dbo.orders", kinds: ["references"] })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        qname: {
+          type: 'string',
+          description: 'Qualified or unqualified object name.',
+        },
+        kinds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Edge kinds to include. Omit for all kinds.',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['qname'],
+    },
+    run: stubHandler('dbgraph_related'),
+  },
+
+  dbgraph_impact: {
+    description:
+      'Returns the transitive read/write blast radius from a database object as a visible ' +
+      'dependency chain (a→b→c). Separates READ impact from WRITE impact. Warns when depth ' +
+      'is truncated or when any node has dynamic SQL (impact possibly incomplete). ' +
+      'Example: dbgraph_impact({ qname: "dbo.orders", depth: 3 })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        qname: {
+          type: 'string',
+          description: 'Qualified or unqualified object name.',
+        },
+        depth: {
+          type: 'integer',
+          description: 'Maximum traversal depth. Default: 3.',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['qname'],
+    },
+    run: stubHandler('dbgraph_impact'),
+  },
+
+  dbgraph_path: {
+    description:
+      'Returns the shortest JOIN path between two tables over declared FK references, ' +
+      'exposing the exact join columns of each hop. An inferred-only route is marked inferred. ' +
+      'When no route exists, suggests the closest neighbors of each endpoint. ' +
+      'Example: dbgraph_path({ from: "customers", to: "shipments" })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: {
+          type: 'string',
+          description: 'Starting table name (qualified or unqualified).',
+        },
+        to: {
+          type: 'string',
+          description: 'Target table name (qualified or unqualified).',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['from', 'to'],
+    },
+    run: stubHandler('dbgraph_path'),
+  },
+
+  dbgraph_precheck: {
+    description:
+      'Analyzes DDL statements (ALTER TABLE, CREATE/DROP INDEX, ADD/DROP COLUMN) and ' +
+      'returns aggregated impact: triggers firing on affected objects, who writes/reads them, ' +
+      'constraints/indexes involved, and what to test. Every result carries confidence: parsed. ' +
+      'Identifiers with no matching graph node are reported as unmatched, never guessed. ' +
+      'Example: dbgraph_precheck({ ddl: "ALTER TABLE dbo.orders DROP COLUMN status" })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ddl: {
+          type: 'string',
+          description: 'DDL statement(s) to analyze.',
+        },
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: ['ddl'],
+    },
+    run: stubHandler('dbgraph_precheck'),
+  },
+
+  dbgraph_status: {
+    description:
+      'Reports engine, last sync timestamp, per-type object counts, configured index levels, ' +
+      'excluded objects, and schema drift (live fingerprint when a connection is available, ' +
+      'otherwise states drift could not be checked). Run this before schema changes. ' +
+      'Example: dbgraph_status({ detail: "normal" })',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        detail: {
+          type: 'string',
+          enum: ['brief', 'normal', 'full'],
+          description: 'Output detail level. Default: normal.',
+        },
+      },
+      required: [],
+    },
+    run: stubHandler('dbgraph_status'),
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DbgraphError → CallToolResult (isError: true)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function dbgraphErrorToResult(err: DbgraphError): CallToolResult {
+  return {
+    content: [
+      {
+        type: 'text',
+        text: `[${err.code}] ${err.message}`,
+      },
+    ],
+    isError: true,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Server factory — exported for in-process testing (task 2.8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function createDbgraphServer(): Server {
+  const options: ServerOptions = {
+    capabilities: {
+      tools: {},
+    },
+    instructions: DBGRAPH_INSTRUCTIONS,
+  };
+
+  const server = new Server(
+    { name: 'dbgraph', version: '0.0.0' },
+    options,
+  );
+
+  // ── ListTools handler ────────────────────────────────────────────────────
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return {
+      tools: Object.entries(TOOL_TABLE).map(([name, def]) => ({
+        name,
+        description: def.description,
+        inputSchema: def.inputSchema,
+      })),
+    };
+  });
+
+  // ── CallTool handler ─────────────────────────────────────────────────────
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: rawArgs } = request.params;
+
+    const tool = TOOL_TABLE[name];
+    if (tool === undefined) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Unknown tool: "${name}". Available tools: ${Object.keys(TOOL_TABLE).join(', ')}.`,
+          },
+        ],
+        isError: true,
+      } satisfies CallToolResult;
+    }
+
+    const args: Record<string, unknown> = (rawArgs ?? {}) as Record<string, unknown>;
+
+    try {
+      return await tool.run(args);
+    } catch (err) {
+      if (err instanceof DbgraphError) {
+        return dbgraphErrorToResult(err);
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        content: [{ type: 'text', text: `Internal error: ${message}` }],
+        isError: true,
+      } satisfies CallToolResult;
+    }
+  });
+
+  return server;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stdio entry point — only runs when executed directly, not when imported
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Detect if we are the main module (ESM-compatible check)
+const isMain = process.argv[1] !== undefined &&
+  (import.meta.url.endsWith(process.argv[1]) ||
+   import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
+   process.argv[1].includes('server.'));
+
+if (isMain) {
+  const server = createDbgraphServer();
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}

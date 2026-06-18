@@ -22,7 +22,8 @@
     }
   },
   "bin": {
-    "dbgraph": "./dist/cli.js"
+    "dbgraph": "./dist/cli.js",
+    "dbgraph-mcp": "./dist/mcp.js"
   },
   "scripts": {
     "build": "tsup",
@@ -37,6 +38,7 @@
     "url": "git+https://github.com/ElkinDev/dbgraph.git"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "12.11.1"
   },
   "optionalDependencies": {

@@ -11,12 +11,11 @@
  *   normal — brief + qnames per group (sorted)
  *   full   — normal + inferred score for inferred edges
  *
- * Reuses ExploreView (node + NeighborGroups) — same shape as formatExplore input.
+ * Reuses ExploreView (node + neighbors map) — same shape as formatExplore input.
  * Inferred edges (confidence='inferred') appear in a SEPARATE group with score.
  */
 
 import type { GraphNode } from '../model/node.js';
-import type { NeighborGroups } from '../ports/graph-store.js';
 import type { ExploreView } from './explore.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

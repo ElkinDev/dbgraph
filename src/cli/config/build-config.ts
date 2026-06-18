@@ -9,7 +9,7 @@
  */
 
 import { ConfigError } from '../../core/errors.js';
-import type { DbgraphConfig, SqliteSource, MssqlSource } from './schema.js';
+import type { DbgraphConfig, SqliteSource, MssqlSource } from '../../infra/config/schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity-field validation (plaintext rejection)

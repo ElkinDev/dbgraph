@@ -179,7 +179,6 @@ describe('formatSearch — detail levels', () => {
   });
 
   it('brief does NOT expose match column', () => {
-    const output = formatSearch(MULTI_HIT_VIEW, 'brief');
     // 'body' as a match-column indicator should not appear in brief
     // (the word 'body' should not be in the brief output for this fixture)
     // We check by ensuring the output for brief is shorter than full

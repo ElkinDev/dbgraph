@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { parseConfig } from '../../../src/cli/config/parse-config.js';
+import { parseConfig } from '../../../src/infra/config/parse-config.js';
 import { ConfigError, UnsupportedDialectError } from '../../../src/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -8,6 +8,12 @@
 
 export const DBGRAPH_VERSION = '0.0.0';
 
+// ── Infrastructure utilities (composition seam — task 2.1/2.2, phase-5-mcp-server) ─
+// openConnections is re-exported here so both CLI and MCP can consume it without
+// either importing the other layer (ADR-004, Design Decision 4).
+export { openConnections } from './infra/open-connections.js';
+export type { AdapterAndStore } from './infra/open-connections.js';
+
 // Re-export the entire core public surface
 export * from './core/index.js';
 

@@ -38,4 +38,17 @@ export default defineConfig([
     },
     sourcemap: false,
   },
+  // ── Entry 3: MCP stdio server (ESM-only, shebang injected via banner) ────
+  // Design Decision 8 (phase-5-mcp-server): third entry for `dbgraph-mcp` bin.
+  // clean: false — Entries 1 and 2 already own dist/; this entry MUST NOT wipe them.
+  {
+    entry: { mcp: 'src/mcp/server.ts' },
+    format: ['esm'],
+    dts: false,
+    clean: false,
+    banner: {
+      js: '#!/usr/bin/env node',
+    },
+    sourcemap: false,
+  },
 ]);
