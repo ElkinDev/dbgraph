@@ -316,7 +316,7 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       const wrappedSql = catalogSql(family.sql);
       const result = this._spawnSync(
         'sqlcmd',
-        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-h', '-1', '-W'],
+        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-h', '-1'],
         {
           encoding: 'buffer',
           timeout: CATALOG_TIMEOUT_MS,
@@ -369,7 +369,7 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     const fingerprintSql = `${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
     const result = this._spawnSync(
       'sqlcmd',
-      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-h', '-1', '-W'],
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-h', '-1'],
       {
         encoding: 'buffer',
         timeout: CATALOG_TIMEOUT_MS,
