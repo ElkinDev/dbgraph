@@ -3,6 +3,10 @@
  * Design Decision 5 (phase-4-cli-config): all connection-identity fields are
  * ${env:VAR} references only — never inline plaintext.
  * ADR-004: this file has NO adapter, driver, or core imports beyond types.
+ *
+ * Moved from src/cli/config/schema.ts to src/infra/config/schema.ts as part of
+ * the cli↔mcp decoupling (Batch B fix, phase-5-mcp-server): src/infra/ must not
+ * import src/cli/**, and open-connections.ts needs this schema.
  */
 
 import type { ObjectTypeLevels } from '../../core/model/node.js';

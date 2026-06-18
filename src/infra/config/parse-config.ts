@@ -4,6 +4,9 @@
  * Throws ConfigError on malformed input (names the offending field).
  * Throws UnsupportedDialectError on unknown dialect.
  * No driver imports; no process I/O; pure function.
+ *
+ * Moved from src/cli/config/parse-config.ts to src/infra/config/parse-config.ts
+ * as part of the cli↔mcp decoupling (Batch B fix, phase-5-mcp-server).
  */
 
 import { ConfigError, UnsupportedDialectError } from '../../core/errors.js';

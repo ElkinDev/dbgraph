@@ -6,9 +6,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { resolveSecrets } from '../../../src/cli/config/resolve-secrets.js';
+import { resolveSecrets } from '../../../src/infra/config/resolve-secrets.js';
 import { ConfigError } from '../../../src/index.js';
-import type { DbgraphConfig } from '../../../src/cli/config/schema.js';
+import type { DbgraphConfig } from '../../../src/infra/config/schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // sqlite — resolves ${env:VAR} from provided env map

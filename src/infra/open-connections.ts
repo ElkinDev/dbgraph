@@ -1,29 +1,30 @@
 /**
- * open-connections — task 7.6 cleanup (phase-4-cli-config).
+ * open-connections — composition-root utility (phase-5-mcp-server task 2.1).
  *
- * Extracts the duplicated config-loading, secret-resolution, adapter creation,
- * and store creation logic that was previously copied between:
- *   - syncAfterInit (src/cli/commands/init.ts)
- *   - openAdapterAndStore (src/cli/dispatch.ts)
+ * Relocated from src/cli/config/open-connections.ts to a NEUTRAL composition
+ * layer so both the CLI and MCP adapter can consume it through the barrel
+ * (src/index.ts) without either side importing the other's layer.
  *
- * This module is the SINGLE source for "read config → resolve secrets → open
- * adapter + store". Both callers are routed through it.
+ * Design Decision 4 (phase-5-mcp-server): infra MAY import adapter/store
+ * factories — it is the composition seam. Both CLI and MCP import the barrel;
+ * the barrel re-exports this module.
  *
- * ADR-004: imports ONLY from ../../index.js (public barrel) + node builtins.
- * No adapter imports, no process.exit.
+ * ADR-004: imports from the barrel (../../index.js) for adapter/store factories;
+ * config helpers imported from ./config/ (src/infra/config/) — NEVER from
+ * src/cli/** (that direction violates the cli↔mcp decoupling, ADR-004).
  * Security: resolved secrets are NEVER logged; the resolved config is ephemeral.
  */
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
-import { parseConfig } from './parse-config.js';
-import { resolveSecrets } from './resolve-secrets.js';
+import { parseConfig } from './config/parse-config.js';
+import { resolveSecrets } from './config/resolve-secrets.js';
 import {
   createSqliteSchemaAdapter,
   createMssqlSchemaAdapter,
   createSqliteGraphStore,
-} from '../../index.js';
+} from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Return types

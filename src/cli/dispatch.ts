@@ -18,7 +18,7 @@ import { runStatus } from './commands/status.js';
 import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
 import { runDiff } from './commands/diff.js';
-import { openConnections } from './config/open-connections.js';
+import { openConnections } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler type

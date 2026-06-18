@@ -5,6 +5,9 @@
  * Unset variable → ConfigError naming the variable (never empty/partial).
  * Resolved values are returned in the config struct — NEVER logged.
  * Pure function: no process I/O, no adapter imports.
+ *
+ * Moved from src/cli/config/resolve-secrets.ts to src/infra/config/resolve-secrets.ts
+ * as part of the cli↔mcp decoupling (Batch B fix, phase-5-mcp-server).
  */
 
 import { ConfigError } from '../../core/errors.js';

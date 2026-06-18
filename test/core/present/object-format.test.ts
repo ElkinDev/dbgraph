@@ -17,7 +17,7 @@ import {
   type ObjectView,
   type ObjectDetail,
 } from '../../../src/core/present/object.js';
-import type { GraphNode, NeighborGroups } from '../../../src/index.js';
+import type { GraphNode } from '../../../src/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

@@ -24,7 +24,7 @@ import type { BuildConfigInput } from '../config/build-config.js';
 import { runWizard } from '../init/wizard.js';
 import type { CapabilityMatrix } from '../../index.js';
 import type { HandlerOutcome } from '../dispatch.js';
-import { openConnections } from '../config/open-connections.js';
+import { openConnections } from '../../index.js';
 import { runSync } from './sync.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

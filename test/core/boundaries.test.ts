@@ -115,6 +115,7 @@ const projectRoot = resolve(__dirname, '../..');
 
 const coreSrcDir = join(projectRoot, 'src', 'core');
 const adapterSrcDir = join(projectRoot, 'src', 'adapters', 'storage', 'sqlite');
+const infraSrcDir = join(projectRoot, 'src', 'infra');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -256,5 +257,57 @@ describe('hexagonal boundary: schema-adapter port is driver-free', () => {
     };
 
     expect(testDouble.dialect).toBe('test');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Infra layer boundary (added in phase-5-mcp-server Batch B fix)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ADR-004: src/infra/** is the composition seam. It MAY import adapter/store
+// factories and core, but MUST NOT import src/cli/** or src/mcp/**.
+// This rule enforces that open-connections.ts (and any future infra module)
+// cannot transitively pull cli or mcp into the MCP adapter.
+
+/**
+ * Returns true if the specifier violates the infra boundary.
+ * Infra MUST NOT import from src/cli/** or src/mcp/**.
+ */
+function isForbiddenForInfra(specifier: string): boolean {
+  if (specifier.includes('/cli/')) return true;
+  if (specifier.includes('/mcp/')) return true;
+  return false;
+}
+
+describe('hexagonal boundary: src/infra must not import src/cli or src/mcp', () => {
+  const infraFiles = collectTsFiles(infraSrcDir);
+
+  it('finds at least one infra TypeScript file to scan', () => {
+    expect(infraFiles.length).toBeGreaterThan(0);
+  });
+
+  it('no infra file imports from src/cli/** or src/mcp/**', () => {
+    const violations: string[] = [];
+
+    for (const filePath of infraFiles) {
+      const source = readFileSync(filePath, 'utf-8');
+      const specifiers = extractImportSpecifiers(source);
+
+      for (const spec of specifiers) {
+        if (isForbiddenForInfra(spec)) {
+          violations.push(`${filePath}\n  → imports "${spec}"`);
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      expect.fail(
+        `Infra boundary violations found:\n${violations.join('\n')}\n\n` +
+          'Fix: src/infra/** must not import from src/cli/** or src/mcp/**. ' +
+          'Move shared config types to src/infra/config/ instead (ADR-004).',
+      );
+    }
+
+    expect(violations).toHaveLength(0);
   });
 });

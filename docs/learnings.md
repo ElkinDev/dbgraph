@@ -23,6 +23,22 @@ Entry format:
 - **Derived rule:** Do not add `*.json text eol=lf` to `.gitattributes` preemptively — it would churn `package-lock.json`. Only add it if golden tests start failing due to line-ending mismatch.
 - **Outcome (2026-06-12):** The predicted failure materialized on GitHub windows-latest runners (fresh checkout with `core.autocrlf=true` → goldens materialized as CRLF → 6 byte-comparison failures). Fixed with repo-wide `.gitattributes` (`* text=auto eol=lf`, `*.db -text`); renormalization produced ZERO blob churn (everything was already LF in the object store — the churn fear was unfounded). Reproduced and proven locally with `git clone --config core.autocrlf=true` before/after. Rule PROMOTED to the `dbgraph-testing` skill.
 
+## 2026-06-17 — @modelcontextprotocol/sdk 1.29.0 API verification (task 2.5, phase-5-mcp-server)
+- **Context:** Task 2.5 — probing the installed SDK to confirm exact import paths and API shapes before wiring tools.
+- **SDK version:** `1.29.0` (pinned exact, no caret)
+- **Verified import paths:**
+  - `@modelcontextprotocol/sdk` (root) — exports `InMemoryTransport`, `ListToolsRequestSchema`, `CallToolRequestSchema`, `CallToolResultSchema`, and all types
+  - `@modelcontextprotocol/sdk/server` — exports `Server` class (low-level), `ServerOptions`
+  - `@modelcontextprotocol/sdk/server/stdio` (via `./server/stdio` wildcard) — exports `StdioServerTransport`
+  - `@modelcontextprotocol/sdk/server/mcp` (via wildcard) — exports `McpServer` (high-level)
+  - `@modelcontextprotocol/sdk/client` — exports `Client` class
+- **InMemoryTransport:** `InMemoryTransport.createLinkedPair()` returns `[InMemoryTransport, InMemoryTransport]`; each is passed to server and client `connect()`.
+- **CallToolResult shape:** `{ content: Array<{ type: 'text'; text: string } | ...>; isError?: boolean }` — text content at `content[0].text`.
+- **DIVERGENCE:** The design (and tasks.md) assumed plain JSON Schema objects for tool input schemas (`schema: { type: 'object', properties: {...} }`). The SDK's `McpServer.registerTool()` requires Zod schemas (via the SDK's own `zod` dependency). The low-level `Server` class approach with `ListToolsRequestSchema`/`CallToolRequestSchema` does accept plain JSON schema tool definitions in the `ListTools` response — that is the pattern used in `server.ts`.
+- **Chosen approach:** Use the low-level `Server` class + `setRequestHandler(ListToolsRequestSchema, ...)` + `setRequestHandler(CallToolRequestSchema, ...)`. Tool definitions carry plain JSON Schema `inputSchema` objects. This avoids bringing Zod into our code and matches the design's dispatch-table pattern.
+- **`instructions` surface point:** `Server` constructor `options.instructions` (string) — surfaced in the `initialize` response automatically.
+- **Derived rule:** Always probe the installed SDK (not just the npm page) before wiring — major packages change API surface between minor versions. The `./server/*` wildcard export in the SDK package.json makes `@modelcontextprotocol/sdk/server/stdio` a valid import path.
+
 ## 2026-06-16 — Vitest 10s default hookTimeout too tight for native-module cold starts (CI flake)
 - **Context:** CI run on commit 79cba3e — `test (windows-latest, 22.x)` failed with "Hook timed out in 10000ms" in `test/adapters/engines/sqlite/factory.test.ts > SqliteSchemaAdapter lifecycle`. The very next commit (25dd62a, a superset) passed the same job — proving it FLAKY, not a regression.
 - **Root cause:** the `beforeAll` hook calls `materializeTorture()` which, on the FIRST better-sqlite3 native-module load on a cold Windows runner, exceeded Vitest's default 10s hook timeout. Local runs (warm native module) never reproduce it.
