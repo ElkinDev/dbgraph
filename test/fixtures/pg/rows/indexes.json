@@ -1,0 +1,42 @@
+[
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "index_name": "idx_orders_customer_id",
+    "is_unique": false,
+    "is_primary": false,
+    "key_columns": [2],
+    "n_key_atts": 1,
+    "index_def": "CREATE INDEX idx_orders_customer_id ON app.orders USING btree (customer_id)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "index_name": "idx_orders_total_positive",
+    "is_unique": false,
+    "is_primary": false,
+    "key_columns": [3],
+    "n_key_atts": 1,
+    "index_def": "CREATE INDEX idx_orders_total_positive ON app.orders USING btree (total) WHERE (total > 0)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "products",
+    "index_name": "idx_products_lower_name",
+    "is_unique": true,
+    "is_primary": false,
+    "key_columns": [0],
+    "n_key_atts": 1,
+    "index_def": "CREATE UNIQUE INDEX idx_products_lower_name ON app.products USING btree (lower(name))"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "index_name": "idx_order_items_include",
+    "is_unique": false,
+    "is_primary": false,
+    "key_columns": [3, 4, 5],
+    "n_key_atts": 2,
+    "index_def": "CREATE INDEX idx_order_items_include ON app.order_items USING btree (product_id, qty) INCLUDE (price)"
+  }
+]

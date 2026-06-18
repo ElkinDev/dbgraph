@@ -1,0 +1,13 @@
+[
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "trigger_name": "trg_orders_audit",
+    "tgtype": 21,
+    "function_oid": 20001,
+    "function_schema_class": null,
+    "function_schema": "app",
+    "function_name": "audit_fn",
+    "trigger_def": "CREATE TRIGGER trg_orders_audit AFTER INSERT OR UPDATE ON app.orders FOR EACH ROW EXECUTE FUNCTION app.audit_fn()"
+  }
+]
