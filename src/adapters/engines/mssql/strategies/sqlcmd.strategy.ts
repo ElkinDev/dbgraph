@@ -109,39 +109,50 @@ function catalogSql(sql: string): string {
 /**
  * Extracts the JSON data lines from legacy sqlcmd 15.x stdout.
  *
- * Legacy sqlcmd without -h emits:
- *   Line 1: column header (e.g. "JSON_F52E2B61-...")
- *   Line 2: separator of all dashes ("----...----")
- *   Lines 3+: the JSON value (possibly split at ~2033-byte boundaries)
+ * REAL FORMAT (measured on sqlcmd 15.0.1300 with `-E -S -d -Q ... -y 0` and
+ * `SET NOCOUNT ON`):
+ *   - NO column header line, NO dashes-separator line.
+ *   - Line 0 starts directly with `[` (array) or `{` (single object).
+ *   - Large results are split into 2033-char chunks, one chunk per line.
+ *   - NO trailing-space padding on any chunk line.
+ *
+ * The previous assumption (header + dashes separator before JSON) was WRONG
+ * for this flag combination and has been removed.
  *
  * Algorithm:
- *   1. Split stdout into lines, stripping trailing \r.
- *   2. Find the first separator line (all dashes). If found, skip everything up
- *      to and including that line — the header and separator are discarded.
- *   3. From the remaining lines, drop blank lines and "(N rows affected)" footers.
- *   4. Concatenate the survivors WITHOUT spaces (FOR JSON splits mid-token).
+ *   1. Split stdout into lines, stripping trailing \r per line.
+ *   2. Skip leading non-JSON lines DEFENSIVELY: discard lines until the first
+ *      one whose trimStart begins with `[` or `{`. In reality this is line 0.
+ *   3. From the remaining lines, drop truly-empty lines and a
+ *      "(N rows affected)" trailer (SET NOCOUNT ON suppresses it, but
+ *      kept as a safety net).
+ *   4. Concatenate survivors VERBATIM (NO .trim() — FOR JSON chunks split
+ *      mid-token; any whitespace at a chunk boundary is content, not padding).
  *   5. If nothing remains, return "" (caller decides how to handle empty).
  */
 function extractJsonContent(stdout: Buffer): string {
   const lines = stdout.toString('utf8').split('\n');
 
-  // Locate the dashes separator emitted by legacy sqlcmd 15.x (no -h mode)
+  // Skip leading non-JSON lines (defensive fallback — in reality line 0 is JSON)
   let dataStartIdx = 0;
   for (let i = 0; i < lines.length; i++) {
     const stripped = (lines[i] ?? '').replace(/\r$/, '');
-    // Separator: non-empty line consisting solely of dashes (and optional trailing spaces)
-    if (stripped.length > 0 && /^-+\s*$/.test(stripped)) {
-      dataStartIdx = i + 1; // data starts immediately after the separator
+    const trimStart = stripped.trimStart();
+    if (trimStart.startsWith('[') || trimStart.startsWith('{')) {
+      dataStartIdx = i;
       break;
     }
   }
 
   const cleanLines: string[] = [];
   for (let i = dataStartIdx; i < lines.length; i++) {
-    const trimmed = (lines[i] ?? '').replace(/\r$/, '').trim();
-    if (trimmed === '') continue;
-    if (/^\(\d+ rows? affected\)$/.test(trimmed)) continue;
-    cleanLines.push(trimmed);
+    // Strip ONLY the trailing \r — do NOT trim content (chunk boundaries carry content)
+    const line = (lines[i] ?? '').replace(/\r$/, '');
+    // Skip truly-empty lines (blank separators at end of output)
+    if (line === '') continue;
+    // Skip the row-count trailer that SET NOCOUNT ON suppresses (safety net)
+    if (/^\(\d+ rows? affected\)$/.test(line.trim())) continue;
+    cleanLines.push(line); // preserve exact content — no .trim()
   }
 
   return cleanLines.join(''); // no spaces — FOR JSON chunks split mid-token
@@ -150,9 +161,9 @@ function extractJsonContent(stdout: Buffer): string {
 /**
  * Reassembles FOR JSON PATH output from sqlcmd stdout into a parsed array.
  *
- * Handles legacy sqlcmd 15.x output shape (header + dashes separator + JSON data
- * split across lines) produced when -h is omitted. This is the correct invocation
- * for legacy sqlcmd 15.x because -h is mutually exclusive with -y 0.
+ * Handles the REAL legacy sqlcmd 15.x output shape: with `-y 0`, `SET NOCOUNT ON`,
+ * and `-f o:65001`, the JSON starts at line 0 (NO header, NO dashes separator).
+ * Large results are split into 2033-char chunks across lines with NO padding.
  *
  * @throws Error if the concatenated string is not valid JSON.
  */
@@ -186,7 +197,7 @@ function reassembleJsonOutput(stdout: Buffer): unknown[] {
  * Returns the parsed JSON object directly (not wrapped in an array).
  * Used by fingerprint() which returns a single aggregate row, not an array.
  *
- * Handles legacy sqlcmd 15.x output shape — see extractJsonContent for details.
+ * Uses the same extractJsonContent logic — see that function for output format details.
  *
  * @throws Error if the concatenated string is not valid JSON or is empty.
  */
@@ -311,9 +322,10 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
    * Runs all 11 catalog queries + the fingerprint query via sqlcmd FOR JSON PATH.
    *
    * For each catalog family:
-   *   1. Wrap the queries.ts constant in SELECT ... FOR JSON PATH, INCLUDE_NULL_VALUES.
-   *   2. Spawn sqlcmd -E -S <server> -d <db> -Q <wrapped> -y 0 -h -1 -W.
-   *   3. Reassemble multi-line stdout into one JSON document (concat-then-parse).
+   *   1. Wrap the queries.ts constant in FOR JSON PATH, INCLUDE_NULL_VALUES at top level.
+   *   2. Spawn sqlcmd -E -S <server> -d <db> -Q <wrapped> -y 0 -f o:65001.
+   *      (-y 0: unlimited nvarchar width; -f o:65001: force UTF-8 stdout; no -h, no -W)
+   *   3. Reassemble chunked stdout into one JSON document (concat-then-parse).
    *   4. Validate + coerce through parseJsonRows (json-rows.ts).
    *
    * The fingerprint is computed separately (SHA-256 over MAX(modify_date)|COUNT(*)).
@@ -328,12 +340,13 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       // SET NOCOUNT ON suppresses the "(N rows affected)" row-count trailer that legacy
       // sqlcmd 15.x emits. This is a session setting (read-only, not a write).
       // -h is NOT used here: legacy sqlcmd 15.x treats -h and -y 0 as mutually exclusive.
-      // Without -h, legacy sqlcmd emits a header line + dashes separator before the JSON
-      // data — reassembleJsonOutput strips these two lines before JSON.parse.
+      // -W is also NOT used: mutually exclusive with -y 0 in legacy sqlcmd 15.x.
+      // -f o:65001 forces UTF-8 output codepage so that stdout.toString('utf8') is
+      // correct for non-ASCII content in proc definitions and other nvarchar columns.
       const wrappedSql = `SET NOCOUNT ON;\n${catalogSql(family.sql)}`;
       const result = this._spawnSync(
         'sqlcmd',
-        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0'],
+        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-f', 'o:65001'],
         {
           encoding: 'buffer',
           timeout: CATALOG_TIMEOUT_MS,
@@ -385,10 +398,11 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
   async fingerprint(): Promise<string> {
     // SET NOCOUNT ON suppresses the "(N rows affected)" trailer.
     // -h is NOT used: mutually exclusive with -y 0 in legacy sqlcmd 15.x.
+    // -f o:65001 forces UTF-8 output codepage (consistent with runCatalog).
     const fingerprintSql = `SET NOCOUNT ON;\n${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
     const result = this._spawnSync(
       'sqlcmd',
-      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0'],
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-f', 'o:65001'],
       {
         encoding: 'buffer',
         timeout: CATALOG_TIMEOUT_MS,

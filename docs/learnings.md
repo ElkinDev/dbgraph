@@ -225,6 +225,19 @@ Entry format:
 - **canConnect is NOT affected:** the `SELECT 1` probe uses `-h -1` WITHOUT `-y` — no mutual-exclusion conflict. Left unchanged.
 - **Derived rule (L-011):** Legacy sqlcmd 15.x flag matrix: `-y 0` CANNOT coexist with `-h` OR `-W`. Use `-y 0` alone for FOR JSON queries. Pair with `SET NOCOUNT ON` in SQL. Strip the header+separator lines in reassembly. go-sqlcmd and sqlcmd ≥ 18 may differ — do not assume flag compat across variants.
 
+## 2026-06-18 — Real legacy sqlcmd 15.x FOR JSON output format (L-012)
+- **Context:** sqlcmd JSON reassembly fix — confirmed on sqlcmd 15.0.1300 with `-E -S -d -Q ... -y 0` and `SET NOCOUNT ON`.
+- **What was measured:**
+  - Output lines are EXACTLY 2033 chars each (the FOR JSON chunk size for this sqlcmd version).
+  - ZERO trailing-space padding on any line.
+  - NO column header line, NO dashes-separator line — line 0 IS already the JSON (starts with `[` or `{`). The prior assumption (header + separator before JSON) was WRONG for this flag combination.
+  - Legacy sqlcmd emits in the console/ANSI codepage by default. `stdout.toString('utf8')` is only correct when `-f o:65001` is passed to force UTF-8 output — required for non-ASCII proc definitions.
+- **Root cause of bugs:** (a) `.trim()` on chunk lines corrupted JSON content when a chunk boundary fell inside a string value containing spaces. (b) UTF-8 decoding of non-UTF-8 bytes produced mojibake in `definition` fields of modules with non-ASCII characters.
+- **Fix:**
+  1. `extractJsonContent`: skip leading non-JSON lines defensively (skip until first `[` or `{`), then concatenate lines PRESERVING CONTENT EXACTLY — strip only trailing `\r`, never `.trim()`. Only skip truly-empty lines and the `(N rows affected)` safety-net trailer.
+  2. Add `-f o:65001` to `runCatalog` and `fingerprint` spawn arg arrays (forces UTF-8 stdout). `canConnect` is NOT affected (no FOR JSON, no codepage conflict).
+- **Derived rule (L-012):** Legacy sqlcmd 15.x with `-y 0 -f o:65001` and `SET NOCOUNT ON`: 2033-char chunked lines, NO header/separator, NO padding. NEVER call `.trim()` on chunk lines — chunk boundaries carry content. ALWAYS pass `-f o:65001` for correct non-ASCII (nvarchar) output. `-y 0` is mutually exclusive with `-h` and `-W` in this version.
+
 ## 2026-06-16 — mssql 12.x ships no bundled type declarations (L-005)
 - **Context:** Task 3.3 — factory.ts uses `await import('mssql')` inside a try/catch. tsc reported TS7016 "Could not find a declaration file for module 'mssql'".
 - **What failed:** `mssql@12.5.5` does not ship a `types` field in package.json and there is no `@types/mssql` package. Direct `await import('mssql') as SomeType` causes tsc error.
