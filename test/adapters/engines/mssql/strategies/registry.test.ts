@@ -5,9 +5,10 @@
  *       explicit-credential configs; integrated config omits native-tedious.
  * C3.2: selectStrategy iterates detect() + canConnect(), logs each probe via Logger,
  *       returns first that passes both; throws StrategyExhaustionError if none pass.
+ * D4.x: manual-dump is appended AFTER sqlcmd in the registry order (Batch D).
  *
- * All strategies are mocked — no real sqlcmd, no real mssql pool.
- * connectivity-strategies Batch C, tasks C3.1–C3.2.
+ * All strategies are mocked — no real sqlcmd, no real mssql pool, no real dump file.
+ * connectivity-strategies Batches C + D, tasks C3.1–C3.2 + D4.x.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -17,6 +18,7 @@ import { StrategyExhaustionError } from '../../../../../src/core/errors.js';
 import {
   buildMssqlStrategies,
   selectStrategy,
+  type MssqlStrategyDeps,
 } from '../../../../../src/adapters/engines/mssql/strategies/registry.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -124,6 +126,40 @@ describe('buildMssqlStrategies()', () => {
   it('strategies array is non-empty for integrated config', () => {
     const strategies = buildMssqlStrategies(INTEGRATED_CONFIG);
     expect(strategies.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── D4.x: manual-dump appended after sqlcmd ────────────────────────────────
+
+  it('third strategy is manual-dump for sql config (Batch D)', () => {
+    const strategies = buildMssqlStrategies(SQL_CONFIG);
+    expect(strategies[2]?.id).toBe('manual-dump');
+  });
+
+  it('second strategy is manual-dump for integrated config (Batch D)', () => {
+    const strategies = buildMssqlStrategies(INTEGRATED_CONFIG);
+    // integrated: [sqlcmd, manual-dump] (native-tedious omitted)
+    expect(strategies[1]?.id).toBe('manual-dump');
+  });
+
+  it('order is native-tedious → sqlcmd → manual-dump for sql config (Batch D)', () => {
+    const strategies = buildMssqlStrategies(SQL_CONFIG);
+    const ids = strategies.map((s) => s.id);
+    expect(ids.slice(0, 3)).toEqual(['native-tedious', 'sqlcmd', 'manual-dump']);
+  });
+
+  it('deps.ManualDump overrides the ManualDumpStrategy constructor (Batch D)', () => {
+    class StubbedManualDump {
+      readonly id = 'manual-dump-stub';
+      async detect(): Promise<{ available: false; detail: string }> {
+        return { available: false, detail: 'stub' };
+      }
+      async canConnect(): Promise<boolean> { return false; }
+      async runCatalog(): Promise<never> { throw new Error('stub'); }
+    }
+    const deps: MssqlStrategyDeps = { ManualDump: StubbedManualDump as unknown as NonNullable<MssqlStrategyDeps['ManualDump']> };
+    const strategies = buildMssqlStrategies(SQL_CONFIG, deps);
+    const manualDumpStrategy = strategies.find((s) => s.id === 'manual-dump-stub');
+    expect(manualDumpStrategy).toBeDefined();
   });
 });
 

@@ -36,6 +36,7 @@ import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.j
 import { StrategyExhaustionError } from '../../../../core/errors.js';
 import { NativeTediousStrategy } from './native-tedious.strategy.js';
 import { SqlcmdStrategy } from './sqlcmd.strategy.js';
+import { ManualDumpStrategy } from './manual-dump.strategy.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection seam (for testability in Batch C)
@@ -50,6 +51,8 @@ export interface MssqlStrategyDeps {
   readonly NativeTedious?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
   /** Override the SqlcmdStrategy constructor (for testing). */
   readonly Sqlcmd?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+  /** Override the ManualDumpStrategy constructor (for testing). */
+  readonly ManualDump?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -85,8 +88,12 @@ export function buildMssqlStrategies(
   const Sqlcmd = deps.Sqlcmd ?? SqlcmdStrategy;
   strategies.push(new Sqlcmd(config));
 
-  // ── Extension point: Batches D/E will push ManualDumpStrategy and
-  // ConsentedInstallStrategy here, after SqlcmdStrategy. ──────────────────────
+  // ManualDumpStrategy — offline JSON ingest (Batch D).
+  // Falls back to the default dump path (.dbgraph/dumps/mssql-dump.json).
+  const ManualDump = deps.ManualDump ?? ManualDumpStrategy;
+  strategies.push(new ManualDump(config));
+
+  // ── Extension point: Batch E will push ConsentedInstallStrategy here. ──────
 
   return strategies;
 }
