@@ -569,8 +569,15 @@ function buildRoutines(
         ...input.views.map((v) => ({ schema: v.schema_name, name: v.view_name })),
       ];
       const result = tokenizePgBody(body, potentialDeps);
-      if (result.hasDynamicSql) hasDynSql = true;
-      if (result.dependencies.length > 0) dependencies = result.dependencies;
+      if (result.hasDynamicSql) {
+        // Spec: when dynamic SQL is detected, mark hasDynamicSql:true and emit
+        // NO dependency edges — the body is unanalyzable and edges would be fabricated.
+        // ADR-007 / US-007: declared blindness, never guess.
+        hasDynSql = true;
+        // dependencies remains undefined (no fabricated edges)
+      } else if (result.dependencies.length > 0) {
+        dependencies = result.dependencies;
+      }
     }
 
     const obj: RawObject = {
