@@ -6,14 +6,12 @@
  *   selectStrategy(strategies, logger)  → Promise<ConnectivityStrategy> (first to pass
  *                                         both detect() AND canConnect())
  *
- * Registry order for THIS batch (C):
- *   1. NativeTediousStrategy — ONLY when authentication.type !== 'integrated'
+ * Registry order (Batches C + D + E):
+ *   1. NativeTediousStrategy    — ONLY when authentication.type !== 'integrated'
  *      (tedious cannot perform Windows Integrated Security, ADR-006)
- *   2. SqlcmdStrategy
- *
- * Batches D and E will append:
- *   3. ManualDumpStrategy   (offline JSON ingest — Batch D)
- *   4. ConsentedInstallStrategy (guided install — Batch E)
+ *   2. SqlcmdStrategy           — always included (integrated-auth primary path)
+ *   3. ManualDumpStrategy       — offline JSON ingest (Batch D)
+ *   4. ConsentedInstallStrategy — guided install B1, last resort (Batch E)
  *
  * Selection algorithm (selectStrategy):
  *   For each strategy in order:
@@ -27,16 +25,18 @@
  *   - logger.info for the winning strategy
  *   - No credential value ever appears in a log line
  *
- * connectivity-strategies Batch C, tasks C3.1–C3.2.
+ * connectivity-strategies Batches C + D + E.
  */
 
 import type { ConnectivityStrategy, StrategyAttempt } from '../../../../core/ports/connectivity-strategy.js';
 import type { Logger } from '../../../../core/ports/logger.js';
 import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.js';
 import { StrategyExhaustionError } from '../../../../core/errors.js';
+import { noopLogger } from '../../../../core/ports/logger.js';
 import { NativeTediousStrategy } from './native-tedious.strategy.js';
 import { SqlcmdStrategy } from './sqlcmd.strategy.js';
 import { ManualDumpStrategy } from './manual-dump.strategy.js';
+import { ConsentedInstallStrategy } from './consented-install.strategy.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection seam (for testability in Batch C)
@@ -53,6 +53,13 @@ export interface MssqlStrategyDeps {
   readonly Sqlcmd?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
   /** Override the ManualDumpStrategy constructor (for testing). */
   readonly ManualDump?: new (config: MssqlAdapterConfig) => ConnectivityStrategy;
+  /** Override the ConsentedInstallStrategy constructor (for testing). */
+  readonly ConsentedInstall?: new (config: MssqlAdapterConfig, logger: Logger, os?: string) => ConnectivityStrategy;
+  /**
+   * Logger passed to ConsentedInstallStrategy so it can emit guidance via Logger.info.
+   * Defaults to noopLogger when not provided (back-compat).
+   */
+  readonly logger?: Logger;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,12 +70,13 @@ export interface MssqlStrategyDeps {
  * Builds the ordered list of connectivity strategies for a given MssqlAdapterConfig.
  *
  * Order:
- *   1. NativeTediousStrategy — only for explicit-credential configs (sql/ntlm)
- *   2. SqlcmdStrategy        — always included (integrated-auth primary path)
- *   [ ManualDumpStrategy and ConsentedInstallStrategy are added in Batches D/E ]
+ *   1. NativeTediousStrategy    — only for explicit-credential configs (sql/ntlm)
+ *   2. SqlcmdStrategy           — always included (integrated-auth primary path)
+ *   3. ManualDumpStrategy       — offline JSON ingest
+ *   4. ConsentedInstallStrategy — guided install B1, last resort
  *
  * @param config - MssqlAdapterConfig whose authentication discriminant drives ordering.
- * @param deps   - Optional constructor overrides for testing.
+ * @param deps   - Optional constructor overrides and logger for testing/transparency.
  * @returns Ordered ConnectivityStrategy[]; at least one strategy is always returned.
  */
 export function buildMssqlStrategies(
@@ -76,6 +84,7 @@ export function buildMssqlStrategies(
   deps: MssqlStrategyDeps = {},
 ): ConnectivityStrategy[] {
   const strategies: ConnectivityStrategy[] = [];
+  const logger: Logger = deps.logger ?? noopLogger;
 
   // NativeTedious is ONLY viable for explicit-credential configs.
   // Integrated auth is handled exclusively by external-tool strategies.
@@ -93,7 +102,10 @@ export function buildMssqlStrategies(
   const ManualDump = deps.ManualDump ?? ManualDumpStrategy;
   strategies.push(new ManualDump(config));
 
-  // ── Extension point: Batch E will push ConsentedInstallStrategy here. ──────
+  // ConsentedInstallStrategy — guided install B1, always last (Batch E).
+  // Receives the logger so it can print consent notices and install guidance.
+  const ConsentedInstall = deps.ConsentedInstall ?? ConsentedInstallStrategy;
+  strategies.push(new ConsentedInstall(config, logger));
 
   return strategies;
 }

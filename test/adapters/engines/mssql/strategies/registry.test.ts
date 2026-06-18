@@ -161,6 +161,42 @@ describe('buildMssqlStrategies()', () => {
     const manualDumpStrategy = strategies.find((s) => s.id === 'manual-dump-stub');
     expect(manualDumpStrategy).toBeDefined();
   });
+
+  // ── E5.x: consented-install appended after manual-dump ────────────────────
+
+  it('fourth strategy is consented-install for sql config (Batch E)', () => {
+    const strategies = buildMssqlStrategies(SQL_CONFIG);
+    expect(strategies[3]?.id).toBe('consented-install');
+  });
+
+  it('third strategy is consented-install for integrated config (Batch E)', () => {
+    const strategies = buildMssqlStrategies(INTEGRATED_CONFIG);
+    // integrated: [sqlcmd, manual-dump, consented-install] (native-tedious omitted)
+    expect(strategies[2]?.id).toBe('consented-install');
+  });
+
+  it('full order is native-tedious → sqlcmd → manual-dump → consented-install for sql config (Batch E)', () => {
+    const strategies = buildMssqlStrategies(SQL_CONFIG);
+    const ids = strategies.map((s) => s.id);
+    expect(ids).toEqual(['native-tedious', 'sqlcmd', 'manual-dump', 'consented-install']);
+  });
+
+  it('deps.ConsentedInstall overrides the ConsentedInstallStrategy constructor (Batch E)', () => {
+    class StubbedConsentedInstall {
+      readonly id = 'consented-install-stub';
+      async detect(): Promise<{ available: true }> {
+        return { available: true };
+      }
+      async canConnect(): Promise<boolean> { return false; }
+      async runCatalog(): Promise<never> { throw new Error('stub'); }
+    }
+    const deps: MssqlStrategyDeps = {
+      ConsentedInstall: StubbedConsentedInstall as unknown as NonNullable<MssqlStrategyDeps['ConsentedInstall']>,
+    };
+    const strategies = buildMssqlStrategies(SQL_CONFIG, deps);
+    const stubbedStrategy = strategies.find((s) => s.id === 'consented-install-stub');
+    expect(stubbedStrategy).toBeDefined();
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

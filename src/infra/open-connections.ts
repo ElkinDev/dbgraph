@@ -25,6 +25,8 @@ import {
   createMssqlSchemaAdapter,
   createSqliteGraphStore,
 } from '../index.js';
+import type { Logger } from '../core/ports/logger.js';
+import { noopLogger } from '../core/ports/logger.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Return types
@@ -49,11 +51,19 @@ export type AdapterAndStore = {
  * Callers are responsible for calling adapter.close() and store.close() in a
  * finally block after use.
  *
+ * @param projectRoot - The directory containing dbgraph.config.json.
+ * @param logger      - Optional Logger for strategy-selection transparency.
+ *                      Defaults to noopLogger (back-compat — existing callers
+ *                      that do not pass a logger are unaffected).
+ *
  * Throws ConfigError if:
  *   - dbgraph.config.json is missing or malformed
  *   - any ${env:VAR} reference is unresolved
  */
-export async function openConnections(projectRoot: string): Promise<AdapterAndStore> {
+export async function openConnections(
+  projectRoot: string,
+  logger: Logger = noopLogger,
+): Promise<AdapterAndStore> {
   // Read and parse config
   const configPath = join(projectRoot, 'dbgraph.config.json');
   const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
@@ -99,12 +109,15 @@ export async function openConnections(projectRoot: string): Promise<AdapterAndSt
         password: src.password as string,
       };
     }
-    adapter = await createMssqlSchemaAdapter({
-      server: src.server,
-      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
-      database: src.database,
-      authentication,
-    });
+    adapter = await createMssqlSchemaAdapter(
+      {
+        server: src.server,
+        ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
+        database: src.database,
+        authentication,
+      },
+      { logger },
+    );
   }
 
   // Open graph store
