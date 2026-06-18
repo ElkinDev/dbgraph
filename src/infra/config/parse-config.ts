@@ -14,6 +14,7 @@ import {
   type DbgraphConfig,
   type SqliteSource,
   type MssqlSource,
+  type PgSource,
   VALID_LEVELS,
   SUPPORTED_DIALECTS,
 } from './schema.js';
@@ -141,6 +142,54 @@ function parseMssqlSource(raw: unknown): MssqlSource {
   return result;
 }
 
+// Pattern for a valid ${env:VAR} reference (uppercase letters, digits, underscore).
+const ENV_REF_RE = /^\$\{env:[A-Z_][A-Z0-9_]*\}$/;
+
+/**
+ * Returns true when the value is a valid ${env:VAR} reference.
+ */
+function isEnvRef(value: string): boolean {
+  return ENV_REF_RE.test(value);
+}
+
+function parsePgSource(raw: unknown): PgSource {
+  if (!isRecord(raw)) {
+    throw new ConfigError('Config: "source" must be an object for dialect "pg".');
+  }
+  const host = requireString(raw, 'host', 'source (pg)');
+  const database = requireString(raw, 'database', 'source (pg)');
+  const user = requireString(raw, 'user', 'source (pg)');
+  const password = requireString(raw, 'password', 'source (pg)');
+
+  // Spec: "Password must be supplied by env reference, not a literal" (US-028, US-032).
+  if (!isEnvRef(password)) {
+    throw new ConfigError(
+      'source (pg): field "password" must be a ${env:VAR} reference, not a literal value. ' +
+        'Use an environment variable reference such as ${env:PG_PASSWORD}.',
+    );
+  }
+
+  const port = optionalString(raw, 'port', 'source (pg)');
+  const ssl = optionalString(raw, 'ssl', 'source (pg)');
+  const schema = optionalString(raw, 'schema', 'source (pg)');
+
+  const result: {
+    host: string;
+    database: string;
+    user: string;
+    password: string;
+    port?: string;
+    ssl?: string;
+    schema?: string;
+  } = { host, database, user, password };
+
+  if (port !== undefined) result.port = port;
+  if (ssl !== undefined) result.ssl = ssl;
+  if (schema !== undefined) result.schema = schema;
+
+  return result;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main parser
 // ─────────────────────────────────────────────────────────────────────────────
@@ -203,6 +252,13 @@ export function parseConfig(raw: unknown): DbgraphConfig {
       const cfg: DbgraphConfig = levels !== undefined
         ? { dialect: 'mssql', source, levels }
         : { dialect: 'mssql', source };
+      return cfg;
+    }
+    case 'pg': {
+      const source = parsePgSource(raw['source']);
+      const cfg: DbgraphConfig = levels !== undefined
+        ? { dialect: 'pg', source, levels }
+        : { dialect: 'pg', source };
       return cfg;
     }
     default:

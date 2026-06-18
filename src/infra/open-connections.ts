@@ -86,6 +86,15 @@ export async function openConnections(
       file: resolved.source.file,
       ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
     });
+  } else if (resolved.dialect === 'pg') {
+    // pg dispatch wiring is handled in Batch 5 (createPgSchemaAdapter + factory).
+    // This branch exists to keep TypeScript's exhaustive narrowing sound after
+    // 'pg' was added to DbgraphConfig. Reaching here means a pg config was loaded
+    // before the Batch-5 wiring lands; throw an informative error.
+    throw new Error(
+      "PostgreSQL adapter dispatch is not wired yet (arrives in Batch 5). " +
+      "Use dialect 'sqlite' or 'mssql' for now.",
+    );
   } else {
     // mssql
     const src = resolved.source;
