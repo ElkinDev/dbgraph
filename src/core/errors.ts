@@ -105,7 +105,7 @@ export class ConfigError extends DbgraphError {
 export class UnsupportedDialectError extends DbgraphError {
   constructor(dialect: string) {
     super(
-      `Unsupported dialect: "${dialect}". Available dialects: sqlite, mssql.`,
+      `Unsupported dialect: "${dialect}". Available dialects: sqlite, mssql, pg.`,
       'E_UNSUPPORTED_DIALECT',
     );
   }

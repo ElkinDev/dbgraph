@@ -139,5 +139,7 @@ export async function createPgSchemaAdapter(
 
   // ── 4. Wrap in the driver seam and return the adapter ────────────────────
   const driver = createPgReadonlyDriver(client);
-  return new PgSchemaAdapter(driver);
+  // Pass the optional schema scope to the adapter for per-query scoping.
+  const schemaScope = config.schema ?? null;
+  return new PgSchemaAdapter(driver, schemaScope);
 }
