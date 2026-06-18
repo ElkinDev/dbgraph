@@ -9,6 +9,9 @@
  * PG result shape: { rows: Record<string, unknown>[] }
  * vs MSSQL shape:  { recordset: Record<string, unknown>[] }
  *
+ * query() accepts an optional params array for parameterized queries ($1, $2, …)
+ * so the schema-scope param can be passed cleanly to every catalog SELECT.
+ *
  * NO top-level `pg` import anywhere (ADR-006). The lazy import lives in factory.ts.
  * The adapter talks ONLY to PgReadonlyDriver (ADR-004).
  *
@@ -23,11 +26,11 @@
 /**
  * Minimal async read-only handle for PostgreSQL catalog queries.
  *
- * query — execute a SELECT and return all rows as plain objects.
+ * query — execute a SELECT (with optional params) and return all rows as plain objects.
  * close — release the connection (calls client.end()).
  */
 export interface PgReadonlyDriver {
-  query(sql: string): Promise<Record<string, unknown>[]>;
+  query(sql: string, params?: readonly unknown[]): Promise<Record<string, unknown>[]>;
   close(): Promise<void>;
 }
 
@@ -40,11 +43,11 @@ export interface PgReadonlyDriver {
  * Typed locally so we do not need to import pg here — the client instance
  * is created and connected by the factory and passed in.
  *
- * pg.Client.query returns { rows: Record<string, unknown>[] }
+ * pg.Client.query(sql, params?) returns { rows: Record<string, unknown>[] }
  * pg.Client.end   releases the connection socket.
  */
 export interface ClientLike {
-  query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+  query(sql: string, params?: unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
   end(): Promise<void>;
 }
 
@@ -61,8 +64,8 @@ export interface ClientLike {
  */
 export function createPgReadonlyDriver(client: ClientLike): PgReadonlyDriver {
   return {
-    async query(sql: string): Promise<Record<string, unknown>[]> {
-      const result = await client.query(sql);
+    async query(sql: string, params?: readonly unknown[]): Promise<Record<string, unknown>[]> {
+      const result = await client.query(sql, params !== undefined ? [...params] : undefined);
       return result.rows;
     },
 

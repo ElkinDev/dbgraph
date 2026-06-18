@@ -1,24 +1,47 @@
 /**
- * PgSchemaAdapter — minimal skeleton for the PostgreSQL SchemaAdapter.
+ * PgSchemaAdapter — concrete SchemaAdapter for PostgreSQL.
  * Design §"PG mirrors the SQLite adapter SHAPE (thin class + single duck-typed driver seam)".
  *
- * This skeleton satisfies the SchemaAdapter port contract so factory.ts can
- * return a correctly-typed adapter in Batch 3. The full extract() and fingerprint()
- * bodies (catalog queries + map) are implemented in Batch 5 (task 5.1).
+ * Talks ONLY to PgReadonlyDriver (ADR-004) — never to pg directly.
+ * Instantiated by createPgSchemaAdapter (factory.ts).
  *
- * The adapter talks ONLY to PgReadonlyDriver (ADR-004) — never to pg directly.
- * Instantiation happens via createPgSchemaAdapter (factory.ts) which owns the
- * lazy import and client.connect() (ADR-006).
- *
- * US-028 (PostgreSQL adapter), ADR-004 (seam), ADR-006 (lazy optional import).
+ * US-028 (PostgreSQL adapter), US-009 (fingerprint), ADR-004 (seam),
+ * ADR-006 (lazy optional import), ADR-008 (determinism).
  */
 
+import { createHash } from 'node:crypto';
 import type { SchemaAdapter } from '../../../core/ports/schema-adapter.js';
 import type { CapabilityMatrix, ExtractionScope } from '../../../core/model/capability.js';
 import type { RawCatalog } from '../../../core/model/catalog.js';
 import type { PgReadonlyDriver } from './driver.js';
 import { PG_CAPABILITIES } from './capabilities.js';
+import { buildPgRawCatalog } from './map.js';
+import {
+  SQL_PG_SCHEMAS,
+  SQL_PG_TABLES,
+  SQL_PG_COLUMNS,
+  SQL_PG_COLUMN_NAMES,
+  SQL_PG_CONSTRAINTS,
+  SQL_PG_INDEXES,
+  SQL_PG_VIEWS,
+  SQL_PG_ROUTINES,
+  SQL_PG_TRIGGERS,
+  SQL_PG_SEQUENCES,
+  SQL_PG_FINGERPRINT,
+} from './queries.js';
 import { ConnectionError } from '../../../core/errors.js';
+import type {
+  SchemaRow,
+  TableRow,
+  ColumnRow,
+  ColumnNameRow,
+  ConstraintRow,
+  IndexRow,
+  ViewRow,
+  RoutineRow,
+  TriggerRow,
+  SequenceRow,
+} from './map.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PgSchemaAdapter
@@ -28,8 +51,8 @@ import { ConnectionError } from '../../../core/errors.js';
  * Implements SchemaAdapter backed by a connected PgReadonlyDriver.
  * The driver is created exactly once by the factory and closed by close().
  *
- * extract() and fingerprint() are STUBS in Batch 3; full implementation
- * arrives in Batch 5 (queries.ts + map.ts + fingerprint query).
+ * @param _driver  - Connected PgReadonlyDriver.
+ * @param _schema  - Optional schema scope (null = all non-system schemas).
  */
 export class PgSchemaAdapter implements SchemaAdapter {
   readonly dialect = 'pg' as const;
@@ -38,30 +61,76 @@ export class PgSchemaAdapter implements SchemaAdapter {
   /** Set to true after close() so the second call is a no-op. */
   private _closed = false;
 
-  constructor(private readonly _driver: PgReadonlyDriver) {}
+  constructor(
+    private readonly _driver: PgReadonlyDriver,
+    private readonly _schema: string | null = null,
+  ) {}
 
   /**
    * Extracts the source database schema into a deterministic RawCatalog.
-   * STUB: full implementation (queries.ts + map.ts) arrives in Batch 5.
+   * Issues pg_catalog SELECTs in parallel (where independent) via the driver,
+   * assembles via buildPgRawCatalog. Honours ExtractionScope levels.
    *
-   * @throws ConnectionError if close() was already called.
+   * @throws ConnectionError if close() was already called (lifecycle guard).
    */
   async extract(scope: ExtractionScope): Promise<RawCatalog> {
-    void scope;
     if (this._closed) {
       throw new ConnectionError(
         'PgSchemaAdapter: extract() called after close(). Create a new adapter.',
       );
     }
-    // Batch 5 (task 5.1) replaces this stub with the real catalog queries + map.
-    throw new ConnectionError(
-      'PgSchemaAdapter.extract() is not yet implemented (arrives in Batch 5).',
+
+    const schemaParam = this._schema ?? null;
+
+    // Run all catalog queries in parallel for efficiency (independent queries).
+    // Each query accepts an optional $1 schema scope param (null = all non-system schemas).
+    const [
+      schemas,
+      tables,
+      columns,
+      columnNames,
+      constraints,
+      indexes,
+      views,
+      routines,
+      triggers,
+      sequences,
+    ] = await Promise.all([
+      this._driver.query(SQL_PG_SCHEMAS, [schemaParam]),
+      this._driver.query(SQL_PG_TABLES, [schemaParam]),
+      this._driver.query(SQL_PG_COLUMNS, [schemaParam]),
+      this._driver.query(SQL_PG_COLUMN_NAMES, [schemaParam]),
+      this._driver.query(SQL_PG_CONSTRAINTS, [schemaParam]),
+      this._driver.query(SQL_PG_INDEXES, [schemaParam]),
+      this._driver.query(SQL_PG_VIEWS, [schemaParam]),
+      this._driver.query(SQL_PG_ROUTINES, [schemaParam]),
+      this._driver.query(SQL_PG_TRIGGERS, [schemaParam]),
+      this._driver.query(SQL_PG_SEQUENCES, [schemaParam]),
+    ]);
+
+    return buildPgRawCatalog(
+      {
+        schemas: schemas as unknown as readonly SchemaRow[],
+        tables: tables as unknown as readonly TableRow[],
+        columns: columns as unknown as readonly ColumnRow[],
+        columnNames: columnNames as unknown as readonly ColumnNameRow[],
+        constraints: constraints as unknown as readonly ConstraintRow[],
+        indexes: indexes as unknown as readonly IndexRow[],
+        views: views as unknown as readonly ViewRow[],
+        routines: routines as unknown as readonly RoutineRow[],
+        triggers: triggers as unknown as readonly TriggerRow[],
+        sequences: sequences as unknown as readonly SequenceRow[],
+      },
+      scope,
     );
   }
 
   /**
-   * Computes a cheap drift fingerprint via a single catalog query.
-   * STUB: full implementation arrives in Batch 5 (task 5.1).
+   * Computes a cheap DDL-sensitive fingerprint.
+   * Formula: sha256(`${MAX(oid)}|${COUNT(*)}`) over non-system pg_class entries.
+   * OIDs advance on CREATE (DDL change); COUNT moves on CREATE/DROP.
+   * Stable across DML inserts/updates/deletes (US-009).
+   * Issues exactly ONE query.
    *
    * @throws ConnectionError if close() was already called.
    */
@@ -71,10 +140,15 @@ export class PgSchemaAdapter implements SchemaAdapter {
         'PgSchemaAdapter: fingerprint() called after close(). Create a new adapter.',
       );
     }
-    // Batch 5 (task 5.1) replaces this stub with the real fingerprint query.
-    throw new ConnectionError(
-      'PgSchemaAdapter.fingerprint() is not yet implemented (arrives in Batch 5).',
-    );
+
+    const schemaParam = this._schema ?? null;
+    const rows = await this._driver.query(SQL_PG_FINGERPRINT, [schemaParam]);
+    const row = rows[0] as Record<string, unknown> | undefined;
+
+    const m = row !== undefined ? String(row['m'] ?? 'null') : 'null';
+    const c = row !== undefined ? String(row['c'] ?? '0') : '0';
+
+    return createHash('sha256').update(`${m}|${c}`).digest('hex');
   }
 
   /**
