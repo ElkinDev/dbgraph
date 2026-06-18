@@ -1,0 +1,31 @@
+DBGRAPH STATUS
+────────────────────────────────────────
+  Engine:     sqlite
+  Last sync:  2026-06-18T03:31:17.163Z
+  Drift:      could not be checked live (no connection)
+
+  Object counts:
+    column              26
+    constraint          9
+    index               4
+    table               6
+    trigger             6
+    view                2
+
+  Index levels:
+    collections         metadata
+    columns             full
+    constraints         full
+    fields              metadata
+    functions           metadata
+    indexes             full
+    procedures          metadata
+    sampling            off
+    sequences           metadata
+    statistics          off
+    tables              full
+    triggers            full
+    views               full
+
+  Excluded objects:  (none)
+

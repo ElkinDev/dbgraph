@@ -1,0 +1,24 @@
+SEARCH RESULTS
+────────────────────────────────────────
+  [constraint]  main.employees.pk_employees  (matched: qname)
+  [constraint]  main.employees.fk_employees_0  (matched: qname)
+  [table]  main.employees  (matched: qname)
+  [column]  main.employees.email  (matched: qname)
+  [column]  main.employees.salary  (matched: qname)
+  [column]  main.employees.dept_id  (matched: qname)
+  [column]  main.employees.emp_id  (matched: qname)
+  [column]  main.employees.full_name  (matched: qname)
+  [column]  main.employees.hire_date  (matched: qname)
+  [constraint]  main.employees.idx_emp_email  (matched: qname)
+  [index]  main.employees.idx_emp_dept  (matched: qname)
+  [index]  main.employees.idx_emp_email  (matched: qname)
+  [index]  main.employees.idx_emp_active_dept  (matched: qname)
+  [index]  main.employees.idx_emp_email_lower  (matched: qname)
+  [trigger]  main.trg_emp_after_delete  (matched: body)
+  [trigger]  main.trg_emp_before_insert  (matched: body)
+  [trigger]  main.trg_emp_after_insert  (matched: body)
+  [trigger]  main.trg_emp_before_update  (matched: body)
+  [trigger]  main.trg_emp_salary_update  (matched: body)
+
+--- 19 results (total) | offset 0 ---
+

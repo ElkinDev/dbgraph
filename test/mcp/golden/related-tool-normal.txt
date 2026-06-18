@@ -1,0 +1,42 @@
+RELATED: main.employees  [table]
+───────────────────────────────
+
+  fires_on
+    in:
+      ← main.trg_emp_after_delete  [trigger]
+      ← main.trg_emp_after_insert  [trigger]
+      ← main.trg_emp_before_insert  [trigger]
+      ← main.trg_emp_before_update  [trigger]
+      ← main.trg_emp_salary_update  [trigger]
+
+  has_column
+    out:
+      → main.employees.dept_id  [column]
+      → main.employees.email  [column]
+      → main.employees.emp_id  [column]
+      → main.employees.full_name  [column]
+      → main.employees.hire_date  [column]
+      → main.employees.salary  [column]
+
+  has_constraint
+    out:
+      → main.employees.fk_employees_0  [constraint]
+      → main.employees.idx_emp_email  [constraint]
+      → main.employees.pk_employees  [constraint]
+
+  has_index
+    out:
+      → main.employees.idx_emp_active_dept  [index]
+      → main.employees.idx_emp_dept  [index]
+      → main.employees.idx_emp_email  [index]
+      → main.employees.idx_emp_email_lower  [index]
+
+  references
+    out:
+      → main.departments  [table]
+      → main.departments  [table]
+    in:
+      ← main.assignments  [table]
+      ← main.assignments  [table]
+      ← main.assignments  [table]
+

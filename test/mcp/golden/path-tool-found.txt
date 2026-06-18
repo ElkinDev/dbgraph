@@ -1,0 +1,5 @@
+PATH: main.employees  →  main.departments
+──────────────────────────────────────
+  main.employees  →  main.departments
+      JOIN ON main.employees.dept_id = main.departments.dept_id
+

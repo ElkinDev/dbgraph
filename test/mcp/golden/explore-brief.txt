@@ -1,0 +1,8 @@
+main.employees  [table]
+───────────────────────
+  fires_on               5 in
+  has_column             6 out
+  has_constraint         3 out
+  has_index              4 out
+  references             2 out, 3 in
+
