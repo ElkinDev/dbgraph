@@ -1,9 +1,9 @@
-# Apply Progress: connectivity-strategies — Batch A + Batch B + Batch C
+# Apply Progress: connectivity-strategies — Batch A + Batch B + Batch C + Batch D
 
 **Change**: connectivity-strategies
 **Mode**: Strict TDD (RED → GREEN per task)
-**Batches**: A (A1.1–A1.7) + B (B2.1–B2.6) + C (C3.1–C3.6)
-**Status**: Batches A, B, and C complete
+**Batches**: A (A1.1–A1.7) + B (B2.1–B2.6) + C (C3.1–C3.6) + D (D4.1–D4.4)
+**Status**: Batches A, B, C, and D complete
 
 ## Completed Tasks
 
@@ -26,6 +26,10 @@
 - [x] C3.4 GREEN: adjusted `factory.test.ts` (login-failed/kerberos now expect `StrategyExhaustionError`; SqlcmdUnavailable stub injected via deps.Sqlcmd) + `factory-missing-driver.test.ts` (missing-mssql `ConnectionError` preserved via re-throw in `NativeTediousStrategy.canConnect()`); 12 assertions pass
 - [x] C3.5 `open-connections.ts` integrated arm already in place from A1.6; factory signature backward-compatible (optional deps); sql/ntlm/integrated branches all wired
 - [x] C3.6 Batch C gate: `npm run lint` 0 errors/0 warnings; `npx tsc --noEmit` clean; `npm test` 1374/1374 pass (90 files)
+- [x] D4.1 RED→GREEN `test/.../dump-emitter.test.ts` + `strategies/dump-emitter.ts`: `emitDumpScript()` composes 11-family deterministic .sql from queries.ts constants; each wrapped `FOR JSON PATH, INCLUDE_NULL_VALUES`; each labeled with MssqlRowInput key; header comment with sqlcmd -E instructions; NO write verb; exports `DUMP_DIR`, `DUMP_FILE`, `CATALOG_FAMILY_KEYS`; 10/10 assertions pass
+- [x] D4.2 RED→GREEN `test/.../manual-dump.test.ts` + `strategies/manual-dump.strategy.ts`: `ManualDumpStrategy` (id:'manual-dump'); `detect()` uses `existsSync` — available if file present; `canConnect()` = file present + valid JSON; `runCatalog()` reads combined JSON → `parseJsonRows` → `buildMssqlRawCatalog` UNCHANGED; `close()` no-op; golden fixture `test/fixtures/mssql/dumps/mssql-dump-golden.json` (anonymized/synthetic: app.accounts + app.sessions schema); BIT 0/1 coercion validated; byte-identical on re-run (ADR-008); 19/19 assertions pass
+- [x] D4.3 Registry append: `registry.ts` imports + instantiates `ManualDumpStrategy` AFTER sqlcmd; `MssqlStrategyDeps.ManualDump` injection seam added; `deps.ManualDump` override tested; order: native → sqlcmd → manual-dump; `.gitignore` explicit `.dbgraph/dumps/` entry added (covered by `.dbgraph/` glob)
+- [x] D4.4 Batch D gate: `npm run lint` 0 errors/0 warnings; `npx tsc --noEmit` clean; `npm test` 1407/1407 pass (92 files); write-verb scan: PASS; boundary: PASS; leak-scanner: PASS
 
 ## TDD Cycle Evidence
 
@@ -50,6 +54,10 @@
 | C3.4 | factory.test.ts + factory-missing-driver.test.ts adjusted (12 assertions) | Seam confirmed green | login-failed/kerberos → `StrategyExhaustionError`; missing-driver `ConnectionError` preserved via re-throw |
 | C3.5 | Gate | `open-connections.ts` already wired (A1.6); no change needed | factory optional deps back-compat |
 | C3.6 | Gate | `npm run lint` 0w; `npx tsc --noEmit` clean; 1374 tests pass | |
+| D4.1 | `test/.../dump-emitter.test.ts` (10 assertions — RED first) | `strategies/dump-emitter.ts` created | `emitDumpScript()` golden-deterministic; 11 FOR JSON PATH wrappers; no write verb |
+| D4.2 | `test/.../manual-dump.test.ts` (19 assertions — RED first) | `strategies/manual-dump.strategy.ts` created | Golden fixture `mssql-dump-golden.json`; BIT 0/1 → boolean coercion via json-rows; byte-identical on re-run |
+| D4.3 | `registry.test.ts` extended (+4 D4.x assertions) | `registry.ts` updated (import + push ManualDumpStrategy) | `deps.ManualDump` seam; `.gitignore` explicit `.dbgraph/dumps/` entry |
+| D4.4 | Gate | `npm run lint` 0w; `npx tsc --noEmit` clean; 1407 tests pass | write-verb + boundary + leak-scanner all green |
 
 ## Files Changed
 
@@ -84,6 +92,15 @@
 | `test/adapters/engines/mssql/factory.test.ts` | Adjusted (Batch C) | login-failed/kerberos now expect `StrategyExhaustionError`; `SqlcmdUnavailable` stub injected via deps |
 | `test/adapters/engines/mssql/factory-missing-driver.test.ts` | Adjusted (Batch C) | Missing-driver `ConnectionError('npm i mssql')` preserved; `SqlcmdStub` injected via deps |
 | `openspec/changes/connectivity-strategies/tasks.md` | Modified (Batch C) | Marked C3.1–C3.6 as `[x]` |
+| `src/adapters/engines/mssql/strategies/dump-emitter.ts` | Created (Batch D) | `emitDumpScript()` + `DUMP_DIR` + `DUMP_FILE` + `CATALOG_FAMILY_KEYS`; deterministic 11-family SQL script |
+| `src/adapters/engines/mssql/strategies/manual-dump.strategy.ts` | Created (Batch D) | `ManualDumpStrategy` (id:'manual-dump'); detect/canConnect/runCatalog/close; `ReadFileFn` seam |
+| `src/adapters/engines/mssql/strategies/registry.ts` | Modified (Batch D) | Imported + pushed `ManualDumpStrategy`; `MssqlStrategyDeps.ManualDump` seam added |
+| `test/adapters/engines/mssql/strategies/dump-emitter.test.ts` | Created (Batch D) | 10 assertions: determinism, write-verb, FOR JSON PATH count, key aliases, DUMP_DIR/DUMP_FILE/CATALOG_FAMILY_KEYS |
+| `test/adapters/engines/mssql/strategies/manual-dump.test.ts` | Created (Batch D) | 19 assertions: id, detect, canConnect, runCatalog golden, error cases, close |
+| `test/adapters/engines/mssql/strategies/registry.test.ts` | Modified (Batch D) | +4 D4.x assertions: third strategy = manual-dump, integrated second = manual-dump, order, deps override |
+| `test/fixtures/mssql/dumps/mssql-dump-golden.json` | Created (Batch D) | Anonymized/synthetic combined JSON dump (app.accounts + app.sessions schema); BIT fields as 0/1 |
+| `.gitignore` | Modified (Batch D) | Explicit `.dbgraph/dumps/` entry with comment (R8 — schema + proc source) |
+| `openspec/changes/connectivity-strategies/tasks.md` | Modified (Batch D) | Marked D4.1–D4.4 as `[x]` |
 
 ## Gate Results
 
@@ -108,6 +125,15 @@
 - Missing-driver: `ConnectionError('npm i mssql')` still thrown and asserted (test preserved)
 - Registry test: 19/19 — ordered list, integrated omits native, selectStrategy exhaustion
 
+### Batch D (D4.4)
+- `npx tsc --noEmit`: CLEAN (0 errors)
+- `npm run lint`: CLEAN (0 errors, 0 warnings)
+- `npm test`: 1407/1407 passed (92 test files) — +33 new tests vs Batch C
+- Security scan (write-verb scanner): PASS — `strategies/dump-emitter.ts` and `manual-dump.strategy.ts` covered by `engines/**` glob
+- Leak scanner: PASS — no codename, no inline credentials in any new file
+- Boundary test: PASS — `connectivity-strategy.ts` still imports no driver/tool/child_process
+- Registry test: 23/23 — order: native → sqlcmd → manual-dump; integrated omits native; manual-dump seam override
+
 ## Deviations from Design
 
 **Batch A deviations (unchanged):**
@@ -125,11 +151,16 @@ Note: `SQL_MSSQL_FINGERPRINT` is not called in `runCatalog()` — the fingerprin
 - `NativeTediousStrategy.canConnect()` now re-throws `ConnectionError` for the missing-driver case (message contains 'npm i mssql'). This is a behavior change from pure "return false on any error" but is necessary to preserve the existing missing-driver assertion. It is also correct semantically: a missing npm package is a setup error, not a transient probe failure.
 - Factory tests for `login-failed` and `kerberos` now expect `StrategyExhaustionError` (not `ConnectionError`). This is the correct new behavior — when native strategy fails to connect and sqlcmd is also unavailable, all strategies are exhausted. The `SqlcmdUnavailable` stub is injected via `deps.Sqlcmd` to make tests deterministic regardless of sqlcmd presence on CI. The old `ConnectionError` assertions for these cases were removed because the factory is now a strategy selector, not a direct pool manager.
 
+**Batch D deviations:**
+- The `ManualDumpStrategy` constructor signature is `(config, dumpPath?, readFile?)` rather than `(config)` alone. The design implied the default dump path but did not specify a `readFile` seam. The extra constructor parameters are default-valued and backward-compatible; the `readFile` seam is necessary for testability (same pattern as the `SpawnSyncFn` seam in `SqlcmdStrategy`).
+- The `detect()` method uses `existsSync` from `node:fs` directly (not injectable) since the test for `detect()` that checks file existence uses the REAL golden fixture on disk. Only `readFile` is injectable (needed for content-level tests like malformed JSON). This is consistent with the sqlcmd `detect()` design which uses `spawnSync` for availability detection via actual process lookup.
+- The `.gitignore` already had `.dbgraph/` covering the dumps directory. Added an explicit `.dbgraph/dumps/` entry with a comment to make the intent visible per R8. Both entries are now present (redundant but intentional documentation).
+
 ## Remaining Tasks
 
-Batch D (D4.1–D4.4), Batch E (E5.1–E5.4), Batch F (F6.1–F6.3).
+Batch E (E5.1–E5.4), Batch F (F6.1–F6.3).
 
 ## Next Recommended
 
-`sdd-verify` for Batches A+B+C — validate all completed implementation against spec/design/tasks.
-OR: `sdd-apply` for Batch D (D4.1–D4.4): dump-emitter + manual-dump + `.gitignore` + anonymized golden.
+`sdd-verify` for Batches A+B+C+D — validate all completed implementation against spec/design/tasks.
+OR: `sdd-apply` for Batch E (E5.1–E5.4): install-recipes + consented-install (B1) + exhaustion UX.

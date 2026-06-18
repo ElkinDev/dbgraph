@@ -2,6 +2,8 @@ node_modules/
 dist/
 coverage/
 .dbgraph/
+# Manual dump files: schema + procedure source from dump-emitter.ts output (R8 — never commit)
+.dbgraph/dumps/
 *.tsbuildinfo
 .env
 

@@ -1,0 +1,115 @@
+{
+  "tables": [
+    { "schema_name": "app", "table_name": "accounts",  "object_id": 101 },
+    { "schema_name": "app", "table_name": "sessions",  "object_id": 102 }
+  ],
+  "columns": [
+    {
+      "schema_name": "app", "table_name": "accounts",
+      "column_id": 1, "column_name": "account_id",
+      "data_type": "int", "max_length": 4, "precision": 10, "scale": 0,
+      "is_nullable": 0, "is_computed": 0,
+      "computed_definition": null, "default_definition": null
+    },
+    {
+      "schema_name": "app", "table_name": "accounts",
+      "column_id": 2, "column_name": "username",
+      "data_type": "nvarchar", "max_length": 100, "precision": 0, "scale": 0,
+      "is_nullable": 0, "is_computed": 0,
+      "computed_definition": null, "default_definition": null
+    },
+    {
+      "schema_name": "app", "table_name": "accounts",
+      "column_id": 3, "column_name": "email",
+      "data_type": "nvarchar", "max_length": 200, "precision": 0, "scale": 0,
+      "is_nullable": 1, "is_computed": 0,
+      "computed_definition": null, "default_definition": null
+    },
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "column_id": 1, "column_name": "session_id",
+      "data_type": "uniqueidentifier", "max_length": 16, "precision": 0, "scale": 0,
+      "is_nullable": 0, "is_computed": 0,
+      "computed_definition": null, "default_definition": "(newid())"
+    },
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "column_id": 2, "column_name": "account_id",
+      "data_type": "int", "max_length": 4, "precision": 10, "scale": 0,
+      "is_nullable": 0, "is_computed": 0,
+      "computed_definition": null, "default_definition": null
+    },
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "column_id": 3, "column_name": "expires_at",
+      "data_type": "datetime2", "max_length": 8, "precision": 27, "scale": 7,
+      "is_nullable": 1, "is_computed": 0,
+      "computed_definition": null, "default_definition": null
+    }
+  ],
+  "keyConstraints": [
+    {
+      "schema_name": "app", "table_name": "accounts",
+      "constraint_name": "PK_accounts",
+      "constraint_type": "PK", "column_name": "account_id", "key_ordinal": 1
+    },
+    {
+      "schema_name": "app", "table_name": "accounts",
+      "constraint_name": "UQ_accounts_username",
+      "constraint_type": "UQ", "column_name": "username", "key_ordinal": 1
+    },
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "constraint_name": "PK_sessions",
+      "constraint_type": "PK", "column_name": "session_id", "key_ordinal": 1
+    }
+  ],
+  "foreignKeys": [
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "constraint_name": "FK_sessions_accounts",
+      "fk_id": 201,
+      "ref_schema_name": "app", "ref_table_name": "accounts",
+      "local_column": "account_id", "ref_column": "account_id",
+      "constraint_column_id": 1
+    }
+  ],
+  "checkConstraints": [],
+  "indexes": [
+    {
+      "schema_name": "app", "table_name": "sessions",
+      "index_name": "IX_sessions_account",
+      "is_unique": 0, "is_primary_key": 0, "is_unique_constraint": 0,
+      "type_desc": "NONCLUSTERED",
+      "filter_definition": null,
+      "column_name": "account_id",
+      "key_ordinal": 1, "index_column_id": 1,
+      "is_included_column": 0
+    }
+  ],
+  "modules": [
+    {
+      "schema_name": "app", "object_name": "v_active_sessions",
+      "object_type": "V", "object_id": 301,
+      "definition": "CREATE VIEW app.v_active_sessions AS SELECT s.session_id, s.account_id FROM app.sessions s WHERE s.expires_at IS NOT NULL"
+    }
+  ],
+  "triggerEvents": [],
+  "sequences": [
+    {
+      "schema_name": "app", "sequence_name": "seq_account_id",
+      "data_type": "int",
+      "start_value": "1", "increment": "1",
+      "minimum_value": "1", "maximum_value": "2147483647",
+      "is_cycling": 0
+    }
+  ],
+  "extendedProperties": [
+    {
+      "schema_name": "app", "object_name": "accounts",
+      "column_id": 0, "column_name": null,
+      "description": "Application user accounts"
+    }
+  ],
+  "dependencies": []
+}
