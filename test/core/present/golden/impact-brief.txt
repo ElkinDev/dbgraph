@@ -1,0 +1,5 @@
+IMPACT: dbo.orders.status  [column]
+─────────────────────────────────
+  READ impact:   3 chains
+  WRITE impact:  1 chain
+

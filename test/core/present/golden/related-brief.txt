@@ -1,0 +1,7 @@
+RELATED: dbo.orders  [table]
+───────────────────────────
+  depends_on             1 in
+  fires_on               1 in
+  references             1 out, 1 in
+  inferred               1 total
+

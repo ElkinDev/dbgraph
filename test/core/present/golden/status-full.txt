@@ -1,0 +1,23 @@
+DBGRAPH STATUS
+────────────────────────────────────────
+  Engine:     SQLite 3.42.0
+  Last sync:  2024-01-15T10:30:00Z
+  Drift:      could not be checked live (no connection)
+
+  Object counts:
+    index               8
+    procedure           5
+    table               12
+    trigger             2
+    view                3
+
+  Index levels:
+    procedures          metadata
+    tables              full
+    triggers            full
+    views               metadata
+
+  Excluded objects:
+    dbo.sys_internal
+    dbo.tmp_cache
+

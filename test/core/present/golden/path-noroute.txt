@@ -1,0 +1,12 @@
+PATH: dbo.customers  →  dbo.shipments
+──────────────────────────────────
+  No join path found between these endpoints.
+
+  Neighbors of dbo.customers:
+    → dbo.orders
+    → dbo.addresses
+
+  Neighbors of dbo.shipments:
+    → dbo.orders
+    → dbo.warehouses
+

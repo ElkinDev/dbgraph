@@ -1,0 +1,8 @@
+SEARCH RESULTS
+────────────────────────────────────────
+  [table]  dbo.orders  (matched: qname)
+  [view]  dbo.order_summary  (matched: qname)
+  [procedure]  dbo.usp_GetOrders  (matched: body)
+
+--- 3 results (total) | offset 0 ---
+

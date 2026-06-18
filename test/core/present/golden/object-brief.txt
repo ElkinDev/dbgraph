@@ -1,0 +1,3 @@
+dbo.orders  [table]  [1 idx, 1 trg!]
+───────────────────
+

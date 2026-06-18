@@ -1,0 +1,8 @@
+SEARCH RESULTS
+────────────────────────────────────────
+  [table]  dbo.orders
+  [view]  dbo.order_summary
+  [procedure]  dbo.usp_GetOrders
+
+--- 3 results (total) | offset 0 ---
+
