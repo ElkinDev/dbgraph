@@ -19,6 +19,24 @@ import type { GraphNode } from '../model/node.js';
 import type { ExploreView } from './explore.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: deduplicate entries by qname at display grain.
+// The graph stores one edge per FK column pair PLUS one aggregate table→table edge.
+// For display purposes, only unique (qname) entries per direction are shown.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function uniqueByQname<T extends { node: GraphNode }>(entries: T[]): T[] {
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (const entry of entries) {
+    if (!seen.has(entry.node.qname)) {
+      seen.add(entry.node.qname);
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -90,8 +108,12 @@ export function formatRelated(view: ExploreView, detail: RelatedDetail): string 
 
   for (const kind of declaredKinds) {
     const entries = declaredByKind.get(kind)!;
-    const outEntries = entries.filter((e) => e.direction === 'out');
-    const inEntries = entries.filter((e) => e.direction === 'in');
+    const allOut = entries.filter((e) => e.direction === 'out');
+    const allIn = entries.filter((e) => e.direction === 'in');
+    // Deduplicate by qname at display grain — multiple per-column FK edges and one
+    // aggregate edge all point to the same table; only unique qnames are shown.
+    const outEntries = uniqueByQname(allOut);
+    const inEntries = uniqueByQname(allIn);
 
     if (detail === 'brief') {
       const parts: string[] = [];

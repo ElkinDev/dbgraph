@@ -26,12 +26,14 @@ dbgraph — database schema graph indexer
 Usage: dbgraph <command> [options]
 
 Commands:
-  init     Initialize the graph index for a database
-  sync     Synchronize the graph index with the database
-  status   Show the current state of the graph index
-  query    Search the graph index for a term
-  explore  Explore a node and its neighbors in the graph
-  diff     Compare two snapshots of the graph index
+  init      Initialize the graph index for a database
+  sync      Synchronize the graph index with the database
+  status    Show the current state of the graph index
+  query     Search the graph index for a term
+  explore   Explore a node and its neighbors in the graph
+  diff      Compare two snapshots of the graph index
+  affected  Analyze DDL to show impacted objects (--json for machine output)
+  install   Wire dbgraph-mcp into the Claude Desktop config (--remove to undo)
 
 Options:
   --help, -h    Show this help text

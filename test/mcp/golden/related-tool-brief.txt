@@ -4,5 +4,5 @@ RELATED: main.employees  [table]
   has_column             6 out
   has_constraint         3 out
   has_index              4 out
-  references             2 out, 3 in
+  references             1 out, 1 in
 

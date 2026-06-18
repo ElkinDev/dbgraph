@@ -150,13 +150,18 @@ describe('dbgraph_path — content assertions', () => {
     expect(text).toContain('No join path found');
   });
 
-  it('no-route path includes neighbor suggestions', async () => {
+  it('no-route path includes neighbor suggestions with specific qnames (L-009)', async () => {
     const text = await harness.callTool('dbgraph_path', {
       from: 'main.employees',
       to: 'main.projects',
     });
-    // Should suggest neighbors for each endpoint
+    // L-009: must assert ACTUAL qnames, not just existence of the header.
+    // employees has references edges to main.departments and from main.assignments.
     expect(text).toContain('Neighbors of');
+    expect(text).toContain('main.departments');
+    expect(text).toContain('main.assignments');
+    // Ensure no raw 40-hex SHA-1 IDs leak into the output
+    expect(text).not.toMatch(/[0-9a-f]{40}/);
   });
 
   it('returns error for unknown from table', async () => {

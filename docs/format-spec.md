@@ -203,8 +203,20 @@ Simplified ceiling table (tokens — use these for budget assertions):
 | `dbgraph_precheck`| 40               | 65                | 110             |
 
 Note: `dbgraph_path` only has found/no-route variants, not brief/normal/full; the ceiling uses the
-larger no-route output (62 chars). `dbgraph_status` includes a non-deterministic ISO timestamp
+larger no-route output. `dbgraph_status` includes a non-deterministic ISO timestamp
 (~25 chars) that is excluded from deterministic golden comparisons but included in budget accounting.
+
+**Golden change (phase-5-mcp-server remediation)**: `test/mcp/golden/path-tool-noroute.txt` re-captured
+after fixing C-1 (raw node IDs → qnames in no-route neighbors). No-route output now shows
+`main.departments` and `main.assignments` instead of 40-hex SHA-1 IDs. Token delta: 167 chars→42 tk
+(old) → 137 chars→35 tk (new); ceiling 80 unchanged (headroom is sufficient).
+
+**Golden change (phase-5-mcp-server remediation W-3)**: `test/mcp/golden/explore-{brief,normal,full}.txt`,
+`related-tool-{brief,normal,full}.txt` re-captured after fixing W-3 (per-column FK edge duplication in
+explore/related display). Multiple per-column + aggregate edges for the same FK now deduplicate to one
+line per unique neighbor qname at display grain. `references` group for `main.employees`: was `2 out,
+3 in` → now `1 out, 1 in` (departments×1, assignments×1). Token delta: explore-normal 382 chars→96 tk
+(old) → 330 chars→83 tk (new); ceilings unchanged (headroom remains adequate).
 
 ---
 

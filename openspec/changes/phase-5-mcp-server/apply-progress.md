@@ -1,13 +1,65 @@
-# Apply Progress — phase-5-mcp-server (ALL BATCHES COMPLETE)
+# Apply Progress — phase-5-mcp-server (ALL BATCHES COMPLETE + VERIFY REMEDIATION DONE + CROSS-PLATFORM FIX)
 
 **Change**: phase-5-mcp-server
 **Mode**: Strict TDD (RED→GREEN per task)
-**Batches completed**: A (tasks 1.1–1.10), B (tasks 2.1–2.8), B-fix (lint + config decoupling), C (tasks 3.1–3.6), D (tasks 4.1–4.5), **E (tasks 5.1–5.5) — FINAL**
-**Date**: 2026-06-17 → 2026-06-18
+**Batches completed**: A (tasks 1.1–1.10), B (tasks 2.1–2.8), B-fix (lint + config decoupling), C (tasks 3.1–3.6), D (tasks 4.1–4.5), **E (tasks 5.1–5.5) — FINAL**, **F (verify remediation) — FINAL**, **G (cross-platform install fix) — FINAL**
+**Date**: 2026-06-17 → 2026-06-18 → 2026-06-18 (remediation) → 2026-06-17 (cross-platform fix)
 
 ---
 
 ## Completed Tasks
+
+### Batch G — Cross-Platform Install Fix (Linux CI failure)
+
+- [x] **Cross-platform fix — `resolveConfigPath` now uses explicit `path.win32` / `path.posix` separators**
+  - **Root cause**: `src/cli/commands/install.ts` imported `join` from `node:path` and used it for BOTH branches of `resolveConfigPath`. On Linux, `path.join` uses `/` as separator. When a test mocks `platform === 'win32'`, the code still executed `join('C:\\Users\\...\\Roaming', 'Claude', 'claude_desktop_config.json')` via the Linux host joiner — producing `C:\Users\...\Roaming/Claude/claude_desktop_config.json` (mixed separators). The FsSeam is keyed by the exact computed path, so the seam lookup returned `undefined`, causing 3 `runInstall` tests to fail with "expected undefined to be defined". The `resolveConfigPath win32` assertion also failed directly on the separator mismatch.
+  - **Fix**: Replaced `import { join } from 'node:path'` with `import { win32 as pathWin32, posix as pathPosix } from 'node:path'`. The win32 branch now calls `pathWin32.join(...)` (always `\`). The posix branch calls `pathPosix.join(...)` (always `/`). The production `realFsSeam` still uses the host-native `dirname` (correct — it only runs on the actual OS).
+  - **Test changes**: NONE. The test file was already correct — it asserted `C:\...\Claude\claude_desktop_config.json` (backslashes) for the win32 case and used normalized `.replace(/\\/g, '/')` + `.toContain` for the posix cases. The tests were HOST-INDEPENDENT; the code was not.
+  - **Host-independence reasoning**: `pathWin32.join` is a pure function that always returns `\`-separated paths regardless of where Node.js runs. `pathPosix.join` always returns `/`-separated paths. Neither reads `path.sep` from the host environment. Therefore `resolveConfigPath('win32', { APPDATA: 'C:\\...' })` returns the exact same string on Windows, Linux, and macOS.
+  - **Files changed**: `src/cli/commands/install.ts` (1-line import change + 2 `join` calls replaced with `pathWin32.join` / `pathPosix.join` + inline comments).
+  - **Gates**: `npx tsc --noEmit` CLEAN · `npm run lint` 0/0 · `npm test` 1259/1259 PASS (86 files).
+
+---
+
+### Batch F — Verify Remediation (findings C-1, W-1, W-2, W-3, S-1, S-2, S-3)
+
+- [x] **C-1 (CRITICAL) FIXED** — `formatPath` no-route branch emits qnames, not raw SHA-1 node IDs.
+  - `test/mcp/path.test.ts`: strengthened `no-route path includes neighbor suggestions` to assert SPECIFIC qnames (`main.departments`, `main.assignments`) AND assert no 40-hex IDs (L-009).
+  - `src/core/present/path.ts:56-68`: renamed loop variable from misleading `qname` to `id`; added `view.resolveTable(id)` call for each entry in `nearest.from` / `nearest.to`.
+  - `test/mcp/golden/path-tool-noroute.txt`: re-captured — now shows `main.departments` and `main.assignments`.
+  - `docs/format-spec.md`: golden-change note added (token delta: 42 tk → 35 tk, ceiling 80 unchanged).
+  - TDD: RED (new L-009 assertion failed on raw IDs) → fix → GREEN (9/9 path tests).
+
+- [x] **W-1 (WARNING) FIXED** — `dbgraph_status` live drift now computed when adapter is available.
+  - `src/mcp/tools/status.ts`: added optional `adapter?: SchemaAdapter` parameter; when provided and snapshot exists, computes `liveFp = await adapter.fingerprint()`, sets `driftChecked:true`, `driftDetected: liveFp !== lastSnapshot.fingerprint`. Fallback on fingerprint error stays connectionless.
+  - `src/mcp/server.ts`: added `withStoreForStatus` closure that passes the live adapter to `runStatusTool` in the production path; harness path (storeOverride injected) stays connectionless.
+  - `test/mcp/status.test.ts`: strengthened `connectionless output states drift could not be checked` to also assert it does NOT say "detected" or "none detected" (explicit driftChecked:false path test).
+  - `test/mcp/status-drift.integration.test.ts`: updated to call `runStatusTool(store, args, adapter)` — tool now MUST report `detected (schema changed since last sync)`. Added second integration test for no-drift path.
+  - TDD: integration tests gated behind `DBGRAPH_INTEGRATION=1`; unit assertion RED before fix → GREEN after.
+
+- [x] **W-2 (WARNING) FIXED** — search pagination strengthened with specific second-page / hasMore:false assertions.
+  - `test/mcp/search.test.ts`: replaced existence-only pagination tests with 4 L-009 assertions:
+    1. First page with limit=5 asserts `hasMore: true` footer and `offset 0` marker.
+    2. Second page via offset=5 asserts specific qnames and `offset 5`.
+    3. Last page (offset=15, limit=5) asserts NOT `hasMore: true` and uses total-results format.
+    4. Advancing offset yields different content than first page.
+  - TDD: all new assertions GREEN (behavior was correct; tests were weak). 14/14 tests now pass.
+
+- [x] **W-3 (WARNING) FIXED** — per-column FK edge deduplication in explore/related display.
+  - Root cause: `getNeighbors` returns one `NeighborGroup` entry per EDGE (per-column edges + one aggregate edge for same FK), so a single-column FK like `employees→departments` produced 2 `main.departments` lines; composite FK `assignments→employees(2 cols)` produced 3 lines.
+  - `src/core/present/explore.ts`: added `uniqueByQname()` helper; brief counts and normal/full entry lists now deduplicate by `node.qname` per direction.
+  - `src/core/present/related.ts`: added `uniqueByQname()` helper with generic type; same dedup applied to outEntries/inEntries per kind.
+  - `test/mcp/golden/explore-{brief,normal,full}.txt`, `related-tool-{brief,normal,full}.txt`: re-captured (references group: `1 out, 1 in` instead of `2 out, 3 in`).
+  - `docs/format-spec.md`: golden-change note added (token delta: explore-normal 96 tk → 83 tk, ceilings unchanged).
+  - TDD: golden assertions went RED after fix → re-captured → GREEN. All boundary tests still pass.
+
+- [x] **S-1 (SUGGESTION) DONE** — `design.md` Decision 9 updated from `mcpServers.dbgraph` to `mcpServers.dbgraph-mcp` (spec-correct entry name).
+
+- [x] **S-2 (SUGGESTION) DONE** — `src/cli/cli.ts` USAGE_TEXT now lists `affected` and `install` with one-line descriptions. `test/cli/cli.test.ts` extended with 2 new assertions. 9/9 tests pass.
+
+- [x] **S-3 (SUGGESTION) DONE** — `design.md` File Changes table entry corrected: `src/mcp/precheck.ts` → `src/core/precheck/{extract,engine,index}.ts`.
+
+- [x] **Leak-scanner fix** — `openspec/changes/phase-5-mcp-server/verify-report.md` contained the denylist codename (written by verifier). Redacted to `[CODENAME]` in the two affected lines.
 
 ### Batch A (1.1–1.10)
 
@@ -154,6 +206,12 @@
 | 5.3 | `test/mcp/e2e.test.ts` | E2E/in-process | N/A (new) | Golden mismatch (wrong no-route target, wrong status headers) | 29/29 | all 8 tools × detail goldens + ADR-008; DoD proof | Fixed no-route pair (projects, not audit_log); Fixed status content assertions |
 | 5.4 | `test/core/present/budget.test.ts` | Unit | N/A (new) | Needed measurement | 22/22 | all ceilings measured; headroom ~25–50%; no TBD remains | N/A |
 | 5.5 | All gates (tsc + lint + full suite) | All | All prior tests | — | 1255/1255 | boundaries + leak-scanner all GREEN | N/A |
+| C-1 | `test/mcp/path.test.ts` (L-009 assert) | Integration/in-process | 9 existing path tests | New assertion fails: raw IDs seen, no `main.departments` | 9/9 after fix | No raw 40-hex SHA-1 in output | Variable rename `qname`→`id` for clarity |
+| W-1 | `test/mcp/status.test.ts` (unit) + `status-drift.integration.test.ts` | Unit + Integration(gated) | 15 existing status tests | New unit assertion + new integration with-adapter call | 15/15 unit + integration updated | driftChecked:false path + driftChecked:true-with-adapter | Null guard: `lastSnapshot !== undefined` → `!== null` |
+| W-2 | `test/mcp/search.test.ts` (pagination) | Integration/in-process | 10 existing search tests | All 4 new assertions GREEN (behavior was already correct) | 14/14 | hasMore:true footer, offset 5, last page format, content diff | N/A |
+| W-3 | `test/mcp/explore.test.ts` + `related.test.ts` (golden assertions) | Integration/in-process | 21 existing tests | Goldens mismatch after dedup fix | 21/21 after re-capture | references: 1 out, 1 in (was 2 out, 3 in) | Generic type for uniqueByQname in related.ts |
+| S-1/S-3 | `openspec/changes/phase-5-mcp-server/design.md` | Doc | N/A | N/A | N/A | N/A | N/A |
+| S-2 | `test/cli/cli.test.ts` (2 new assertions) | Unit | 7 existing tests | 2 new assertions fail before USAGE_TEXT updated | 9/9 | affected + install in help | N/A |
 
 ---
 
@@ -171,6 +229,28 @@
 ---
 
 ## Files Changed
+
+### Batch F — Verify Remediation
+| File | Action | Description |
+|------|--------|-------------|
+| `src/core/present/path.ts` | Modified | No-route branch: `view.resolveTable(id)` called for each nearest neighbor ID (was printing raw IDs) |
+| `src/core/present/explore.ts` | Modified | Added `uniqueByQname()` helper; brief counts + normal/full entries deduplicated per direction |
+| `src/core/present/related.ts` | Modified | Added `uniqueByQname<T>()` generic helper; outEntries/inEntries deduplicated before render |
+| `src/mcp/tools/status.ts` | Modified | Added `adapter?: SchemaAdapter` parameter; live drift computed when adapter + snapshot available |
+| `src/mcp/server.ts` | Modified | Added `withStoreForStatus` closure passing live adapter to `runStatusTool` in production path |
+| `src/cli/cli.ts` | Modified | USAGE_TEXT extended with `affected` and `install` command entries |
+| `test/mcp/path.test.ts` | Modified | Strengthened no-route test: asserts `main.departments`, `main.assignments`, no 40-hex IDs (L-009) |
+| `test/mcp/status.test.ts` | Modified | Strengthened connectionless assertion: also checks NOT "detected" / NOT "none detected" |
+| `test/mcp/status-drift.integration.test.ts` | Modified | Updated to call tool WITH adapter; asserts drift-detected output; added no-drift test |
+| `test/mcp/search.test.ts` | Modified | 4 new pagination tests: hasMore:true footer, second page content, last page, advancing offset |
+| `test/cli/cli.test.ts` | Modified | 2 new assertions: `affected` and `install` in USAGE_TEXT |
+| `test/mcp/golden/path-tool-noroute.txt` | Re-captured | Shows `main.departments` + `main.assignments` instead of raw SHA-1 node IDs |
+| `test/mcp/golden/explore-{brief,normal,full}.txt` | Re-captured | references: 1 out, 1 in (deduped); brief counts corrected |
+| `test/mcp/golden/related-tool-{brief,normal,full}.txt` | Re-captured | references: 1 out, 1 in (deduped); brief counts corrected |
+| `docs/format-spec.md` | Modified | Golden-change notes for C-1 (path noroute) and W-3 (explore/related dedup) |
+| `openspec/changes/phase-5-mcp-server/design.md` | Modified | Decision 9: `mcpServers.dbgraph-mcp`; File Changes: corrected precheck path |
+| `openspec/changes/phase-5-mcp-server/tasks.md` | Modified | Task 5.1: `mcpServers.dbgraph-mcp` |
+| `openspec/changes/phase-5-mcp-server/verify-report.md` | Modified | Redacted denylist codename → `[CODENAME]` to unblock leak-scanner |
 
 ### Batch A
 | File | Action | Description |
@@ -351,9 +431,30 @@
 
 ## Status
 
-ALL BATCHES COMPLETE. 30/30 tasks (phases 1–5).
+ALL BATCHES COMPLETE. 30/30 tasks (phases 1–5) + Verify Remediation Batch F COMPLETE + Cross-Platform Install Fix Batch G COMPLETE.
 
-**Batch E gate results:**
+**Batch G (cross-platform install fix) gate results:**
+- `npx tsc --noEmit`: **CLEAN** (no errors)
+- `npm run lint`: **0 errors, 0 warnings**
+- `npm test`: **1259/1259 PASS** (86 test files; no new tests — existing tests now pass on Linux too)
+- Fix is host-independent: `pathWin32.join` / `pathPosix.join` are pure functions independent of `process.platform`
+
+**Batch F (remediation) gate results:**
+- `npx tsc --noEmit`: **CLEAN** (no errors)
+- `npm run lint`: **0 errors, 0 warnings**
+- `npm test`: **1259/1259 PASS** (86 test files; +4 from Batch F: 1 path, 1 status-unit, 4 search-pagination, 2 cli-help)
+- MCP boundary test (`test/mcp/boundaries.test.ts`): 9/9 PASS
+- Core boundary test (`test/core/boundaries.test.ts`): 9/9 PASS (incl. infra boundary: 2/2)
+- Leak-scanner: PASS (verify-report.md redacted; no forbidden codename in tracked files)
+- C-1: FIXED — `path-tool-noroute.txt` re-captured with real qnames; L-009 test passes
+- W-1: FIXED — `runStatusTool` wired to live adapter in production path; integration tests updated
+- W-2: FIXED — search pagination tests assert hasMore:true, second-page hits, hasMore:false on last page
+- W-3: FIXED — explore/related dedup by qname; 6 MCP goldens re-captured (smaller, within budget)
+- S-1: DONE — design.md Decision 9 reconciled to `mcpServers.dbgraph-mcp`
+- S-2: DONE — USAGE_TEXT lists `affected` + `install`; 2 new cli.test.ts assertions
+- S-3: DONE — design.md File Changes table corrected to `src/core/precheck/`
+
+**Batch E gate results (preserved):**
 - `npx tsc --noEmit`: **CLEAN** (no errors)
 - `npm run lint`: **0 errors, 0 warnings**
 - `npm test`: **1255/1255 PASS** (86 test files; +72 from Batch E: 21 install + 29 e2e + 22 budget)

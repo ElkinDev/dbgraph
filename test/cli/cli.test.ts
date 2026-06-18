@@ -44,4 +44,12 @@ describe('cli — USAGE_TEXT', () => {
   it('USAGE_TEXT mentions "diff"', () => {
     expect(USAGE_TEXT).toContain('diff');
   });
+
+  it('USAGE_TEXT mentions "affected"', () => {
+    expect(USAGE_TEXT).toContain('affected');
+  });
+
+  it('USAGE_TEXT mentions "install"', () => {
+    expect(USAGE_TEXT).toContain('install');
+  });
 });

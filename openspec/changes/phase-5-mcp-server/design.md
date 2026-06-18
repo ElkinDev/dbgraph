@@ -23,7 +23,7 @@ proven via an in-process `InMemoryTransport` SDK harness over the torture fixtur
 |6|`object` orchestrator|`getNodeByQName`→ `getNeighbors` over `has_column`/`has_index`/`has_constraint`/`fires_on` → `ObjectView` struct → `formatObject`|new core query|composes existing reads only; no `graph-query` delta|
 |7|Server shape|`src/mcp/server.ts` (`#!/usr/bin/env node`, `StdioServerTransport`); `ListTools`/`CallTool` handlers; one tool-name→`{schema, run}` table; `DbgraphError`→MCP error; static `initialize` instructions from `src/mcp/instructions.ts`|SDK high-level helpers unverified|mirrors CLI dispatch table; APPLY VERIFIES the SDK stdio + `InMemoryTransport` API against the pinned version|
 |8|SDK + packaging|`@modelcontextprotocol/sdk` PINNED exact as a `dependency`; third tsup entry `mcp: src/mcp/server.ts` (esm, shebang banner, `clean:false`); `package.json` `"bin": { "dbgraph-mcp": "./dist/mcp.js" }`|loose semver|ONLY new runtime dep (ADR-007); pin → APPLY confirms API|
-|9|`dbgraph install`|`resolveConfigPath(platform, env)`: win `%APPDATA%\Claude\claude_desktop_config.json`, linux `~/.config/Claude/…`; idempotent `mergeMcpConfig` adds `mcpServers.dbgraph`; `--remove` deletes the key; print manual snippet when path absent. fs/path injected as a seam|spawn an installer|pure-ish core unit-testable; US-024 minimum viable (Claude only)|
+|9|`dbgraph install`|`resolveConfigPath(platform, env)`: win `%APPDATA%\Claude\claude_desktop_config.json`, linux `~/.config/Claude/…`; idempotent `mergeMcpConfig` adds `mcpServers.dbgraph-mcp`; `--remove` deletes the key; print manual snippet when path absent. fs/path injected as a seam|spawn an installer|pure-ish core unit-testable; US-024 minimum viable (Claude only)|
 |10|Boundary test|Extend `test/cli/boundaries.test.ts` (or sibling) so `src/mcp/**` fails on any `/adapters/` or `/cli/` specifier or DB driver; keep negative-control planted import|new tool|reuses the regex scanner already proven|
 
 ## Data Flow
@@ -73,7 +73,7 @@ const text = (r.content[0] as { text: string }).text;   // golden-pinned per too
 | `src/cli/config/open-connections.ts` | Delete | Replaced by infra; update CLI imports (`dispatch.ts`, `init.ts`) |
 | `src/mcp/server.ts` | Create | stdio entry, tool table, error map, `initialize` |
 | `src/mcp/instructions.ts` | Create | Static instructions string (US-018) |
-| `src/mcp/precheck.ts` | Create | `extractIdentifiers` + match + `getImpact` aggregation |
+| `src/core/precheck/{extract,engine,index}.ts` | Create | `extractIdentifiers` + `runPrecheck` + barrel; neutral module shared by MCP + CLI |
 | `src/cli/commands/{affected,install}.ts` + `dispatch.ts` | Create/Modify | `affected` (`--json`) over precheck core; `install`/`--remove` |
 | `package.json` / `tsup.config.ts` | Modify | Pinned SDK dep; `dbgraph-mcp` bin; third entry |
 | `test/cli/boundaries.test.ts` | Modify | Add `src/mcp/**` rule + negative control |

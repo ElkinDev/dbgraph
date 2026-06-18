@@ -20,6 +20,24 @@ import type { GraphNode } from '../model/node.js';
 import type { NeighborGroups } from '../ports/graph-store.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Helper: deduplicate neighbor entries by qname at display grain.
+// The graph stores one edge per FK column pair PLUS one aggregate table→table edge.
+// For display purposes, only unique (qname) entries per direction matter.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function uniqueByQname(entries: readonly { node: GraphNode }[]): { node: GraphNode }[] {
+  const seen = new Set<string>();
+  const result: { node: GraphNode }[] = [];
+  for (const entry of entries) {
+    if (!seen.has(entry.node.qname)) {
+      seen.add(entry.node.qname);
+      result.push(entry);
+    }
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -59,14 +77,14 @@ export function formatExplore(view: ExploreView, detail: ExploreDetail): string 
   const edgeKinds = Object.keys(view.neighbors).sort();
 
   if (detail === 'brief') {
-    // Brief: one line per edge kind with in+out total counts
+    // Brief: one line per edge kind with in+out total counts (deduplicated by qname)
     if (edgeKinds.length === 0) {
       lines.push('  (no neighbors)');
     } else {
       for (const kind of edgeKinds) {
         const group = view.neighbors[kind]!;
-        const outCount = group.out.length;
-        const inCount = group.in.length;
+        const outCount = uniqueByQname(group.out).length;
+        const inCount = uniqueByQname(group.in).length;
         const parts: string[] = [];
         if (outCount > 0) parts.push(`${outCount} out`);
         if (inCount > 0) parts.push(`${inCount} in`);
@@ -74,24 +92,26 @@ export function formatExplore(view: ExploreView, detail: ExploreDetail): string 
       }
     }
   } else {
-    // normal + full: grouped neighbors by edge kind and direction
+    // normal + full: grouped neighbors by edge kind and direction (deduplicated by qname)
     if (edgeKinds.length === 0) {
       lines.push('  (no neighbors)');
     } else {
       for (const kind of edgeKinds) {
         const group = view.neighbors[kind]!;
+        const outEntries = uniqueByQname(group.out);
+        const inEntries = uniqueByQname(group.in);
         lines.push('');
         lines.push(`  ${kind}`);
 
-        if (group.out.length > 0) {
+        if (outEntries.length > 0) {
           lines.push('    out:');
-          for (const entry of group.out) {
+          for (const entry of outEntries) {
             lines.push(`      → ${entry.node.qname}  [${entry.node.kind}]`);
           }
         }
-        if (group.in.length > 0) {
+        if (inEntries.length > 0) {
           lines.push('    in:');
-          for (const entry of group.in) {
+          for (const entry of inEntries) {
             lines.push(`      ← ${entry.node.qname}  [${entry.node.kind}]`);
           }
         }

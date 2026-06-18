@@ -93,6 +93,26 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
     };
   };
 
+  // Special handler for status: passes the live adapter so drift can be computed.
+  // When a storeOverride is injected (harness), falls back to connectionless (no adapter).
+  const withStoreForStatus: ToolDefinition['run'] = async (
+    args: Record<string, unknown>,
+  ): Promise<CallToolResult> => {
+    if (store !== undefined) {
+      // Connectionless harness path — no live adapter available
+      return runStatusTool(store, args);
+    }
+
+    // Production path — open adapter + store, pass both to the tool for live drift
+    const { adapter, store: s } = await openConnections(process.cwd());
+    try {
+      return await runStatusTool(s, args, adapter);
+    } finally {
+      await s.close();
+      await adapter.close();
+    }
+  };
+
   return {
     dbgraph_explore: {
       description:
@@ -300,7 +320,7 @@ function buildToolTable(store: GraphStore | undefined): Readonly<Record<string, 
         },
         required: [],
       },
-      run: withStore(runStatusTool),
+      run: withStoreForStatus,
     },
   };
 }

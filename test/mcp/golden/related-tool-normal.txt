@@ -34,9 +34,6 @@ RELATED: main.employees  [table]
   references
     out:
       → main.departments  [table]
-      → main.departments  [table]
     in:
-      ← main.assignments  [table]
-      ← main.assignments  [table]
       ← main.assignments  [table]
 
