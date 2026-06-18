@@ -91,19 +91,49 @@ function parseMssqlSource(raw: unknown): MssqlSource {
   }
   const server = requireString(raw, 'server', 'source (mssql)');
   const database = requireString(raw, 'database', 'source (mssql)');
+  const port = optionalString(raw, 'port', 'source (mssql)');
+
+  // Resolve auth discriminant — check explicit auth field first, then infer.
+  const authRaw = raw['auth'];
+  let auth: 'sql' | 'ntlm' | 'integrated' | undefined;
+  if (authRaw !== undefined) {
+    if (authRaw !== 'sql' && authRaw !== 'ntlm' && authRaw !== 'integrated') {
+      throw new ConfigError(
+        'source (mssql): field "auth" must be one of "sql", "ntlm", or "integrated".',
+      );
+    }
+    auth = authRaw;
+  }
+
+  // integrated mode: no credentials required — return early.
+  if (auth === 'integrated') {
+    const result: {
+      server: string;
+      database: string;
+      auth: 'integrated';
+      port?: string;
+    } = { server, database, auth };
+    if (port !== undefined) result.port = port;
+    return result;
+  }
+
+  // sql or ntlm (explicit) or inferred — credentials required.
   const user = requireString(raw, 'user', 'source (mssql)');
   const password = requireString(raw, 'password', 'source (mssql)');
-  const port = optionalString(raw, 'port', 'source (mssql)');
   const domain = optionalString(raw, 'domain', 'source (mssql)');
+
+  // Infer auth when not explicit: domain present → ntlm, else → sql (back-compat).
+  const resolvedAuth: 'sql' | 'ntlm' = auth ?? (domain !== undefined ? 'ntlm' : 'sql');
 
   const result: {
     server: string;
     database: string;
     user: string;
     password: string;
+    auth: 'sql' | 'ntlm';
     port?: string;
     domain?: string;
-  } = { server, database, user, password };
+  } = { server, database, user, password, auth: resolvedAuth };
 
   if (port !== undefined) result.port = port;
   if (domain !== undefined) result.domain = domain;

@@ -84,6 +84,12 @@ export {
   type MssqlAdapterConfig,
 } from './ports/schema-adapter.js';
 
+export {
+  type ConnectivityStrategy,
+  type DetectResult,
+  type StrategyAttempt,
+} from './ports/connectivity-strategy.js';
+
 // ── Normalize ─────────────────────────────────────────────────────────────────
 export { normalizeCatalog } from './normalize/normalize.js';
 export { nodeId, edgeId, canonicalQName, stableStringify } from './normalize/id.js';
@@ -163,4 +169,5 @@ export {
   PermissionError,
   ConfigError,
   UnsupportedDialectError,
+  StrategyExhaustionError,
 } from './errors.js';

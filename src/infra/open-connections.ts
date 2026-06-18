@@ -79,14 +79,31 @@ export async function openConnections(projectRoot: string): Promise<AdapterAndSt
   } else {
     // mssql
     const src = resolved.source;
+    // Build the authentication union based on the resolved auth discriminant (A1.5/A1.6).
+    let authentication: import('../core/ports/schema-adapter.js').MssqlAdapterConfig['authentication'];
+    if (src.auth === 'integrated') {
+      authentication = { type: 'integrated' };
+    } else if (src.domain !== undefined) {
+      // ntlm — credentials guaranteed present after resolveSecrets
+      authentication = {
+        type: 'ntlm',
+        domain: src.domain,
+        user: src.user as string,
+        password: src.password as string,
+      };
+    } else {
+      // sql — credentials guaranteed present after resolveSecrets
+      authentication = {
+        type: 'sql',
+        user: src.user as string,
+        password: src.password as string,
+      };
+    }
     adapter = await createMssqlSchemaAdapter({
       server: src.server,
       ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
       database: src.database,
-      authentication:
-        src.domain !== undefined
-          ? { type: 'ntlm', domain: src.domain, user: src.user, password: src.password }
-          : { type: 'sql', user: src.user, password: src.password },
+      authentication,
     });
   }
 
