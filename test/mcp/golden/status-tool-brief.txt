@@ -1,0 +1,6 @@
+DBGRAPH STATUS
+────────────────────────────────────────
+  Engine:     sqlite
+  Last sync:  2026-06-18T03:31:17.163Z
+  Drift:      could not be checked live (no connection)
+
