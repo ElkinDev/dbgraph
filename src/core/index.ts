@@ -146,6 +146,11 @@ export {
   type PrecheckImpactSection,
 } from './present/precheck.js';
 
+// ── Precheck core (extractIdentifiers + runPrecheck) — shared by MCP + CLI ───
+// ADR-004: neutral module; imports only core query fns + ports.
+// Both src/mcp/tools/precheck.ts and src/cli/commands/affected.ts consume via barrel.
+export { extractIdentifiers, runPrecheck } from './precheck/index.js';
+
 // ── Error classes ─────────────────────────────────────────────────────────────
 export {
   DbgraphError,

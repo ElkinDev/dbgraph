@@ -1,0 +1,12 @@
+DDL PRECHECK
+────────────────────────────────────────
+
+MATCHED OBJECTS
+  [table]  main.employees
+
+READERS
+  [table]  main.assignments
+
+WHAT TO TEST
+  - main.assignments
+

@@ -1,8 +1,8 @@
-# Apply Progress — phase-5-mcp-server (Batches A + B + Batch B-fix + Batch C)
+# Apply Progress — phase-5-mcp-server (Batches A + B + Batch B-fix + Batch C + Batch D)
 
 **Change**: phase-5-mcp-server
 **Mode**: Strict TDD (RED→GREEN per task)
-**Batches completed**: A (tasks 1.1–1.10), B (tasks 2.1–2.8), B-fix (lint + config decoupling), C (tasks 3.1–3.6)
+**Batches completed**: A (tasks 1.1–1.10), B (tasks 2.1–2.8), B-fix (lint + config decoupling), C (tasks 3.1–3.6), D (tasks 4.1–4.5)
 **Date**: 2026-06-17 → 2026-06-18
 
 ---
@@ -68,6 +68,22 @@
   - Rule is now BITING (the old `cli/config` imports would have failed this test).
   - All 9 tests in `test/core/boundaries.test.ts` GREEN; all 9 in `test/mcp/boundaries.test.ts` GREEN.
 
+### Batch D (4.1–4.5)
+
+- [x] 4.1 `src/mcp/tools/object.ts` + `test/mcp/object.test.ts` + `test/mcp/golden/object-tool-{brief,normal,full}.txt`: `runObjectTool` orchestrates `getNodeByQName` + `getNeighbors` (all kinds) → `ObjectView` → `formatObject`. Disambiguation + NOT_FOUND. 13 tests GREEN. Goldens captured over `main.employees` from torture fixture.
+- [x] 4.2 `src/mcp/tools/impact.ts` + `test/mcp/impact.test.ts` + `test/mcp/golden/impact-tool-{brief,normal,full}.txt`: `runImpactTool` resolves node → `getImpact` → pre-populates node-id→qname cache → `formatImpact` with sync resolver. Default depth 3. 12 tests GREEN. Goldens over `main.employees`.
+- [x] 4.3 `src/core/precheck/extract.ts` (`extractIdentifiers`) + `src/core/precheck/engine.ts` (`runPrecheck`) + `src/core/precheck/index.ts` barrel. `extract.ts`: PURE regex tokenizer reusing MSSQL `tokenizer.ts` [\w.]+ + bracket-strip patterns; handles ALTER TABLE, CREATE/DROP INDEX, ADD/DROP COLUMN; case-insensitive, deduped, sorted. `engine.ts`: resolves identifiers to graph nodes (all NodeKinds), calls `getImpact`, aggregates into `PrecheckImpactSection`, deduplicates across statements. `src/core/index.ts` updated to re-export `extractIdentifiers` + `runPrecheck`. 17 extractor + 10 engine tests GREEN.
+- [x] 4.4 `src/mcp/tools/precheck.ts` + `test/mcp/precheck.test.ts` + `test/mcp/golden/precheck-tool-{brief,normal,full}.txt`: `runPrecheckTool` calls `runPrecheck` (core barrel) + `formatPrecheck`. `server.ts` updated: `stubHandler` removed (now dead), `object/impact/precheck` wired via `withStore`. 13 tests GREEN. Goldens captured with inline DDL `ALTER TABLE main.employees ADD COLUMN priority INT; DROP INDEX idx_emp_dept ON main.employees`.
+- [x] 4.5 `src/cli/commands/affected.ts` + `test/cli/commands/affected.test.ts`: `runAffected({store, sqlFile, json?, detail?})` reads file → `runPrecheck` (barrel, NOT `src/mcp/**`) → `formatPrecheck` or JSON.stringify; returns `{type: 'negative'}` when `matchedObjects.length > 0`, `{type: 'success'}` otherwise. `src/cli/dispatch.ts` updated: `runAffected` imported + `handleAffected` added + `affected` registered in COMMAND_TABLE. 12 tests GREEN.
+
+#### Batch D — additional details
+
+**Placement of precheck core**: `src/core/precheck/` is a neutral module. BOTH `src/mcp/tools/precheck.ts` and `src/cli/commands/affected.ts` import `runPrecheck` + `extractIdentifiers` from the barrel (`src/index.ts` → `src/core/index.ts`). Neither cli nor mcp imports the other — boundary tests stay green.
+
+**`stubHandler` removed from server.ts**: All 8 tools now have real handlers. `stubHandler` became unused lint error; removed. TOOL_TABLE remains fully populated.
+
+**SQLite index nodes**: In the torture fixture, index names like `idx_emp_dept` are stored as `has_index` edge targets but are NOT queryable as top-level qnames via `getNodeByQName`. They appear in `NeighborGroups` but not in the FTS/qname index. Therefore `idx_emp_dept` appears as `unmatched` in the precheck output — this is CORRECT behavior per spec ("identifiers that match no graph node are reported as unmatched, never guessed").
+
 ---
 
 ## SDK API — Verified Shape (task 2.5, pinned version 1.29.0)
@@ -116,6 +132,11 @@
 | 3.4 | `test/mcp/path.test.ts` | Integration/in-process | N/A (new) | Goldens missing | 12/12 | found path + no-route neighbors | Clean |
 | 3.5 | `test/mcp/status.test.ts` | Integration/in-process | N/A (new) | Tool returned "not implemented" | 15/15 | drift not checked + engine + counts | Fixed local variable rename (leak-scanner ban) → renamed to `matrix` |
 | 3.6 | `test/mcp/status-drift.integration.test.ts` | Integration (DBGRAPH_INTEGRATION=1) | N/A (new) | Written with skipIf gate | 1/1 skipIf | Live fingerprint diff proven | Clean |
+| 4.1 | `test/mcp/object.test.ts` | Integration/in-process | Stub returned "not implemented" | Golden missing → 10/13 RED | 13/13 | Content: COLUMNS/INDEXES/TRIGGERS/NOT_FOUND | Removed unused import |
+| 4.2 | `test/mcp/impact.test.ts` | Integration/in-process | Stub returned "not implemented" | Golden missing → 9/12 RED | 12/12 | READ/WRITE sections + NOT_FOUND | Pre-populate cache to satisfy sync resolve |
+| 4.3 | `test/core/precheck/extract.test.ts` + `engine.test.ts` | Unit + Integration | N/A (new) | Module not found | 17/17 + 10/10 | Bracket strip, case-insensitive, dedup, unmatched | Applied global regex reset (.lastIndex = 0) |
+| 4.4 | `test/mcp/precheck.test.ts` | Integration/in-process | N/A (new) | Golden missing | 13/13 | unmatched identifiers, dedup, confidence:parsed | Fixed: stubHandler removed from server.ts |
+| 4.5 | `test/cli/commands/affected.test.ts` | Unit + Integration | N/A (new) | Module not found | 12/12 | exit 0 / exit 1, JSON stable, file-not-found | N/A |
 
 ---
 
@@ -125,8 +146,9 @@
 - **New tests in Batch B**: 26 (3 new test files)
 - **New tests in Batch B-fix**: 2 (infra boundary rule added to existing `test/core/boundaries.test.ts`)
 - **New tests in Batch C**: 57 (5 new test files: explore, search, related, path, status; 1 integration file skipped in unit run)
-- **Total tests passing**: 1106 (77 test files)
-- **Layers used**: Unit (boundaries, instructions) + Integration/in-process (initialize, explore, search, related, path, status via InMemoryTransport) + Integration/gated (status-drift)
+- **New tests in Batch D**: 77 (7 new test files: extract, engine, object, impact, precheck, affected; + dispatch update)
+- **Total tests passing**: 1183 (83 test files)
+- **Layers used**: Unit (boundaries, instructions, precheck extractor) + Integration/in-process (initialize, explore, search, related, path, status, object, impact, precheck via InMemoryTransport) + Integration/gated (status-drift) + CLI integration (affected)
 
 ---
 
@@ -181,6 +203,31 @@
 | `test/mcp/golden/instructions.txt` | Created | Golden for DBGRAPH_INSTRUCTIONS |
 | `openspec/changes/phase-5-mcp-server/tasks.md` | Modified | Marked 2.1–2.8 as [x] complete |
 | `openspec/changes/phase-5-mcp-server/apply-progress.md` | Modified | Merged Batch B into this file |
+
+### Batch D
+| File | Action | Description |
+|------|--------|-------------|
+| `src/core/precheck/extract.ts` | Created | `extractIdentifiers(ddl)` PURE regex tokenizer; ALTER TABLE/CREATE/DROP INDEX/ADD/DROP COLUMN; bracket-strip + lowercase; deduped sorted |
+| `src/core/precheck/engine.ts` | Created | `runPrecheck(store, ddl)→PrecheckView`; resolves identifiers across NODE_KINDS; aggregates `getImpact`; deduplicates; confidence:'parsed' |
+| `src/core/precheck/index.ts` | Created | Barrel re-exporting `extractIdentifiers` + `runPrecheck` |
+| `src/core/index.ts` | Modified | Added `export { extractIdentifiers, runPrecheck }` from `./precheck/index.js` |
+| `src/mcp/tools/object.ts` | Created | `runObjectTool` — `getNodeByQName` + `getNeighbors` (all kinds) → `formatObject`; disambiguation + NOT_FOUND |
+| `src/mcp/tools/impact.ts` | Created | `runImpactTool` — resolves node → `getImpact` → pre-cached node-id→qname resolver → `formatImpact` |
+| `src/mcp/tools/precheck.ts` | Created | `runPrecheckTool` — `runPrecheck` (barrel core) + `formatPrecheck` |
+| `src/mcp/server.ts` | Modified | Added Batch D imports; wired `object/impact/precheck` via `withStore`; removed now-unused `stubHandler` |
+| `src/cli/commands/affected.ts` | Created | `runAffected({store, sqlFile, json?, detail?})` — reads file → `runPrecheck` (barrel) → format or JSON; returns `negative` when objects affected |
+| `src/cli/dispatch.ts` | Modified | Imported `runAffected`; added `handleAffected`; registered `affected` in COMMAND_TABLE |
+| `test/core/precheck/extract.test.ts` | Created | 17 tests — ALTER TABLE/DROP INDEX/mixed; bracket-strip; dedup; empty; unknown |
+| `test/core/precheck/engine.test.ts` | Created | 10 tests — match + confidence; unmatched; dedup across statements; empty DDL |
+| `test/mcp/object.test.ts` | Created | 13 tests: golden × detail, byte-identical re-run, content, NOT_FOUND |
+| `test/mcp/impact.test.ts` | Created | 12 tests: golden × detail, byte-identical re-run, content, NOT_FOUND, default depth |
+| `test/mcp/precheck.test.ts` | Created | 13 tests: golden × detail, byte-identical re-run, content, unmatched, dedup |
+| `test/cli/commands/affected.test.ts` | Created | 12 tests: exit codes (negative/success/empty), text output, JSON mode, file-not-found |
+| `test/mcp/golden/object-tool-{brief,normal,full}.txt` | Created | Goldens for dbgraph_object over main.employees |
+| `test/mcp/golden/impact-tool-{brief,normal,full}.txt` | Created | Goldens for dbgraph_impact over main.employees |
+| `test/mcp/golden/precheck-tool-{brief,normal,full}.txt` | Created | Goldens for dbgraph_precheck with ALTER TABLE + DROP INDEX DDL |
+| `openspec/changes/phase-5-mcp-server/tasks.md` | Modified | Marked 4.1–4.5 as [x] complete |
+| `openspec/changes/phase-5-mcp-server/apply-progress.md` | Modified | Merged Batch D into this file |
 
 ### Batch C
 | File | Action | Description |
@@ -256,7 +303,7 @@
 
 ## Remaining Tasks
 
-- [ ] 4.1–4.5 (Batch D): `object` + `impact` orchestrators, precheck (PURE extractor unit → match → aggregate), `affected` CLI sibling
+- [x] 4.1–4.5 (Batch D): COMPLETE — object + impact orchestrators, precheck (PURE extractor + engine), affected CLI sibling
 - [ ] 5.1–5.5 (Batch E): `install`, full in-process 8-tool E2E, budget measurement+pin, lint/typecheck closeout
 - [ ] Note: 5.2 packaging (bin + tsup entry) is done; remaining 5.x tasks are install, E2E, budget, closeout
 
@@ -264,9 +311,19 @@
 
 ## Status
 
-24/24 Batch A + B tasks complete + Batch B-fix (lint + config decoupling) + 6/6 Batch C tasks complete. Ready for Batch D.
+24/24 Batch A + B tasks complete + Batch B-fix (lint + config decoupling) + 6/6 Batch C tasks complete + 5/5 Batch D tasks complete. Ready for Batch E.
 
-**Batch C gate results:**
+**Batch D gate results:**
+- `npx tsc --noEmit`: **CLEAN** (no errors)
+- `npm run lint`: **0 errors, 0 warnings** (stubHandler removed — it became unused)
+- `npm test`: **1183/1183 PASS** (83 test files; +77 from Batch D)
+- MCP boundary test (`test/mcp/boundaries.test.ts`): 9/9 PASS
+- Core boundary test (`test/core/boundaries.test.ts`): 9/9 PASS
+- Leak-scanner: PASS (no forbidden codename in any new file)
+- `src/mcp/server.ts`: all 8 tools have real handlers; `stubHandler` removed
+- `src/core/precheck/`: PURE neutral module shared by MCP + CLI via barrel
+
+**Batch C gate results (preserved):**
 - `npx tsc --noEmit`: **CLEAN** (no errors)
 - `npm run lint`: **0 errors, 0 warnings**
 - `npm test`: **1106/1106 PASS** (77 test files; +57 from Batch C)
