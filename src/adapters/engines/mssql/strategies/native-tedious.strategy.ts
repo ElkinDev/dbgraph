@@ -70,14 +70,23 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
 
   /**
    * Attempts to connect via the mssql pool (lazy import + pool.connect()).
-   * Returns false on any connection failure (does not throw).
+   * Returns false on connectivity failures (bad credentials, network, TLS).
+   *
+   * Re-throws ConnectionError for setup errors (missing driver package) because
+   * those are not transient probe failures — they require user action (npm i mssql)
+   * and should surface immediately rather than silently falling through to the next
+   * strategy.
    */
   async canConnect(): Promise<boolean> {
     if (this._config.authentication.type === 'integrated') return false;
     try {
       await this._ensureConnected();
       return true;
-    } catch {
+    } catch (err) {
+      // Missing driver is a setup error — re-throw so the caller sees it immediately.
+      if (err instanceof ConnectionError && err.message.includes('npm i mssql')) {
+        throw err;
+      }
       return false;
     }
   }
@@ -95,6 +104,21 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
       );
     }
     return adapter.extract(scope);
+  }
+
+  /**
+   * Delegates fingerprint computation to MssqlSchemaAdapter.fingerprint().
+   * Reuses the already-connected adapter (or connects first if needed).
+   */
+  async fingerprint(): Promise<string> {
+    await this._ensureConnected();
+    const adapter = this._adapter;
+    if (adapter === null) {
+      throw new ConnectionError(
+        'NativeTediousStrategy: adapter not initialized after _ensureConnected()',
+      );
+    }
+    return adapter.fingerprint();
   }
 
   /**
