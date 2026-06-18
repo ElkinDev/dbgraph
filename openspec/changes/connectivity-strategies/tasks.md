@@ -56,9 +56,9 @@ redefine them.
 
 ## Batch F: close — boundaries, read-only scan, lint sweep (US-031, ADR-004)
 
-- [ ] F6.1 GREEN confirm `test/adapters/engines/security-scan.test.ts` (already recurses `engines/**`) now lists a `strategies/` file and the scan PASSES (only SELECTs; `FOR JSON PATH` wrapper + winget/URL strings add no write verb; no codename). Spec connectivity + mssql-extraction "Strategy source passes the write-verb scanner". Done: scan enumerates `strategies/` + passes; `npm test security-scan`.
-- [ ] F6.2 RED→GREEN `test/core/boundaries.test.ts`: assert `src/core/ports/connectivity-strategy.ts` imports no driver/tool/`node:child_process`; core/mcp/cli/infra unchanged and strategies live under `src/adapters/engines/mssql/strategies/`. Spec connectivity "Port is driver-free and core-typed". Done: `npm test boundaries`.
-- [ ] F6.3 Final sweep: full `npm run lint` zero-warning; `npx tsc --noEmit` clean; full `npm test` green; confirm every task above is `[x]`; record any gotcha in `docs/learnings.md`. Done: all gates green; checklist complete.
+- [x] F6.1 GREEN confirm `test/adapters/engines/security-scan.test.ts` (already recurses `engines/**`) now lists a `strategies/` file and the scan PASSES (only SELECTs; `FOR JSON PATH` wrapper + winget/URL strings add no write verb; no codename). Spec connectivity + mssql-extraction "Strategy source passes the write-verb scanner". Done: scan enumerates `strategies/` + passes; `npm test security-scan`.
+- [x] F6.2 RED→GREEN `test/core/boundaries.test.ts`: assert `src/core/ports/connectivity-strategy.ts` imports no driver/tool/`node:child_process`; core/mcp/cli/infra unchanged and strategies live under `src/adapters/engines/mssql/strategies/`. Spec connectivity "Port is driver-free and core-typed". Done: `npm test boundaries`.
+- [x] F6.3 Final sweep: full `npm run lint` zero-warning; `npx tsc --noEmit` clean; full `npm test` green; confirm every task above is `[x]`; record any gotcha in `docs/learnings.md`. Done: all gates green; checklist complete.
 
 ## Apply Batch Grouping (one session each)
 

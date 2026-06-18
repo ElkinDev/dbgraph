@@ -311,3 +311,97 @@ describe('hexagonal boundary: src/infra must not import src/cli or src/mcp', () 
     expect(violations).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F6.2 — connectivity-strategy port is driver-free (US-031, ADR-004)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The ConnectivityStrategy port lives in src/core/ports/ and MUST NOT import
+// any driver (mssql, better-sqlite3, pg, mysql2), external tool
+// (node:child_process), adapter layer (src/adapters/**), mcp, or cli symbol.
+// This is an EXPLICIT regression guard pinning the F6.2 boundary hygiene task.
+//
+// Note: the general core-boundary scan above already covers this file by
+// inclusion (it walks all of src/core/). This focused test pins it explicitly
+// so a future "move the port" refactor triggers a clear, named failure.
+
+describe('hexagonal boundary: connectivity-strategy port is driver-free (F6.2)', () => {
+  const strategyPortPath = join(projectRoot, 'src', 'core', 'ports', 'connectivity-strategy.ts');
+
+  it('connectivity-strategy.ts file exists in core ports', () => {
+    const source = readFileSync(strategyPortPath, 'utf-8');
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  it('connectivity-strategy.ts imports no driver, adapter, mcp, cli, or node:child_process', () => {
+    const source = readFileSync(strategyPortPath, 'utf-8');
+    const specifiers = extractImportSpecifiers(source);
+
+    const violations: string[] = [];
+    for (const spec of specifiers) {
+      if (isForbiddenForCore(spec)) {
+        violations.push(`connectivity-strategy.ts imports "${spec}"`);
+      }
+      // Extra guard: no node:child_process import allowed in the port
+      if (spec === 'node:child_process' || spec.startsWith('node:child_process/')) {
+        violations.push(`connectivity-strategy.ts imports "${spec}" (child_process forbidden in core)`);
+      }
+    }
+
+    if (violations.length > 0) {
+      expect.fail(
+        `ConnectivityStrategy port boundary violations:\n${violations.join('\n')}\n\n` +
+          'Fix: the port MUST be expressible with only core model types + Logger port. ' +
+          'No driver, adapter, child_process, mcp, or cli import is permitted (ADR-004).',
+      );
+    }
+
+    expect(violations).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F6.2 — exhaustion.ts CLI formatter imports only the public barrel (ADR-004)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// src/cli/format/exhaustion.ts is a CLI-layer pure formatter.
+// It MUST NOT import from src/adapters/** (would pull adapter logic into CLI).
+// Its only permitted import is the project's public barrel (src/index.ts or
+// relative paths resolving to src/core/**).
+//
+// This guards the deviation documented in the Batch E apply-progress:
+// DUMP_DIR / DUMP_FILE are inlined as constants instead of importing from
+// dump-emitter.ts (which lives in adapters) — the comment in the source
+// file explains the coupling; this test pins it so the duplication is
+// a conscious, enforced choice.
+
+describe('hexagonal boundary: exhaustion.ts imports only the public barrel (F6.2)', () => {
+  const exhaustionPath = join(projectRoot, 'src', 'cli', 'format', 'exhaustion.ts');
+
+  it('exhaustion.ts file exists in src/cli/format/', () => {
+    const source = readFileSync(exhaustionPath, 'utf-8');
+    expect(source.length).toBeGreaterThan(0);
+  });
+
+  it('exhaustion.ts does not import from src/adapters/**', () => {
+    const source = readFileSync(exhaustionPath, 'utf-8');
+    const specifiers = extractImportSpecifiers(source);
+
+    const violations: string[] = [];
+    for (const spec of specifiers) {
+      if (spec.includes('/adapters/')) {
+        violations.push(`exhaustion.ts imports "${spec}" — CLI layer must not import adapters (ADR-004)`);
+      }
+    }
+
+    if (violations.length > 0) {
+      expect.fail(
+        `exhaustion.ts boundary violations:\n${violations.join('\n')}\n\n` +
+          'Fix: the CLI formatter must not import from src/adapters/**. ' +
+          'Duplicate any needed constants inline and add a comment explaining the coupling.',
+      );
+    }
+
+    expect(violations).toHaveLength(0);
+  });
+});

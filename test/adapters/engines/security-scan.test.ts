@@ -156,6 +156,14 @@ describe('US-031 write-verb scanner: src/adapters/engines/**', () => {
     expect(engineFiles.length).toBeGreaterThan(0);
   });
 
+  // F6.1: explicit assertion that the strategies/ directory is covered by the scanner.
+  // Design §"scanner covers strategies/": the existing engines/** glob recurses into
+  // strategies/ automatically — this assertion pins that behaviour as a regression guard.
+  it('strategies/ directory files are included in the scan (F6.1)', () => {
+    const strategiesFiles = engineFiles.filter((f) => f.includes('strategies'));
+    expect(strategiesFiles.length).toBeGreaterThan(0);
+  });
+
   it('no engine file contains write verbs in SQL string literals', () => {
     const violations: string[] = [];
 
