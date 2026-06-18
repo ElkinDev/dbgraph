@@ -1,0 +1,12 @@
+[
+  {
+    "schema_name": "app",
+    "sequence_name": "order_seq",
+    "start_value": "1",
+    "increment": "1",
+    "minimum_value": "1",
+    "maximum_value": "9223372036854775807",
+    "is_cycling": false,
+    "comment": "Sequence for order numbers"
+  }
+]
