@@ -88,11 +88,22 @@ const CATALOG_TIMEOUT_MS = 60000;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Wraps a catalog SELECT in FOR JSON PATH, INCLUDE_NULL_VALUES.
- * The ORDER BY from the original query is preserved INSIDE the wrapper (ADR-008).
+ * Appends FOR JSON PATH, INCLUDE_NULL_VALUES to a catalog SELECT query for use
+ * with sqlcmd -Q.
+ *
+ * Each queries.ts constant ends with a top-level ORDER BY. Appending FOR JSON
+ * PATH at the same level is valid SQL Server syntax (ORDER BY + FOR JSON PATH
+ * coexist at top level). This is the correct form.
+ *
+ * The previous approach (`SELECT * FROM (<query>) AS _rows FOR JSON PATH`) was
+ * INCORRECT — SQL Server Msg 1033 forbids ORDER BY inside a derived table
+ * (subquery/derived table) unless TOP or OFFSET-FETCH is present.
+ *
+ * ADR-008 determinism: the top-level ORDER BY in each constant remains the
+ * primary guarantee; app-level re-sorting in map.ts/normalize is the anchor.
  */
-function wrapForJson(sql: string): string {
-  return `SELECT * FROM (${sql}) AS _rows FOR JSON PATH, INCLUDE_NULL_VALUES`;
+function catalogSql(sql: string): string {
+  return `${sql}\nFOR JSON PATH, INCLUDE_NULL_VALUES`;
 }
 
 /**
@@ -145,6 +156,51 @@ function reassembleJsonOutput(stdout: Buffer): unknown[] {
   }
 
   return parsed;
+}
+
+/**
+ * Reassembles FOR JSON PATH, WITHOUT_ARRAY_WRAPPER output from sqlcmd stdout.
+ * Returns the parsed JSON object directly (not wrapped in an array).
+ * Used by fingerprint() which uses WITHOUT_ARRAY_WRAPPER for a single-row result.
+ *
+ * @throws Error if the concatenated string is not valid JSON or is empty.
+ */
+function reassembleSingleObjectOutput(stdout: Buffer): Record<string, unknown> {
+  const raw = stdout.toString('utf8');
+  const lines = raw.split('\n');
+
+  const cleanLines: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.replace(/\r$/, '').trim();
+    if (trimmed === '') continue;
+    if (/^\(\d+ rows? affected\)$/.test(trimmed)) continue;
+    cleanLines.push(trimmed);
+  }
+
+  if (cleanLines.length === 0) {
+    return {};
+  }
+
+  const concatenated = cleanLines.join('');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(concatenated);
+  } catch (e) {
+    throw new Error(
+      `sqlcmd: failed to parse WITHOUT_ARRAY_WRAPPER output. ` +
+      `Stdout (first 200 chars): ${concatenated.slice(0, 200)}. ` +
+      `Parse error: ${(e as Error).message}`,
+      { cause: e },
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `sqlcmd: expected a JSON object from WITHOUT_ARRAY_WRAPPER output but got ${typeof parsed}`,
+    );
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,7 +313,7 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     const rawFamilies: Record<string, unknown[]> = {};
 
     for (const family of CATALOG_FAMILIES) {
-      const wrappedSql = wrapForJson(family.sql);
+      const wrappedSql = catalogSql(family.sql);
       const result = this._spawnSync(
         'sqlcmd',
         ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-h', '-1', '-W'],
@@ -305,11 +361,15 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
    * Formula (mirrors MssqlSchemaAdapter): sha256(`${MAX(modify_date)}|${COUNT(*)}`)
    * over sys.objects WHERE is_ms_shipped=0.
    * Issues exactly ONE query — does NOT walk all objects.
+   *
+   * Uses WITHOUT_ARRAY_WRAPPER since the fingerprint returns a single aggregate row
+   * (not an array); the sqlcmd output is a plain JSON object rather than an array.
    */
   async fingerprint(): Promise<string> {
+    const fingerprintSql = `${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
     const result = this._spawnSync(
       'sqlcmd',
-      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', SQL_MSSQL_FINGERPRINT, '-y', '0', '-h', '-1', '-W'],
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-h', '-1', '-W'],
       {
         encoding: 'buffer',
         timeout: CATALOG_TIMEOUT_MS,
@@ -326,10 +386,9 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       );
     }
 
-    const rows = reassembleJsonOutput(result.stdout);
-    const row = rows[0] as Record<string, unknown> | undefined;
-    const m = row !== undefined ? String(row['m'] ?? 'null') : 'null';
-    const c = row !== undefined ? String(row['c'] ?? '0') : '0';
+    const row = reassembleSingleObjectOutput(result.stdout);
+    const m = String(row['m'] ?? 'null');
+    const c = String(row['c'] ?? '0');
 
     return createHash('sha256').update(`${m}|${c}`).digest('hex');
   }

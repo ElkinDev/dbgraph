@@ -17,7 +17,6 @@
  * connectivity-strategies Batch C, task C3.3.
  */
 
-import { createHash } from 'node:crypto';
 import type { SchemaAdapter } from '../../../core/ports/schema-adapter.js';
 import type { MssqlAdapterConfig } from '../../../core/ports/schema-adapter.js';
 import type { ConnectivityStrategy } from '../../../core/ports/connectivity-strategy.js';
@@ -77,9 +76,14 @@ class StrategyBackedSchemaAdapter implements SchemaAdapter {
     if (typeof this._strategy.fingerprint === 'function') {
       return this._strategy.fingerprint();
     }
-    // Fallback: SHA-256 over the strategy id + timestamp (not ideal — strategies
-    // SHOULD implement fingerprint(); this path signals a missing implementation).
-    return createHash('sha256').update(`${this._strategy.id}:no-fingerprint`).digest('hex');
+    // Intentionally throws rather than returning a misleading static hash.
+    // A strategy that wins canConnect() and runCatalog() MUST also implement
+    // fingerprint() — a silent static hash would defeat DDL-change detection
+    // (US-009) without any diagnostic signal. Throwing makes the gap explicit.
+    throw new Error(
+      `StrategyBackedSchemaAdapter: strategy "${this._strategy.id}" does not implement fingerprint(). ` +
+      'Implement fingerprint() in the strategy to support DDL-change detection (US-009).',
+    );
   }
 
   /**

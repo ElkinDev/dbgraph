@@ -133,4 +133,24 @@ describe('emitDumpScript() — D4.1', () => {
     ];
     expect(CATALOG_FAMILY_KEYS).toEqual(expectedKeys);
   });
+
+  // ── WARN-1 remediation: top-level FOR JSON, no derived-table ORDER BY ─────
+  // SQL Server Msg 1033: ORDER BY inside a derived table is illegal without
+  // TOP/OFFSET. The correct form appends FOR JSON PATH to the top-level query.
+
+  it('WARN-1: emitted script does NOT use SELECT * FROM (...) AS _rows subquery wrap', () => {
+    const script = emitDumpScript();
+    // The subquery pattern that causes Msg 1033 must be absent
+    expect(script).not.toMatch(/SELECT \* FROM \(/);
+    expect(script).not.toContain('AS _rows FOR JSON PATH');
+  });
+
+  it('WARN-1: emitted script appends FOR JSON PATH directly after each constant (top-level)', () => {
+    // The dump script emits: <sql constant>\nFOR JSON PATH, INCLUDE_NULL_VALUES;
+    // This is valid SQL Server (top-level ORDER BY + FOR JSON PATH).
+    // Verify FOR JSON PATH, INCLUDE_NULL_VALUES appears once per family.
+    const script = emitDumpScript();
+    const forJsonMatches = script.match(/FOR JSON PATH, INCLUDE_NULL_VALUES/g) ?? [];
+    expect(forJsonMatches.length).toBe(11);
+  });
 });

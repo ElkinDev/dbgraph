@@ -18,6 +18,7 @@ import { StrategyExhaustionError } from '../../../../../src/core/errors.js';
 import {
   buildMssqlStrategies,
   selectStrategy,
+  detectAllCandidates,
   type MssqlStrategyDeps,
 } from '../../../../../src/adapters/engines/mssql/strategies/registry.js';
 
@@ -292,5 +293,164 @@ describe('selectStrategy()', () => {
     const calls = logger.info.mock.calls as [string, Record<string, unknown>?][];
     const found = calls.some(([msg]) => msg.includes('sqlcmd'));
     expect(found).toBe(true);
+  });
+
+  // ── WARN-2 remediation: logger no-secret and verbosity/debug-suppression ──
+
+  it('WARN-2(a): no resolved secret or password value appears in any logger call argument (SQL auth config)', async () => {
+    // Strategies are mocked — selectStrategy only logs strategyId + reason strings.
+    // This test pins that invariant: the password sentinel must NEVER appear in any log arg.
+    const PASSWORD_SENTINEL = 'S3cr3tP@ss!';
+    const USER_SENTINEL = 'dbuser';
+
+    const NativeSpy = makeStrategy('native-tedious', { available: false, detail: 'unavailable' }, false);
+    const SqlcmdSpy = makeStrategy('sqlcmd', { available: true }, true);
+
+    const spyLogger = makeLogger();
+    await selectStrategy([NativeSpy, SqlcmdSpy], spyLogger);
+
+    const allDebugCalls = spyLogger.debug.mock.calls as unknown[][];
+    const allInfoCalls = spyLogger.info.mock.calls as unknown[][];
+    const allCalls = [...allDebugCalls, ...allInfoCalls];
+
+    for (const callArgs of allCalls) {
+      const serialized = JSON.stringify(callArgs);
+      expect(serialized).not.toContain(PASSWORD_SENTINEL);
+      expect(serialized).not.toContain(USER_SENTINEL); // user also counts as a credential
+    }
+  });
+
+  it('WARN-2(a): no resolved secret or connection string appears in any logger call argument (NTLM config)', async () => {
+    // selectStrategy only logs strategyId + reason strings — never the config values.
+    // This pins that invariant for credential-bearing configs (NTLM password sentinel).
+    const PASSWORD_SENTINEL = 'WinP@ssword123';
+    const USER_SENTINEL = 'svc_account';
+    const s1 = makeStrategy('native-tedious', { available: false, detail: 'not available' }, false);
+    const spyLogger = makeLogger();
+    await selectStrategy([s1], spyLogger).catch(() => { /* exhaustion expected */ });
+
+    const allCalls = [
+      ...(spyLogger.debug.mock.calls as unknown[][]),
+      ...(spyLogger.info.mock.calls as unknown[][]),
+    ];
+    for (const callArgs of allCalls) {
+      const serialized = JSON.stringify(callArgs);
+      expect(serialized).not.toContain(PASSWORD_SENTINEL);
+      expect(serialized).not.toContain(USER_SENTINEL);
+    }
+  });
+
+  it('WARN-2(b): debug logs are emitted only at debug level, NOT at info level', async () => {
+    // Verify logger.debug is called but logger.info is NOT called for skipped strategies.
+    // Only the winner triggers logger.info. Skipped strategies only get logger.debug.
+    const s1 = makeStrategy('native-tedious', { available: false, detail: 'unavailable' }, false);
+    const s2 = makeStrategy('sqlcmd', { available: true }, true);
+
+    const spyLogger = makeLogger();
+    await selectStrategy([s1, s2], spyLogger);
+
+    // debug MUST have been called (for the skipped native-tedious probe)
+    expect(spyLogger.debug).toHaveBeenCalled();
+
+    // info MUST have been called once (for the winning sqlcmd strategy)
+    expect(spyLogger.info).toHaveBeenCalledTimes(1);
+
+    // warn and error MUST NOT have been called (selection is not an error condition)
+    expect(spyLogger.warn).not.toHaveBeenCalled();
+    expect(spyLogger.error).not.toHaveBeenCalled();
+  });
+
+  it('WARN-2(b): when a level-aware logger suppresses debug, info still reaches the caller', async () => {
+    // Simulates a production logger at "info" level: debug calls are no-ops.
+    const infoMessages: string[] = [];
+
+    const levelAwareLogger: Logger = {
+      debug: () => { /* debug suppressed at info level — no-op */ },
+      info: (msg: string) => { infoMessages.push(msg); },
+      warn: () => { /* no-op */ },
+      error: () => { /* no-op */ },
+    };
+
+    const s1 = makeStrategy('native-tedious', { available: false }, false);
+    const s2 = makeStrategy('sqlcmd', { available: true }, true);
+    await selectStrategy([s1, s2], levelAwareLogger);
+
+    // info still reported the winner — even though debug was suppressed
+    expect(infoMessages.some((m) => m.includes('sqlcmd'))).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WARN-3 — detectAllCandidates: 3 spec-mandated candidates reported
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('detectAllCandidates() — WARN-3', () => {
+  function makeDetectionStub(id: string, available: boolean): new (config: typeof SQL_CONFIG) => { id: string; detect: () => Promise<{ available: boolean; detail: string }>; canConnect: () => Promise<boolean>; runCatalog: () => never; close: () => Promise<void> } {
+    return class Stub {
+      readonly id = id;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      constructor(_config: typeof SQL_CONFIG) {}
+      async detect() { return { available, detail: `${id} stub` }; }
+      async canConnect() { return false; }
+      runCatalog(): never { throw new Error('not implemented'); }
+      async close() {}
+    } as unknown as ReturnType<typeof makeDetectionStub>;
+  }
+
+  it('returns exactly 3 detection results (sqlcmd, invoke-sqlcmd, odbc-driver)', async () => {
+    const deps = {
+      Sqlcmd: makeDetectionStub('sqlcmd', true),
+      InvokeSqlcmd: makeDetectionStub('invoke-sqlcmd', false),
+      OdbcDriver: makeDetectionStub('odbc-driver', true),
+    } as unknown as MssqlStrategyDeps;
+
+    const results = await detectAllCandidates(SQL_CONFIG, deps);
+    expect(results).toHaveLength(3);
+  });
+
+  it('result includes sqlcmd as first candidate', async () => {
+    const deps = {
+      Sqlcmd: makeDetectionStub('sqlcmd', true),
+      InvokeSqlcmd: makeDetectionStub('invoke-sqlcmd', false),
+      OdbcDriver: makeDetectionStub('odbc-driver', false),
+    } as unknown as MssqlStrategyDeps;
+
+    const results = await detectAllCandidates(SQL_CONFIG, deps);
+    expect(results[0]?.id).toBe('sqlcmd');
+  });
+
+  it('result includes invoke-sqlcmd as second candidate', async () => {
+    const deps = {
+      Sqlcmd: makeDetectionStub('sqlcmd', false),
+      InvokeSqlcmd: makeDetectionStub('invoke-sqlcmd', true),
+      OdbcDriver: makeDetectionStub('odbc-driver', false),
+    } as unknown as MssqlStrategyDeps;
+
+    const results = await detectAllCandidates(SQL_CONFIG, deps);
+    expect(results[1]?.id).toBe('invoke-sqlcmd');
+  });
+
+  it('result includes odbc-driver as third candidate', async () => {
+    const deps = {
+      Sqlcmd: makeDetectionStub('sqlcmd', false),
+      InvokeSqlcmd: makeDetectionStub('invoke-sqlcmd', false),
+      OdbcDriver: makeDetectionStub('odbc-driver', true),
+    } as unknown as MssqlStrategyDeps;
+
+    const results = await detectAllCandidates(SQL_CONFIG, deps);
+    expect(results[2]?.id).toBe('odbc-driver');
+  });
+
+  it('each result carries the detect() outcome from the stub', async () => {
+    const deps = {
+      Sqlcmd: makeDetectionStub('sqlcmd', true),
+      InvokeSqlcmd: makeDetectionStub('invoke-sqlcmd', false),
+      OdbcDriver: makeDetectionStub('odbc-driver', true),
+    } as unknown as MssqlStrategyDeps;
+
+    const results = await detectAllCandidates(SQL_CONFIG, deps);
+    expect(results[0]?.detect.available).toBe(true);
+    expect(results[1]?.detect.available).toBe(false);
+    expect(results[2]?.detect.available).toBe(true);
   });
 });

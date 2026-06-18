@@ -3,7 +3,17 @@
  * Design §queries.ts "catalog query set" — all strings are read-only SELECTs
  * over sys.* catalog views. NO write verbs anywhere in this file.
  * US-031: write-verb scanner scans engines/** and WILL fail on write verbs.
- * ADR-008: every query ends with an explicit ORDER BY for determinism.
+ * ADR-008: every catalog query ends with an explicit ORDER BY for determinism.
+ *
+ * These constants are used in TWO paths:
+ *   1. MssqlSchemaAdapter (native tedious/mssql driver) — queries run as
+ *      tabular SELECTs; rows are returned as plain JS objects. Constants are
+ *      used verbatim by driver.query().
+ *   2. SqlcmdStrategy / dump-emitter.ts (sqlcmd CLI) — FOR JSON PATH,
+ *      INCLUDE_NULL_VALUES is APPENDED DIRECTLY to each constant (not wrapped
+ *      in a subquery), so that ORDER BY + FOR JSON coexist at the top level.
+ *      Top-level ORDER BY + FOR JSON is valid SQL Server; ORDER BY inside a
+ *      derived table is illegal (Msg 1033) unless TOP/OFFSET is present.
  *
  * These constants are passed to MssqlReadonlyDriver.query() in map.ts.
  * No DB execution in Batch A — string constants only, consumed in Batch B.

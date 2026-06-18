@@ -246,15 +246,15 @@ const EMPTY_JSON = JSON.stringify([]);
 
 /**
  * Builds a fake spawnSync that returns the given stdout for the n-th call.
- * Calls are ordered by the catalog families + fingerprint.
+ * Calls are ordered by the 11 catalog families in runCatalog().
  * We only need real data for tables + columns; everything else is [].
- * Fingerprint is the last call.
+ * fingerprint() is a separate method, NOT called by runCatalog.
  */
 function makeCatalogSpawnSync(tableJson: string, columnJson: string): MockedFunction<SpawnSyncFn> {
   // Order of calls in runCatalog matches the queries.ts import order:
   // tables, columns, keyConstraints, foreignKeys, checkConstraints,
   // indexes, modules, triggerEvents, sequences, extendedProperties,
-  // dependencies, fingerprint
+  // dependencies (11 families total — fingerprint is separate)
   const responses = [
     tableJson,   // tables
     columnJson,  // columns
@@ -267,7 +267,6 @@ function makeCatalogSpawnSync(tableJson: string, columnJson: string): MockedFunc
     EMPTY_JSON,  // sequences
     EMPTY_JSON,  // extendedProperties
     EMPTY_JSON,  // dependencies
-    JSON.stringify([{ m: '2024-01-01', c: 1 }]), // fingerprint
   ];
 
   let callIdx = 0;
@@ -314,8 +313,7 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
       MINIMAL_COLUMNS,    // columns
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,
-      JSON.stringify([{ m: '2024-01-01', c: 1 }]),
+      EMPTY_JSON,         // dependencies (11th family — end of runCatalog)
     ];
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
@@ -340,8 +338,7 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
       MINIMAL_COLUMNS,
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,
-      JSON.stringify([{ m: '2024-01-01', c: 1 }]),
+      EMPTY_JSON,      // dependencies (11th family — end of runCatalog)
     ];
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
@@ -416,6 +413,44 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
     }
   });
 
+  // ── WARN-1 remediation: top-level FOR JSON, no derived-table ORDER BY ─────
+  // SQL Server Msg 1033: ORDER BY is illegal inside a derived table unless
+  // TOP/OFFSET is present. The correct fix is to attach FOR JSON PATH,
+  // INCLUDE_NULL_VALUES directly to the top-level query (not as a subquery
+  // wrapper). These tests pin the correct behavior.
+
+  it('WARN-1: catalog query does NOT use SELECT * FROM (...) AS _rows derived-table wrapper', async () => {
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+
+    await strategy.runCatalog(FULL_SCOPE);
+
+    // The tables query (first call) must NOT use the subquery-wrap pattern
+    const firstCall = spawnSync.mock.calls[0]!;
+    const args: string[] = (firstCall[1] ?? []) as string[];
+    const qIdx = args.indexOf('-Q');
+    expect(qIdx).toBeGreaterThanOrEqual(0);
+    const query = args[qIdx + 1] ?? '';
+    // Must NOT contain the broken derived-table wrapper
+    expect(query).not.toMatch(/SELECT \* FROM \(/);
+    expect(query).not.toContain('AS _rows FOR JSON PATH');
+  });
+
+  it('WARN-1: catalog query contains FOR JSON PATH at the top level (not inside a subquery)', async () => {
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+
+    await strategy.runCatalog(FULL_SCOPE);
+
+    // Verify the tables call sends FOR JSON PATH at top level
+    const firstCall = spawnSync.mock.calls[0]!;
+    const args: string[] = (firstCall[1] ?? []) as string[];
+    const qIdx = args.indexOf('-Q');
+    const query = args[qIdx + 1] ?? '';
+    expect(query).toContain('FOR JSON PATH');
+    expect(query).toContain('INCLUDE_NULL_VALUES');
+  });
+
   it('multi-line split-JSON golden: exact object reconstruction', async () => {
     // This is the key golden test: a FOR JSON response split across many lines
     // must reassemble to produce the exact same catalog as if it were one line.
@@ -449,8 +484,7 @@ describe('SqlcmdStrategy.runCatalog() — B2.5', () => {
       splitColOutput,
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
       EMPTY_JSON, EMPTY_JSON, EMPTY_JSON, EMPTY_JSON,
-      EMPTY_JSON,
-      JSON.stringify([{ m: '2024-01-01', c: 1 }]),
+      EMPTY_JSON,      // dependencies (11th family — end of runCatalog)
     ];
 
     const spawnSync = vi.fn<SpawnSyncFn>().mockImplementation(() => {
