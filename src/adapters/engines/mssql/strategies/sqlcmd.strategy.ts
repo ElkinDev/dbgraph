@@ -1,0 +1,308 @@
+/**
+ * SqlcmdStrategy — ConnectivityStrategy that uses the sqlcmd CLI tool to
+ * extract a SQL Server catalog via Windows Integrated Security (-E flag).
+ *
+ * Design §"sqlcmd strategy — FOR JSON PATH, line reassembly, validation boundary".
+ *
+ * Security:
+ *   - ALL config values are passed as ARGV array elements (never a shell string).
+ *   - spawn is called with { shell: false } on every invocation.
+ *   - No resolved secret is ever passed as a command argument (integrated auth
+ *     uses -E / the current Windows session, no user/password in the argv).
+ *
+ * Spawn seam:
+ *   The spawnSync function is injected via the constructor so tests can mock
+ *   child_process calls without patching the module globally. In production,
+ *   the default is spawnSync from node:child_process.
+ *
+ * connectivity-strategies Batch B, tasks B2.3–B2.5.
+ */
+
+import { spawnSync as defaultSpawnSync } from 'node:child_process';
+import type { SpawnSyncOptions, SpawnSyncReturns } from 'node:child_process';
+import type { ConnectivityStrategy, DetectResult } from '../../../../core/ports/connectivity-strategy.js';
+import type { RawCatalog } from '../../../../core/model/catalog.js';
+import type { ExtractionScope } from '../../../../core/model/capability.js';
+import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.js';
+import { buildMssqlRawCatalog } from '../map.js';
+import {
+  SQL_MSSQL_TABLES,
+  SQL_MSSQL_COLUMNS,
+  SQL_MSSQL_KEY_CONSTRAINTS,
+  SQL_MSSQL_FOREIGN_KEYS,
+  SQL_MSSQL_CHECK_CONSTRAINTS,
+  SQL_MSSQL_INDEXES,
+  SQL_MSSQL_MODULES,
+  SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_SEQUENCES,
+  SQL_MSSQL_EXTENDED_PROPERTIES,
+  SQL_MSSQL_DEPENDENCIES,
+} from '../queries.js';
+import { parseJsonRows } from './json-rows.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SpawnSyncFn type — the injectable seam for child_process.spawnSync
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Type alias for node:child_process.spawnSync (Buffer overload).
+ * Injected at construction to allow mocking in tests without global patching.
+ */
+export type SpawnSyncFn = (
+  command: string,
+  args: readonly string[],
+  options: SpawnSyncOptions,
+) => SpawnSyncReturns<Buffer>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog family definitions
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Maps each MssqlRowInput key to its catalog query constant. */
+const CATALOG_FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
+  { key: 'tables',             sql: SQL_MSSQL_TABLES },
+  { key: 'columns',            sql: SQL_MSSQL_COLUMNS },
+  { key: 'keyConstraints',     sql: SQL_MSSQL_KEY_CONSTRAINTS },
+  { key: 'foreignKeys',        sql: SQL_MSSQL_FOREIGN_KEYS },
+  { key: 'checkConstraints',   sql: SQL_MSSQL_CHECK_CONSTRAINTS },
+  { key: 'indexes',            sql: SQL_MSSQL_INDEXES },
+  { key: 'modules',            sql: SQL_MSSQL_MODULES },
+  { key: 'triggerEvents',      sql: SQL_MSSQL_TRIGGER_EVENTS },
+  { key: 'sequences',          sql: SQL_MSSQL_SEQUENCES },
+  { key: 'extendedProperties', sql: SQL_MSSQL_EXTENDED_PROPERTIES },
+  { key: 'dependencies',       sql: SQL_MSSQL_DEPENDENCIES },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Detection timeout (short — must not hang)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DETECT_TIMEOUT_MS = 3000;
+const CONNECT_TIMEOUT_MS = 10000;
+const CATALOG_TIMEOUT_MS = 60000;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Wraps a catalog SELECT in FOR JSON PATH, INCLUDE_NULL_VALUES.
+ * The ORDER BY from the original query is preserved INSIDE the wrapper (ADR-008).
+ */
+function wrapForJson(sql: string): string {
+  return `SELECT * FROM (${sql}) AS _rows FOR JSON PATH, INCLUDE_NULL_VALUES`;
+}
+
+/**
+ * Reassembles FOR JSON output from sqlcmd stdout.
+ *
+ * SQL Server splits FOR JSON output across multiple stdout lines at ~2033-byte
+ * boundaries. Algorithm:
+ *   1. Capture the full stdout as a string.
+ *   2. Split into lines.
+ *   3. Trim trailing \r from each line.
+ *   4. Drop "(N rows affected)" footer lines and blank lines.
+ *   5. Concatenate remaining lines into one string.
+ *   6. If empty → return [] (no rows).
+ *   7. Otherwise JSON.parse.
+ *
+ * @throws Error if the concatenated string is not valid JSON.
+ */
+function reassembleJsonOutput(stdout: Buffer): unknown[] {
+  const raw = stdout.toString('utf8');
+  const lines = raw.split('\n');
+
+  const cleanLines: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.replace(/\r$/, '').trim();
+    if (trimmed === '') continue;
+    // Drop "(N rows affected)" footer lines
+    if (/^\(\d+ rows? affected\)$/.test(trimmed)) continue;
+    cleanLines.push(trimmed);
+  }
+
+  if (cleanLines.length === 0) return [];
+
+  const concatenated = cleanLines.join('');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(concatenated);
+  } catch (e) {
+    throw new Error(
+      `sqlcmd: failed to parse FOR JSON output. ` +
+      `Stdout (first 200 chars): ${concatenated.slice(0, 200)}. ` +
+      `Parse error: ${(e as Error).message}`,
+      { cause: e },
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      `sqlcmd: expected a JSON array from FOR JSON PATH output but got ${typeof parsed}`,
+    );
+  }
+
+  return parsed;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SqlcmdStrategy
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Runs the SQL Server catalog extraction using the sqlcmd CLI tool
+ * with Windows Integrated Security (-E flag, no credentials in argv).
+ *
+ * Inject a custom spawnSync for testing; defaults to node:child_process.spawnSync.
+ */
+export class SqlcmdStrategy implements ConnectivityStrategy {
+  readonly id = 'sqlcmd';
+
+  private readonly _spawnSync: SpawnSyncFn;
+
+  constructor(
+    private readonly _config: MssqlAdapterConfig,
+    spawnSync?: SpawnSyncFn,
+  ) {
+    this._spawnSync = spawnSync ?? (defaultSpawnSync as SpawnSyncFn);
+  }
+
+  // ─── detect() ──────────────────────────────────────────────────────────────
+
+  /**
+   * Probes whether sqlcmd is available on PATH without opening a DB connection.
+   *
+   * Steps:
+   *   1. Run `where sqlcmd` (Windows) / `which sqlcmd` (POSIX) with a short timeout.
+   *   2. If exit 0 → available: true.
+   *   3. If non-zero → run `sqlcmd -?` as a capability probe (fallback for go-sqlcmd).
+   *   4. If -? exits 0 → available: true.
+   *   5. If timeout or error on any probe → available: false (never hang, never throw).
+   *
+   * Does NOT open a database connection.
+   */
+  async detect(): Promise<DetectResult> {
+    try {
+      const isWindows = process.platform === 'win32';
+      const whereCmd = isWindows ? 'where' : 'which';
+
+      const whereResult = this._spawnSync(whereCmd, ['sqlcmd'], {
+        encoding: 'buffer',
+        timeout: DETECT_TIMEOUT_MS,
+        shell: false,
+      });
+
+      if (whereResult.error === undefined && whereResult.status === 0) {
+        const path = whereResult.stdout.toString('utf8').trim().split('\n')[0]?.trim();
+        return { available: true, detail: path !== undefined && path !== '' ? `sqlcmd at ${path}` : 'sqlcmd available' };
+      }
+
+      // Fallback: capability probe via sqlcmd -?
+      const capResult = this._spawnSync('sqlcmd', ['-?'], {
+        encoding: 'buffer',
+        timeout: DETECT_TIMEOUT_MS,
+        shell: false,
+      });
+
+      if (capResult.error === undefined && capResult.status === 0) {
+        return { available: true, detail: 'sqlcmd detected via -? probe' };
+      }
+
+      return { available: false, detail: 'sqlcmd not found on PATH' };
+    } catch {
+      return { available: false, detail: 'sqlcmd detect probe failed unexpectedly' };
+    }
+  }
+
+  // ─── canConnect() ──────────────────────────────────────────────────────────
+
+  /**
+   * Cheap connectivity probe: runs `sqlcmd -E -S <server> -d <db> -Q "SELECT 1" -h -1`.
+   * All config values are in the argv array (shell: false — no interpolation).
+   * Returns true on exit 0, false otherwise (including timeout).
+   */
+  async canConnect(): Promise<boolean> {
+    const result = this._spawnSync(
+      'sqlcmd',
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', 'SELECT 1', '-h', '-1'],
+      {
+        encoding: 'buffer',
+        timeout: CONNECT_TIMEOUT_MS,
+        shell: false,
+      },
+    );
+
+    return result.error === undefined && result.status === 0;
+  }
+
+  // ─── runCatalog() ──────────────────────────────────────────────────────────
+
+  /**
+   * Runs all 11 catalog queries + the fingerprint query via sqlcmd FOR JSON PATH.
+   *
+   * For each catalog family:
+   *   1. Wrap the queries.ts constant in SELECT ... FOR JSON PATH, INCLUDE_NULL_VALUES.
+   *   2. Spawn sqlcmd -E -S <server> -d <db> -Q <wrapped> -y 0 -h -1 -W.
+   *   3. Reassemble multi-line stdout into one JSON document (concat-then-parse).
+   *   4. Validate + coerce through parseJsonRows (json-rows.ts).
+   *
+   * The fingerprint is computed separately (SHA-256 over MAX(modify_date)|COUNT(*)).
+   * buildMssqlRawCatalog is called UNCHANGED with the typed MssqlRowInput.
+   *
+   * @throws Error if any family's output is malformed (strategy falls to next).
+   */
+  async runCatalog(scope: ExtractionScope): Promise<RawCatalog> {
+    const rawFamilies: Record<string, unknown[]> = {};
+
+    for (const family of CATALOG_FAMILIES) {
+      const wrappedSql = wrapForJson(family.sql);
+      const result = this._spawnSync(
+        'sqlcmd',
+        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-h', '-1', '-W'],
+        {
+          encoding: 'buffer',
+          timeout: CATALOG_TIMEOUT_MS,
+          shell: false,
+          maxBuffer: 256 * 1024 * 1024, // 256 MB for large schemas
+        },
+      );
+
+      if (result.error !== undefined || result.status !== 0) {
+        const stderr = result.stderr.toString('utf8').slice(0, 200);
+        throw new Error(
+          `sqlcmd: query for family "${family.key}" failed. ` +
+          `Exit: ${result.status ?? 'null'}. ` +
+          `Stderr: ${stderr}`,
+        );
+      }
+
+      rawFamilies[family.key] = reassembleJsonOutput(result.stdout);
+    }
+
+    const input = parseJsonRows({
+      tables: rawFamilies['tables'] as unknown[],
+      columns: rawFamilies['columns'] as unknown[],
+      keyConstraints: rawFamilies['keyConstraints'] as unknown[],
+      foreignKeys: rawFamilies['foreignKeys'] as unknown[],
+      checkConstraints: rawFamilies['checkConstraints'] as unknown[],
+      indexes: rawFamilies['indexes'] as unknown[],
+      modules: rawFamilies['modules'] as unknown[],
+      triggerEvents: rawFamilies['triggerEvents'] as unknown[],
+      sequences: rawFamilies['sequences'] as unknown[],
+      extendedProperties: rawFamilies['extendedProperties'] as unknown[],
+      dependencies: rawFamilies['dependencies'] as unknown[],
+    });
+
+    return buildMssqlRawCatalog(input, scope);
+  }
+
+  // ─── close() ───────────────────────────────────────────────────────────────
+
+  /**
+   * No-op: sqlcmd spawns a separate process per query, no persistent connection.
+   * Included for interface compliance; idempotent.
+   */
+  async close(): Promise<void> {
+    // No persistent connection to close.
+  }
+}
