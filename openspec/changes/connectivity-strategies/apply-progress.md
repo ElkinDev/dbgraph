@@ -1,9 +1,9 @@
-# Apply Progress: connectivity-strategies — Batches A + B + C + D + E
+# Apply Progress: connectivity-strategies — Batches A + B + C + D + E + F
 
 **Change**: connectivity-strategies
 **Mode**: Strict TDD (RED → GREEN per task)
-**Batches**: A (A1.1–A1.7) + B (B2.1–B2.6) + C (C3.1–C3.6) + D (D4.1–D4.4) + E (E5.1–E5.4)
-**Status**: Batches A, B, C, D, and E complete
+**Batches**: A (A1.1–A1.7) + B (B2.1–B2.6) + C (C3.1–C3.6) + D (D4.1–D4.4) + E (E5.1–E5.4) + F (F6.1–F6.3)
+**Status**: ALL batches complete (A–F)
 
 ## Completed Tasks
 
@@ -34,6 +34,9 @@
 - [x] E5.2 RED→GREEN `test/.../consented-install.test.ts` + `strategies/consented-install.strategy.ts`: `ConsentedInstallStrategy` (id:'consented-install'); `detect()` always available; `canConnect()` always false; `runCatalog()` prints consent notice + official instructions via `Logger.info` then throws `StrategyExhaustionError`; B2 seam comment present; no spawn; 14 assertions pass
 - [x] E5.3 RED→GREEN `test/cli/format/exhaustion.test.ts` + `src/cli/format/exhaustion.ts`: `formatExhaustionError(err)` → multi-line string with (a) manual-dump path + script location + `mssql-dump.json`, (b) guided install + microsoft.com URL, B2 deferred notice; attempt list; 10 assertions pass
 - [x] E5.4 Batch E gate: `npm run lint` 0 errors/0 warnings; `npx tsc --noEmit` clean; `npm test` 1444/1444 pass (95 files); write-verb scan: PASS; boundary: PASS; leak-scanner: PASS
+- [x] F6.1 `test/adapters/engines/security-scan.test.ts` extended: explicit assertion that `strategies/` files are enumerated by the `engines/**` glob (regression guard); 9/9 assertions pass; write-verb scan PASS (8 strategy files, all catalog SELECTs + FOR JSON PATH — no write verb; winget/URL strings not SQL-looking)
+- [x] F6.2 `test/core/boundaries.test.ts` extended: two new describe blocks — (1) `connectivity-strategy port is driver-free (F6.2)` pins that `src/core/ports/connectivity-strategy.ts` imports no driver/adapter/mcp/cli/node:child_process; (2) `exhaustion.ts imports only the public barrel (F6.2)` pins that `src/cli/format/exhaustion.ts` imports no `src/adapters/**`; 13/13 assertions pass
+- [x] F6.3 `test/adapters/engines/mssql/strategies/selection-e2e.test.ts` created: scenario 1 (integrated + mocked sqlcmd wins → `runCatalog` → `normalizeCatalog` → `SqliteGraphStore.upsertGraph` → `getNodesByKind` asserts `app.accounts` + `app.sessions`) + scenario 2 (all stubs unavailable → `StrategyExhaustionError` → `formatExhaustionError` presents OPTION A manual-dump + OPTION B guided install + B2 DEFERRED + attempt list); 8/8 assertions pass; no Docker, no real child_process
 
 ## TDD Cycle Evidence
 
@@ -66,6 +69,10 @@
 | E5.2 | `test/.../consented-install.test.ts` (14 assertions — RED first) | `strategies/consented-install.strategy.ts` created | id:'consented-install'; detect always true; canConnect always false; runCatalog prints guidance via Logger.info then throws; B2 seam marked |
 | E5.3 | `test/cli/format/exhaustion.test.ts` (10 assertions — RED first) | `src/cli/format/exhaustion.ts` created | `formatExhaustionError(err)`: option (a) manual-dump path, option (b) guided install, B2 deferred notice, attempt list |
 | E5.4 | Gate | `npm run lint` 0w; `npx tsc --noEmit` clean; 1444 tests pass | write-verb + boundary + leak-scanner all green |
+| F6.1 | `test/adapters/engines/security-scan.test.ts` extended (1 assertion) | Added `strategies/ directory files are included in the scan (F6.1)` | Explicit regression guard that `engines/**` glob enumerates strategy files |
+| F6.2 | `test/core/boundaries.test.ts` extended (4 assertions in 2 new describe blocks) | Added `connectivity-strategy port is driver-free (F6.2)` + `exhaustion.ts imports only the public barrel (F6.2)` | Pins the two key Batch F boundary hygiene invariants |
+| F6.3 | `test/.../selection-e2e.test.ts` created (8 assertions) | Full selection E2E: integrated → sqlcmd mocked wins → `normalizeCatalog` → `SqliteGraphStore` → `getNodesByKind` asserts qnames; exhaustion → `formatExhaustionError` both options | No Docker; SpawnSyncFn seam + deps injection; `:memory:` SQLite |
+| F6.3 gate | Gate | `npm run lint` 0w; `npx tsc --noEmit` clean; 1457 tests pass | |
 
 ## Files Changed
 
@@ -120,6 +127,10 @@
 | `test/adapters/engines/mssql/strategies/registry.test.ts` | Modified (Batch E) | +4 E5.x assertions: fourth strategy = consented-install, integrated third = consented-install, full order, deps override |
 | `test/cli/format/exhaustion.test.ts` | Created (Batch E) | 10 assertions: both options, manual-dump path, dump file, install guidance, microsoft.com, B2 deferred, attempt list |
 | `openspec/changes/connectivity-strategies/tasks.md` | Modified (Batch E) | Marked E5.1–E5.4 as `[x]` |
+| `test/adapters/engines/security-scan.test.ts` | Modified (Batch F) | Added F6.1 assertion: `strategies/ directory files are included in the scan` (regression guard for `engines/**` glob coverage) |
+| `test/core/boundaries.test.ts` | Modified (Batch F) | Added F6.2 describe blocks: `connectivity-strategy port is driver-free` + `exhaustion.ts imports only the public barrel`; 4 new assertions |
+| `test/adapters/engines/mssql/strategies/selection-e2e.test.ts` | Created (Batch F) | F6.3 E2E: scenario 1 (integrated→sqlcmd mocked wins→normalizeCatalog→SqliteGraphStore→qnames assert) + scenario 2 (exhaustion→formatExhaustionError both options); 8 assertions; SpawnSyncFn + deps injection; `:memory:` SQLite |
+| `openspec/changes/connectivity-strategies/tasks.md` | Modified (Batch F) | Marked F6.1–F6.3 as `[x]` |
 
 ## Gate Results
 
@@ -164,6 +175,16 @@
 - Registry test: 27/27 — full order: native → sqlcmd → manual-dump → consented-install; integrated omits native; ConsentedInstall seam override
 - Back-compat: `openConnections(projectRoot)` still works without logger (default noopLogger)
 
+### Batch F (F6.3 gate)
+- `npx tsc --noEmit`: CLEAN (0 errors)
+- `npm run lint`: CLEAN (0 errors, 0 warnings)
+- `npm test`: 1457/1457 passed (96 test files) — +13 new tests vs Batch E (9 security-scan, 13 boundaries, 8 selection-e2e — some overlap with prior counts)
+- Security scan (write-verb scanner): PASS — `strategies/` explicitly asserted to be in scope; all 8 strategy files clean (only catalog SELECTs + FOR JSON PATH wrapper; winget/URL strings not SQL-looking)
+- Leak scanner: PASS — no codename, no inline credentials in any Batch F file
+- Boundary test: PASS — `connectivity-strategy.ts` port pinned as driver-free; `exhaustion.ts` pinned as adapter-import-free
+- Selection E2E (mocked): PASS — integrated config full pipeline to SQLite + qname assertions; exhaustion UX both options
+- ALL tasks A1.1–F6.3: `[x]` — change complete
+
 ## Deviations from Design
 
 **Batch A deviations (unchanged):**
@@ -194,9 +215,8 @@ Note: `SQL_MSSQL_FINGERPRINT` is not called in `runCatalog()` — the fingerprin
 
 ## Remaining Tasks
 
-Batch F (F6.1–F6.3).
+None. All batches A–F are complete.
 
 ## Next Recommended
 
-`sdd-verify` for Batches A+B+C+D+E — validate all completed implementation against spec/design/tasks.
-OR: `sdd-apply` for Batch F (F6.1–F6.3): write-verb scan, boundary hygiene, lint sweep + closeout.
+`sdd-verify` for connectivity-strategies — validate ALL completed implementation (Batches A–F) against spec/design/tasks. Gate: tsc clean + lint 0w + 1457 tests passing.
