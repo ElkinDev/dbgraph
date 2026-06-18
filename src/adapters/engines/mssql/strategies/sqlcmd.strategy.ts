@@ -107,36 +107,59 @@ function catalogSql(sql: string): string {
 }
 
 /**
- * Reassembles FOR JSON output from sqlcmd stdout.
+ * Extracts the JSON data lines from legacy sqlcmd 15.x stdout.
  *
- * SQL Server splits FOR JSON output across multiple stdout lines at ~2033-byte
- * boundaries. Algorithm:
- *   1. Capture the full stdout as a string.
- *   2. Split into lines.
- *   3. Trim trailing \r from each line.
- *   4. Drop "(N rows affected)" footer lines and blank lines.
- *   5. Concatenate remaining lines into one string.
- *   6. If empty → return [] (no rows).
- *   7. Otherwise JSON.parse.
+ * Legacy sqlcmd without -h emits:
+ *   Line 1: column header (e.g. "JSON_F52E2B61-...")
+ *   Line 2: separator of all dashes ("----...----")
+ *   Lines 3+: the JSON value (possibly split at ~2033-byte boundaries)
  *
- * @throws Error if the concatenated string is not valid JSON.
+ * Algorithm:
+ *   1. Split stdout into lines, stripping trailing \r.
+ *   2. Find the first separator line (all dashes). If found, skip everything up
+ *      to and including that line — the header and separator are discarded.
+ *   3. From the remaining lines, drop blank lines and "(N rows affected)" footers.
+ *   4. Concatenate the survivors WITHOUT spaces (FOR JSON splits mid-token).
+ *   5. If nothing remains, return "" (caller decides how to handle empty).
  */
-function reassembleJsonOutput(stdout: Buffer): unknown[] {
-  const raw = stdout.toString('utf8');
-  const lines = raw.split('\n');
+function extractJsonContent(stdout: Buffer): string {
+  const lines = stdout.toString('utf8').split('\n');
+
+  // Locate the dashes separator emitted by legacy sqlcmd 15.x (no -h mode)
+  let dataStartIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const stripped = (lines[i] ?? '').replace(/\r$/, '');
+    // Separator: non-empty line consisting solely of dashes (and optional trailing spaces)
+    if (stripped.length > 0 && /^-+\s*$/.test(stripped)) {
+      dataStartIdx = i + 1; // data starts immediately after the separator
+      break;
+    }
+  }
 
   const cleanLines: string[] = [];
-  for (const line of lines) {
-    const trimmed = line.replace(/\r$/, '').trim();
+  for (let i = dataStartIdx; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').replace(/\r$/, '').trim();
     if (trimmed === '') continue;
-    // Drop "(N rows affected)" footer lines
     if (/^\(\d+ rows? affected\)$/.test(trimmed)) continue;
     cleanLines.push(trimmed);
   }
 
-  if (cleanLines.length === 0) return [];
+  return cleanLines.join(''); // no spaces — FOR JSON chunks split mid-token
+}
 
-  const concatenated = cleanLines.join('');
+/**
+ * Reassembles FOR JSON PATH output from sqlcmd stdout into a parsed array.
+ *
+ * Handles legacy sqlcmd 15.x output shape (header + dashes separator + JSON data
+ * split across lines) produced when -h is omitted. This is the correct invocation
+ * for legacy sqlcmd 15.x because -h is mutually exclusive with -y 0.
+ *
+ * @throws Error if the concatenated string is not valid JSON.
+ */
+function reassembleJsonOutput(stdout: Buffer): unknown[] {
+  const concatenated = extractJsonContent(stdout);
+  if (concatenated === '') return [];
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(concatenated);
@@ -161,27 +184,16 @@ function reassembleJsonOutput(stdout: Buffer): unknown[] {
 /**
  * Reassembles FOR JSON PATH, WITHOUT_ARRAY_WRAPPER output from sqlcmd stdout.
  * Returns the parsed JSON object directly (not wrapped in an array).
- * Used by fingerprint() which uses WITHOUT_ARRAY_WRAPPER for a single-row result.
+ * Used by fingerprint() which returns a single aggregate row, not an array.
+ *
+ * Handles legacy sqlcmd 15.x output shape — see extractJsonContent for details.
  *
  * @throws Error if the concatenated string is not valid JSON or is empty.
  */
 function reassembleSingleObjectOutput(stdout: Buffer): Record<string, unknown> {
-  const raw = stdout.toString('utf8');
-  const lines = raw.split('\n');
+  const concatenated = extractJsonContent(stdout);
+  if (concatenated === '') return {};
 
-  const cleanLines: string[] = [];
-  for (const line of lines) {
-    const trimmed = line.replace(/\r$/, '').trim();
-    if (trimmed === '') continue;
-    if (/^\(\d+ rows? affected\)$/.test(trimmed)) continue;
-    cleanLines.push(trimmed);
-  }
-
-  if (cleanLines.length === 0) {
-    return {};
-  }
-
-  const concatenated = cleanLines.join('');
   let parsed: unknown;
   try {
     parsed = JSON.parse(concatenated);
@@ -313,10 +325,15 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     const rawFamilies: Record<string, unknown[]> = {};
 
     for (const family of CATALOG_FAMILIES) {
-      const wrappedSql = catalogSql(family.sql);
+      // SET NOCOUNT ON suppresses the "(N rows affected)" row-count trailer that legacy
+      // sqlcmd 15.x emits. This is a session setting (read-only, not a write).
+      // -h is NOT used here: legacy sqlcmd 15.x treats -h and -y 0 as mutually exclusive.
+      // Without -h, legacy sqlcmd emits a header line + dashes separator before the JSON
+      // data — reassembleJsonOutput strips these two lines before JSON.parse.
+      const wrappedSql = `SET NOCOUNT ON;\n${catalogSql(family.sql)}`;
       const result = this._spawnSync(
         'sqlcmd',
-        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-h', '-1'],
+        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0'],
         {
           encoding: 'buffer',
           timeout: CATALOG_TIMEOUT_MS,
@@ -366,10 +383,12 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
    * (not an array); the sqlcmd output is a plain JSON object rather than an array.
    */
   async fingerprint(): Promise<string> {
-    const fingerprintSql = `${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
+    // SET NOCOUNT ON suppresses the "(N rows affected)" trailer.
+    // -h is NOT used: mutually exclusive with -y 0 in legacy sqlcmd 15.x.
+    const fingerprintSql = `SET NOCOUNT ON;\n${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
     const result = this._spawnSync(
       'sqlcmd',
-      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-h', '-1'],
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0'],
       {
         encoding: 'buffer',
         timeout: CATALOG_TIMEOUT_MS,
