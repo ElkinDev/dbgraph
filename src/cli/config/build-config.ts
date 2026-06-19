@@ -150,6 +150,19 @@ function buildOrderedSource(cfg: DbgraphConfig): unknown {
     if (src.schema !== undefined) ordered['schema'] = src.schema;
     return ordered;
   }
+  if (cfg.dialect === 'mysql') {
+    // mysql: fixed key order; NO schema field (database IS the scope)
+    const src = cfg.source;
+    const ordered: Record<string, unknown> = {
+      host: src.host,
+      database: src.database,
+      user: src.user,
+      password: src.password,
+    };
+    if (src.port !== undefined) ordered['port'] = src.port;
+    if (src.ssl !== undefined) ordered['ssl'] = src.ssl;
+    return ordered;
+  }
   // mssql: fixed key order
   const src = cfg.source;
   const ordered: Record<string, unknown> = {

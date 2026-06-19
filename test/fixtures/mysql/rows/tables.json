@@ -1,0 +1,6 @@
+[
+  { "table_schema": "app", "table_name": "audit_log",    "table_comment": "Stores audit events" },
+  { "table_schema": "app", "table_name": "order_items",  "table_comment": "" },
+  { "table_schema": "app", "table_name": "orders",       "table_comment": "Customer orders" },
+  { "table_schema": "app", "table_name": "products",     "table_comment": "" }
+]

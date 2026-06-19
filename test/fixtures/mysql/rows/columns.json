@@ -1,0 +1,86 @@
+[
+  {
+    "table_schema": "app", "table_name": "audit_log",
+    "ordinal_position": 1, "column_name": "audit_id",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "auto_increment",
+    "generation_expression": null, "column_comment": "Primary key"
+  },
+  {
+    "table_schema": "app", "table_name": "audit_log",
+    "ordinal_position": 2, "column_name": "event_type",
+    "column_type": "varchar(100)", "is_nullable": "YES",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "ordinal_position": 1, "column_name": "order_id",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "ordinal_position": 2, "column_name": "product_id",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "ordinal_position": 3, "column_name": "qty",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "ordinal_position": 4, "column_name": "unit_price",
+    "column_type": "decimal(10,2)", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "ordinal_position": 5, "column_name": "total_price",
+    "column_type": "decimal(10,2)", "is_nullable": "YES",
+    "column_default": null, "extra": "STORED GENERATED",
+    "generation_expression": "(qty * unit_price)", "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "orders",
+    "ordinal_position": 1, "column_name": "order_id",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "auto_increment",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "orders",
+    "ordinal_position": 2, "column_name": "customer_name",
+    "column_type": "varchar(255)", "is_nullable": "YES",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": "Customer display name"
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "ordinal_position": 1, "column_name": "product_id",
+    "column_type": "int", "is_nullable": "NO",
+    "column_default": null, "extra": "auto_increment",
+    "generation_expression": null, "column_comment": ""
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "ordinal_position": 2, "column_name": "name",
+    "column_type": "varchar(255)", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": "Product display name"
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "ordinal_position": 3, "column_name": "unit_price",
+    "column_type": "decimal(10,2)", "is_nullable": "NO",
+    "column_default": null, "extra": "",
+    "generation_expression": null, "column_comment": ""
+  }
+]
