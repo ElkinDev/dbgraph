@@ -126,9 +126,17 @@ export class PgSchemaAdapter implements SchemaAdapter {
   }
 
   /**
-   * Computes a cheap DDL-sensitive fingerprint.
-   * Formula: sha256(`${MAX(oid)}|${COUNT(*)}`) over non-system pg_class entries.
-   * OIDs advance on CREATE (DDL change); COUNT moves on CREATE/DROP.
+   * Computes a cheap DDL-sensitive fingerprint (SUGGESTION-2 fix).
+   * Formula: sha256(`${maxOid}|${maxAttnum}|${relCount}|${attrCount}`)
+   *
+   * Components (all from a SINGLE query):
+   *   max_oid    — MAX(pg_class.oid)      moves on CREATE TABLE/VIEW/INDEX/SEQUENCE
+   *   max_attnum — MAX(pg_attribute.attnum) moves when a column is added (attnum is per-table
+   *                column ordinal that does not reset on DROP; new columns get higher attnums)
+   *   rel_count  — COUNT(DISTINCT oid)    moves on CREATE/DROP of any relation
+   *   attr_count — COUNT(attnum)          moves on ADD COLUMN or DROP COLUMN
+   *
+   * Together these detect ALTER TABLE ADD COLUMN which may not advance MAX(oid).
    * Stable across DML inserts/updates/deletes (US-009).
    * Issues exactly ONE query.
    *
@@ -145,10 +153,12 @@ export class PgSchemaAdapter implements SchemaAdapter {
     const rows = await this._driver.query(SQL_PG_FINGERPRINT, [schemaParam]);
     const row = rows[0] as Record<string, unknown> | undefined;
 
-    const m = row !== undefined ? String(row['m'] ?? 'null') : 'null';
-    const c = row !== undefined ? String(row['c'] ?? '0') : '0';
+    const maxOid = row !== undefined ? String(row['max_oid'] ?? 'null') : 'null';
+    const maxAttnum = row !== undefined ? String(row['max_attnum'] ?? '0') : '0';
+    const relCount = row !== undefined ? String(row['rel_count'] ?? '0') : '0';
+    const attrCount = row !== undefined ? String(row['attr_count'] ?? '0') : '0';
 
-    return createHash('sha256').update(`${m}|${c}`).digest('hex');
+    return createHash('sha256').update(`${maxOid}|${maxAttnum}|${relCount}|${attrCount}`).digest('hex');
   }
 
   /**

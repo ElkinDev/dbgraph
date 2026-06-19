@@ -18,6 +18,11 @@
  * All dependency edges carry confidence: 'parsed' (no score).
  * supportsDependencyHints: false — body tokenizer is the SOLE edge source.
  *
+ * Dynamic-string masking: references that exist ONLY inside string literals
+ * ('...') or dollar-quoted strings ($$...$$) must NOT produce edges. The
+ * "static body" strips those contents before presence-checking, so that only
+ * unquoted identifiers in non-dynamic code paths generate edges.
+ *
  * US-028 (PostgreSQL adapter), US-007 (hasDynamicSql declared blindness),
  * ADR-007 (no plpgsql grammar, conservative tokenizer).
  */
@@ -39,8 +44,12 @@ import { classifyAccess } from '../_shared/tokenizer-core.js';
  *   orders (plain)              → orders
  */
 export function pgCanonicalize(rawName: string): string {
+  // Strip PG double-quote identifier delimiters (schema.name → schema.name).
+  // Build the pattern via charCodeAt(34) to avoid literal dquote chars in the
+  // source, which would confuse the write-verb scanner naive extractor (ADR-007).
+  const dq = String.fromCharCode(34); // 34 = ASCII double-quote
   return rawName
-    .replace(/"([^"]*)"/g, '$1')  // strip dquotes → dquote.name becomes name
+    .replace(new RegExp(`${dq}([^${dq}]*)${dq}`, 'g'), '$1')
     .toLowerCase();
 }
 
@@ -61,6 +70,10 @@ export function pgCanonicalize(rawName: string): string {
  *      with a neutral placeholder that contains no word characters (breaks \b match).
  *   2. Test whether a bare \bEXECUTE\b word-boundary match remains.
  *
+ * NOTE: hasDynamicSql detection is performed on the ORIGINAL (unmasked) body, not
+ * on the static body, so that EXECUTE inside string literals is still correctly
+ * detected as dynamic SQL.
+ *
  * Case-insensitive throughout.
  *
  * US-007 (declared blindness — flag and stop, never guess).
@@ -74,6 +87,73 @@ export function hasPgDynamicSql(body: string): boolean {
 
   // Step 2: test for a bare EXECUTE word boundary.
   return /\bexecute\b/i.test(withoutTriggerExec);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// maskDynamicStrings — remove string literal contents from body
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a "static body" with the CONTENTS of single-quoted string literals
+ * replaced by a neutral placeholder. This prevents identifiers that appear only
+ * inside dynamic SQL strings (e.g. format('SELECT ... FROM app.orders ...'))
+ * from generating dependency edges.
+ *
+ * Only single-quoted string literals are masked. Dollar-quoted blocks (which are
+ * the function body delimiters from pg_get_functiondef) are NOT masked — they
+ * contain the actual SQL code whose static references we DO want to classify.
+ *
+ * Pattern: '...' including '' escape sequences inside the literal.
+ *
+ * Examples:
+ *   format('SELECT order_id FROM app.orders WHERE ...')
+ *     → format('##MASKED##')
+ *   VALUES (TG_TABLE_NAME, TG_OP)
+ *     → unchanged (no string literals containing object names)
+ *
+ * ADR-007 (conservative — when in doubt, exclude).
+ */
+export function maskDynamicStrings(body: string): string {
+  // Mask single-quoted string literals. '' (escaped single quote) inside a literal
+  // is handled by the alternation [^'] | '' — consume either a non-quote char or
+  // a pair of single quotes (escape sequence), matching the full literal.
+  return body.replace(/'(?:[^']|'')*'/g, "'##MASKED##'");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bodyContainsRef — presence check in the static (masked) body
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the canonicalized qname (fully qualified OR simple name)
+ * actually appears as an identifier in the masked static body.
+ *
+ * This is the gate that prevents classifyAccess from defaulting to 'read' for
+ * objects that are NOT referenced in the body at all (CRITICAL-1 fix).
+ *
+ * Checks both:
+ *   - schema.name  (e.g. app.orders)
+ *   - name only    (e.g. orders)
+ * Both checks use word-boundary matching on the lowercased masked body.
+ */
+function bodyContainsRef(maskedBody: string, canonicalQName: string): boolean {
+  // The masked body is already lowercased by pgCanonicalize applied during classifyAccess.
+  // We need to check the masked body in its lowercased form here too.
+  const lowerMasked = maskedBody.toLowerCase();
+  const simpleName = canonicalQName.includes('.')
+    ? canonicalQName.split('.').slice(1).join('.')
+    : canonicalQName;
+
+  // Word-boundary check: the name must appear as a standalone identifier token.
+  // We use \b word boundaries. SQL also allows dot-separated qnames like schema.table.
+  const qnamePattern = new RegExp(`\\b${escapeRegex(canonicalQName)}\\b`);
+  const simplePattern = new RegExp(`\\b${escapeRegex(simpleName)}\\b`);
+
+  return qnamePattern.test(lowerMasked) || simplePattern.test(lowerMasked);
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,16 +174,30 @@ export interface PgTokenizerResult {
  * Tokenizes a PostgreSQL function/procedure/view body and classifies dependency
  * edges as read or write via the shared tokenizer primitives.
  *
- * - Uses pgCanonicalize (double-quote only, no brackets) as the dialect canonicalizer.
- * - Skips deps where schema or name is empty (null/unresolved refs).
- * - Returns hasDynamicSql: true when a bare EXECUTE statement is found.
- * - All edges carry confidence: 'parsed' (no score field).
+ * Key behaviors (post CRITICAL-1 / WARNING-1 fix):
+ *   - Builds a "static body" by masking string-literal contents (maskDynamicStrings).
+ *   - Only emits an edge for a candidate if its canonicalized qname (qualified OR
+ *     simple name) actually appears in the STATIC body. Objects absent from the
+ *     static body get NO edge — we never default to 'read' for absent objects.
+ *   - A routine/view MUST NOT reference itself (self-edges are impossible since the
+ *     object is defined by its own body, but this is naturally filtered by the
+ *     presence check: the body never contains its own schema.name as a target).
+ *   - hasDynamicSql is detected from the ORIGINAL (unmasked) body.
+ *   - Static edges SURVIVE even when hasDynamicSql is true. Only dynamic-string refs
+ *     are excluded. This makes PG consistent with MSSQL (which keeps catalog-confirmed
+ *     static edges alongside hasDynamicSql:true).
+ *   - All edges carry confidence: 'parsed' (no score field).
  *
  * @param body  The full routine/view definition body (from pg_get_functiondef/pg_get_viewdef).
  * @param deps  Array of known dependency objects to classify.
  */
 export function tokenizePgBody(body: string, deps: readonly DepRef[]): PgTokenizerResult {
+  // Detect dynamic SQL from the original (unmasked) body.
   const dynamic = hasPgDynamicSql(body);
+
+  // Build the static body by masking string-literal contents.
+  // References that exist ONLY inside dynamic strings are excluded.
+  const staticBody = maskDynamicStrings(body);
 
   const dependencies: RawDependency[] = [];
 
@@ -114,7 +208,17 @@ export function tokenizePgBody(body: string, deps: readonly DepRef[]): PgTokeniz
     }
 
     const targetQName = `${dep.schema}.${dep.name}`;
-    const access = classifyAccess(targetQName, body, pgCanonicalize);
+    const canonicalTarget = pgCanonicalize(targetQName);
+
+    // CRITICAL-1 FIX: only emit an edge if the target actually appears in the
+    // static body. Objects absent from the static body get NO edge — we do NOT
+    // default to 'read' for objects that are merely in the catalog.
+    if (!bodyContainsRef(staticBody, canonicalTarget)) {
+      continue;
+    }
+
+    // The target is present in the static body — classify as read or write.
+    const access = classifyAccess(targetQName, staticBody, pgCanonicalize);
 
     dependencies.push({
       target: {

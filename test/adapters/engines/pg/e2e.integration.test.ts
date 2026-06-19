@@ -290,6 +290,92 @@ describe.skipIf(!pgIntegrationEnabled())(
     });
 
     // ─────────────────────────────────────────────────────────────────────
+    // NEGATIVE / exact-set edge assertions (CRITICAL-1 regression guard, L-009)
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('fn_place_order has EXACTLY 3 dependency edges in the graph (no phantom)', () => {
+      const fnNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_place_order',
+      );
+      expect(fnNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => (e.kind === 'writes_to' || e.kind === 'reads_from') && e.src === fnNode!.id,
+      );
+      expect(depEdges.length).toBe(3);
+    });
+
+    it('v_order_summary has EXACTLY 2 depends_on edges: orders + order_items (no phantom, no self)', () => {
+      // Views produce depends_on (not reads_from) per reference-resolver.ts design §4.2.
+      const viewNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'v_order_summary',
+      );
+      expect(viewNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === viewNode!.id,
+      );
+      expect(depEdges.length).toBe(2);
+      const dstNames = depEdges.map((e) => {
+        const dst = normResult.graph.nodes.find((n) => n.id === e.dst);
+        return dst?.name ?? '';
+      }).sort();
+      expect(dstNames).toEqual(['order_items', 'orders']);
+      // Must NOT depend on itself
+      const selfEdge = depEdges.find((e) => e.dst === viewNode!.id);
+      expect(selfEdge).toBeUndefined();
+    });
+
+    it('mv_product_stats has EXACTLY 2 depends_on edges: products + order_items (no phantom, no self)', () => {
+      // Views produce depends_on (not reads_from) per reference-resolver.ts design §4.2.
+      const mvNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'mv_product_stats',
+      );
+      expect(mvNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === mvNode!.id,
+      );
+      expect(depEdges.length).toBe(2);
+      const dstNames = depEdges.map((e) => {
+        const dst = normResult.graph.nodes.find((n) => n.id === e.dst);
+        return dst?.name ?? '';
+      }).sort();
+      expect(dstNames).toEqual(['order_items', 'products']);
+    });
+
+    it('proc_cancel_order has EXACTLY 1 writes_to edge (orders) + 0 reads_from', () => {
+      const procNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'procedure' && n.name === 'proc_cancel_order',
+      );
+      expect(procNode).toBeDefined();
+      const writeEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'writes_to' && e.src === procNode!.id,
+      );
+      const readEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'reads_from' && e.src === procNode!.id,
+      );
+      expect(writeEdges.length).toBe(1);
+      expect(readEdges.length).toBe(0);
+      const dstNode = normResult.graph.nodes.find((n) => n.id === writeEdges[0]!.dst);
+      expect(dstNode?.name).toBe('orders');
+    });
+
+    it('audit_fn has EXACTLY 1 writes_to edge (audit_log) + 0 reads_from', () => {
+      const fnNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'audit_fn',
+      );
+      expect(fnNode).toBeDefined();
+      const writeEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'writes_to' && e.src === fnNode!.id,
+      );
+      const readEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'reads_from' && e.src === fnNode!.id,
+      );
+      expect(writeEdges.length).toBe(1);
+      expect(readEdges.length).toBe(0);
+      const dstNode = normResult.graph.nodes.find((n) => n.id === writeEdges[0]!.dst);
+      expect(dstNode?.name).toBe('audit_log');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
     // Golden: byte-identical on second run (ADR-008)
     // ─────────────────────────────────────────────────────────────────────
 

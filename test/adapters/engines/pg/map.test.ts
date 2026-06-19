@@ -301,6 +301,37 @@ describe('buildPgRawCatalog', () => {
         expect(dep.access).toBe('read');
       }
     });
+
+    // ── NEGATIVE / exact-set assertions (CRITICAL-1 regression guard) ──────────
+    // Each routine/view below must have ONLY the deps that the body actually
+    // references. Existence-only toBeDefined() assertions are INSUFFICIENT.
+
+    it('v_order_summary has EXACTLY 2 deps: orders + order_items (no phantom, no self)', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const view = findObject(catalog.objects, 'view', 'v_order_summary');
+      const deps = view!.dependencies ?? [];
+      const names = deps.map((d) => d.target.name).sort();
+      expect(names).toEqual(['order_items', 'orders']);
+      // Must NOT include itself
+      expect(deps.find((d) => d.target.name === 'v_order_summary')).toBeUndefined();
+      // Must NOT include phantom objects that are absent from the body
+      expect(deps.find((d) => d.target.name === 'audit_log')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'products')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'mv_product_stats')).toBeUndefined();
+    });
+
+    it('mv_product_stats has EXACTLY 2 deps: products + order_items (no phantom, no self)', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const matview = findObject(catalog.objects, 'view', 'mv_product_stats');
+      const deps = matview!.dependencies ?? [];
+      const names = deps.map((d) => d.target.name).sort();
+      expect(names).toEqual(['order_items', 'products']);
+      // Must NOT include itself
+      expect(deps.find((d) => d.target.name === 'mv_product_stats')).toBeUndefined();
+      // Must NOT include phantom objects absent from the body
+      expect(deps.find((d) => d.target.name === 'audit_log')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'orders')).toBeUndefined();
+    });
   });
 
   describe('functions and procedures', () => {
@@ -338,6 +369,50 @@ describe('buildPgRawCatalog', () => {
       const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
       const fn = findObject(catalog.objects, 'function', 'dynamic_query');
       expect(fn?.hasDynamicSql).toBe(true);
+    });
+
+    // ── NEGATIVE / exact-set assertions (CRITICAL-1 regression guard) ──────────
+
+    it('process_order has EXACTLY 2 deps: writes audit_log + reads products (no phantom)', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const fn = findObject(catalog.objects, 'function', 'process_order');
+      const deps = fn!.dependencies ?? [];
+      expect(deps.length).toBe(2);
+      const writeAudit = deps.find((d) => d.target.name === 'audit_log' && d.access === 'write');
+      const readProducts = deps.find((d) => d.target.name === 'products' && d.access === 'read');
+      expect(writeAudit).toBeDefined();
+      expect(readProducts).toBeDefined();
+      // Must NOT include phantom reads to tables absent from the body
+      expect(deps.find((d) => d.target.name === 'orders')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'order_items')).toBeUndefined();
+    });
+
+    it('audit_fn has EXACTLY 1 dep: writes audit_log, zero reads', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const fn = findObject(catalog.objects, 'function', 'audit_fn');
+      const deps = fn!.dependencies ?? [];
+      expect(deps.length).toBe(1);
+      const writeAudit = deps.find((d) => d.target.name === 'audit_log' && d.access === 'write');
+      expect(writeAudit).toBeDefined();
+      // Must have ZERO reads
+      expect(deps.filter((d) => d.access === 'read').length).toBe(0);
+    });
+
+    it('sync_products procedure has EXACTLY 1 dep: writes audit_log, zero reads', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const proc = findObject(catalog.objects, 'procedure', 'sync_products');
+      const deps = proc!.dependencies ?? [];
+      expect(deps.length).toBe(1);
+      const writeAudit = deps.find((d) => d.target.name === 'audit_log' && d.access === 'write');
+      expect(writeAudit).toBeDefined();
+      expect(deps.filter((d) => d.access === 'read').length).toBe(0);
+    });
+
+    it('dynamic_query has ZERO dependency edges (refs are inside dynamic string)', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      const fn = findObject(catalog.objects, 'function', 'dynamic_query');
+      const deps = fn?.dependencies ?? [];
+      expect(deps.length).toBe(0);
     });
 
     it('function at metadata level has no body', () => {

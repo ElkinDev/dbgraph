@@ -313,6 +313,84 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(dep!.confidence).toBe('parsed');
     });
 
+    // ── NEGATIVE / exact-set assertions (CRITICAL-1 regression guard, L-009) ──
+    // These assert the EXACT dependency set so that phantom edges cannot regress.
+
+    it('fn_place_order has EXACTLY 3 deps: 2 writes + 1 read (no phantom, no self)', () => {
+      const fn = catalog.objects.find(
+        (o) => o.kind === 'function' && o.name === 'fn_place_order',
+      );
+      const deps = fn?.dependencies ?? [];
+      expect(deps.length).toBe(3);
+      const writes = deps.filter((d) => d.access === 'write');
+      const reads = deps.filter((d) => d.access === 'read');
+      expect(writes.length).toBe(2);
+      expect(reads.length).toBe(1);
+      // No phantom self-reference
+      expect(deps.find((d) => d.target.name === 'fn_place_order')).toBeUndefined();
+      // No phantom reads to absent objects
+      expect(deps.find((d) => d.target.name === 'audit_log')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'v_order_summary')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'mv_product_stats')).toBeUndefined();
+    });
+
+    it('reporting.v_order_summary reads ONLY orders + order_items (no phantom, no self)', () => {
+      const view = catalog.objects.find(
+        (o) => o.kind === 'view' && o.name === 'v_order_summary',
+      );
+      const deps = view?.dependencies ?? [];
+      const names = deps.map((d) => d.target.name).sort();
+      expect(names).toEqual(['order_items', 'orders']);
+      // Must NOT include itself or absent objects
+      expect(deps.find((d) => d.target.name === 'v_order_summary')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'audit_log')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'products')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'mv_product_stats')).toBeUndefined();
+    });
+
+    it('reporting.mv_product_stats reads ONLY products + order_items (no phantom, no self)', () => {
+      const matview = catalog.objects.find(
+        (o) => o.kind === 'view' && o.name === 'mv_product_stats',
+      );
+      const deps = matview?.dependencies ?? [];
+      const names = deps.map((d) => d.target.name).sort();
+      expect(names).toEqual(['order_items', 'products']);
+      expect(deps.find((d) => d.target.name === 'mv_product_stats')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'audit_log')).toBeUndefined();
+      expect(deps.find((d) => d.target.name === 'orders')).toBeUndefined();
+    });
+
+    it('app.proc_cancel_order writes ONLY orders, zero reads (no phantom)', () => {
+      const proc = catalog.objects.find(
+        (o) => o.kind === 'procedure' && o.name === 'proc_cancel_order',
+      );
+      const deps = proc?.dependencies ?? [];
+      expect(deps.length).toBe(1);
+      expect(deps[0]!.access).toBe('write');
+      expect(deps[0]!.target.name).toBe('orders');
+      expect(deps.filter((d) => d.access === 'read').length).toBe(0);
+    });
+
+    it('app.audit_fn writes ONLY audit_log, zero reads (no phantom)', () => {
+      const fn = catalog.objects.find(
+        (o) => o.kind === 'function' && o.name === 'audit_fn',
+      );
+      const deps = fn?.dependencies ?? [];
+      expect(deps.length).toBe(1);
+      expect(deps[0]!.access).toBe('write');
+      expect(deps[0]!.target.name).toBe('audit_log');
+      expect(deps.filter((d) => d.access === 'read').length).toBe(0);
+    });
+
+    it('app.fn_dynamic_search has ZERO edges + hasDynamicSql:true (all refs in dynamic string)', () => {
+      const fn = catalog.objects.find(
+        (o) => o.kind === 'function' && o.name === 'fn_dynamic_search',
+      );
+      expect(fn?.hasDynamicSql).toBe(true);
+      const deps = fn?.dependencies ?? [];
+      expect(deps.length).toBe(0);
+    });
+
     it('fn_dynamic_search is marked hasDynamicSql = true', () => {
       const fn = catalog.objects.find(
         (o) => o.kind === 'function' && o.name === 'fn_dynamic_search',
@@ -515,6 +593,38 @@ describe.skipIf(!pgIntegrationEnabled())(
 
       expect(typeof fp).toBe('string');
       expect(fp.length).toBe(64);
+    });
+
+    // SUGGESTION-2: ALTER TABLE ADD COLUMN must move the fingerprint.
+    // max_attnum (pg_attribute.attnum) advances when a column is added with no new relation oid.
+    it('fingerprint changes after ALTER TABLE ADD COLUMN (SUGGESTION-2 attnum component)', async () => {
+      const adapterA = await createPgSchemaAdapter(fpHandle.config);
+      const fpBefore = await adapterA.fingerprint();
+      await adapterA.close();
+
+      // DDL: ALTER TABLE ADD COLUMN — no new relation oid, but attnum advances
+      const pgMod = await import('pg' as string) as { Client: new (cfg: unknown) => { connect(): Promise<void>; query(sql: string): Promise<unknown>; end(): Promise<void> } };
+      const ddlClient = new pgMod.Client({
+        host: fpHandle.config.host,
+        port: fpHandle.config.port,
+        user: fpHandle.config.user,
+        password: fpHandle.config.password,
+        database: fpHandle.config.database,
+      });
+      await ddlClient.connect();
+      try {
+        await ddlClient.query(
+          `ALTER TABLE app.products ADD COLUMN fp_test_col text`,
+        );
+      } finally {
+        await ddlClient.end();
+      }
+
+      const adapterB = await createPgSchemaAdapter(fpHandle.config);
+      const fpAfter = await adapterB.fingerprint();
+      await adapterB.close();
+
+      expect(fpAfter).not.toBe(fpBefore);
     });
   },
 );

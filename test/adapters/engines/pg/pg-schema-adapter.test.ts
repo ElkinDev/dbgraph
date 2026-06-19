@@ -39,7 +39,7 @@ import {
 
 /** Tracks every query call to verify fingerprint uses exactly 1 query */
 function makeFakeDriver(opts: {
-  fingerprintRow?: { m: string; c: string };
+  fingerprintRow?: { max_oid: string; max_attnum: string; rel_count: string; attr_count: string };
   schema?: string | null;
 }): PgReadonlyDriver & { queryCalls: Array<{ sql: string; params: readonly unknown[] }> } {
   const queryCalls: Array<{ sql: string; params: readonly unknown[] }> = [];
@@ -51,7 +51,7 @@ function makeFakeDriver(opts: {
       queryCalls.push({ sql, params: params ?? [] });
 
       if (sql === SQL_PG_FINGERPRINT) {
-        const row = opts.fingerprintRow ?? { m: '12345', c: '42' };
+        const row = opts.fingerprintRow ?? { max_oid: '12345', max_attnum: '5', rel_count: '42', attr_count: '210' };
         return [row as Record<string, unknown>];
       }
       if (sql === SQL_PG_SCHEMAS) {
@@ -206,7 +206,7 @@ describe('PgSchemaAdapter — extract()', () => {
 
 describe('PgSchemaAdapter — fingerprint()', () => {
   it('returns a sha256 hex string (64 chars)', async () => {
-    const driver = makeFakeDriver({ fingerprintRow: { m: '99999', c: '100' } });
+    const driver = makeFakeDriver({ fingerprintRow: { max_oid: '99999', max_attnum: '10', rel_count: '100', attr_count: '500' } });
     const adapter = new PgSchemaAdapter(driver);
     const fp = await adapter.fingerprint();
     expect(fp).toMatch(/^[0-9a-f]{64}$/);
@@ -221,7 +221,7 @@ describe('PgSchemaAdapter — fingerprint()', () => {
   });
 
   it('same row values produce the same fingerprint (deterministic)', async () => {
-    const row = { m: '42', c: '7' };
+    const row = { max_oid: '42', max_attnum: '3', rel_count: '7', attr_count: '35' };
     const d1 = makeFakeDriver({ fingerprintRow: row });
     const d2 = makeFakeDriver({ fingerprintRow: row });
     const fp1 = await new PgSchemaAdapter(d1).fingerprint();
@@ -229,9 +229,17 @@ describe('PgSchemaAdapter — fingerprint()', () => {
     expect(fp1).toBe(fp2);
   });
 
-  it('different m values produce different fingerprints', async () => {
-    const d1 = makeFakeDriver({ fingerprintRow: { m: '1', c: '7' } });
-    const d2 = makeFakeDriver({ fingerprintRow: { m: '2', c: '7' } });
+  it('different max_oid values produce different fingerprints', async () => {
+    const d1 = makeFakeDriver({ fingerprintRow: { max_oid: '1', max_attnum: '5', rel_count: '7', attr_count: '35' } });
+    const d2 = makeFakeDriver({ fingerprintRow: { max_oid: '2', max_attnum: '5', rel_count: '7', attr_count: '35' } });
+    const fp1 = await new PgSchemaAdapter(d1).fingerprint();
+    const fp2 = await new PgSchemaAdapter(d2).fingerprint();
+    expect(fp1).not.toBe(fp2);
+  });
+
+  it('different max_attnum values produce different fingerprints (ADD COLUMN detection)', async () => {
+    const d1 = makeFakeDriver({ fingerprintRow: { max_oid: '100', max_attnum: '5', rel_count: '7', attr_count: '35' } });
+    const d2 = makeFakeDriver({ fingerprintRow: { max_oid: '100', max_attnum: '6', rel_count: '7', attr_count: '36' } });
     const fp1 = await new PgSchemaAdapter(d1).fingerprint();
     const fp2 = await new PgSchemaAdapter(d2).fingerprint();
     expect(fp1).not.toBe(fp2);
