@@ -24,6 +24,7 @@ export { createSqliteGraphStore } from './adapters/storage/sqlite/factory.js';
 export { createSqliteSchemaAdapter } from './adapters/engines/sqlite/factory.js';
 export { createMssqlSchemaAdapter } from './adapters/engines/mssql/factory.js';
 export { createPgSchemaAdapter } from './adapters/engines/pg/factory.js';
+export { createMysqlSchemaAdapter } from './adapters/engines/mysql/factory.js';
 
 // ── Capability lookup (Decision 6, phase-4-cli-config) ───────────────────────
 // The CLI (and future MCP) must NOT import adapter modules directly (ADR-004).
@@ -31,12 +32,13 @@ export { createPgSchemaAdapter } from './adapters/engines/pg/factory.js';
 import { SQLITE_CAPABILITIES } from './adapters/engines/sqlite/capabilities.js';
 import { MSSQL_CAPABILITIES } from './adapters/engines/mssql/capabilities.js';
 import { PG_CAPABILITIES } from './adapters/engines/pg/capabilities.js';
+import { MYSQL_CAPABILITIES } from './adapters/engines/mysql/capabilities.js';
 import type { CapabilityMatrix } from './core/model/capability.js';
 import { UnsupportedDialectError } from './core/errors.js';
 
 // Re-export the capability constants so CLI/MCP modules can consume them
 // without importing adapter internals directly (ADR-004 boundary).
-export { SQLITE_CAPABILITIES, MSSQL_CAPABILITIES, PG_CAPABILITIES };
+export { SQLITE_CAPABILITIES, MSSQL_CAPABILITIES, PG_CAPABILITIES, MYSQL_CAPABILITIES };
 
 /**
  * Returns the static CapabilityMatrix for the given dialect WITHOUT opening
@@ -51,6 +53,8 @@ export function capabilitiesFor(dialect: string): CapabilityMatrix {
       return MSSQL_CAPABILITIES;
     case 'pg':
       return PG_CAPABILITIES;
+    case 'mysql':
+      return MYSQL_CAPABILITIES;
     default:
       throw new UnsupportedDialectError(dialect);
   }
