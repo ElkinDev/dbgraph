@@ -14,7 +14,7 @@
 import { parseArgv } from './parse/args.js';
 import { dispatch } from './dispatch.js';
 import { exitCodeFor } from './exit-code.js';
-import { DbgraphError } from '../index.js';
+import { DbgraphError, ConnectivityUnavailableError, formatOutcome } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Usage text (also tested in unit tests — exported for testability)
@@ -34,6 +34,7 @@ Commands:
   diff      Compare two snapshots of the graph index
   affected  Analyze DDL to show impacted objects (--json for machine output)
   install   Wire dbgraph-mcp into the Claude Desktop config (--remove to undo)
+  doctor    Run a content-free connectivity self-test (safe to share)
 
 Options:
   --help, -h    Show this help text
@@ -72,6 +73,11 @@ export async function runCli(argv: readonly string[]): Promise<number> {
     const outcome = await dispatchResult.handler(parsed);
     return exitCodeFor(outcome);
   } catch (err: unknown) {
+    if (err instanceof ConnectivityUnavailableError) {
+      // Render the structured outcome via the pure formatter — no raw stack trace.
+      process.stderr.write(formatOutcome(err.outcome) + '\n');
+      return exitCodeFor(err);
+    }
     if (err instanceof DbgraphError) {
       process.stderr.write(`Error: ${err.message}\n`);
       return exitCodeFor(err);

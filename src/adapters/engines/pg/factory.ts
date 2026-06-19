@@ -22,10 +22,53 @@
 
 import type { SchemaAdapter } from '../../../core/ports/schema-adapter.js';
 import type { PgAdapterConfig } from '../../../core/ports/schema-adapter.js';
-import { ConnectionError } from '../../../core/errors.js';
-import { mapPgError } from './error-mapper.js';
+import { ConnectivityUnavailableError } from '../../../core/errors.js';
 import { createPgReadonlyDriver, type ClientLike } from './driver.js';
 import { PgSchemaAdapter } from './pg-schema-adapter.js';
+import { buildConnectivityOutcome } from '../_shared/connectivity-outcome.js';
+import {
+  SQL_PG_SCHEMAS,
+  SQL_PG_TABLES,
+  SQL_PG_COLUMNS,
+  SQL_PG_CONSTRAINTS,
+  SQL_PG_INDEXES,
+  SQL_PG_VIEWS,
+  SQL_PG_ROUTINES,
+  SQL_PG_TRIGGERS,
+  SQL_PG_SEQUENCES,
+} from './queries.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// pg catalog SELECTs surfaced in the run-it-yourself option (write-verb-free)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PG_CATALOG_QUERIES: readonly string[] = [
+  SQL_PG_SCHEMAS,
+  SQL_PG_TABLES,
+  SQL_PG_COLUMNS,
+  SQL_PG_CONSTRAINTS,
+  SQL_PG_INDEXES,
+  SQL_PG_VIEWS,
+  SQL_PG_ROUTINES,
+  SQL_PG_TRIGGERS,
+  SQL_PG_SEQUENCES,
+];
+
+const PG_NPM_DOC_URL = 'https://www.npmjs.com/package/pg';
+const PG_DUMP_PATH = '.dbgraph/dumps/pg-dump.json';
+
+function buildPgConnectivityOutcome(summary: string): ConnectivityUnavailableError {
+  const outcome = buildConnectivityOutcome({
+    engine: 'pg',
+    summary,
+    attempts: [],
+    runItYourselfQueries: PG_CATALOG_QUERIES,
+    installTool: 'pg',
+    installDocUrl: PG_NPM_DOC_URL,
+    dumpPath: PG_DUMP_PATH,
+  });
+  return new ConnectivityUnavailableError(outcome);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Optional deps (test seam — omit entirely for production use)
@@ -89,11 +132,10 @@ export async function createPgSchemaAdapter(
       pgMod = deps.importPg !== undefined
         ? deps.importPg()
         : await (import('pg' as string));
-    } catch (cause) {
-      // MODULE_NOT_FOUND → instruct the user to install the optional dep
-      throw new ConnectionError(
+    } catch {
+      // MODULE_NOT_FOUND → build a ConnectivityOutcome with ≥3 options
+      throw buildPgConnectivityOutcome(
         "Required driver 'pg' is not installed. Run: npm i pg",
-        cause,
       );
     }
 
@@ -105,7 +147,7 @@ export async function createPgSchemaAdapter(
       ((mod['default'] as Record<string, unknown> | undefined)?.['Client'] as (typeof ClientCtor) | undefined);
 
     if (pgClient === undefined) {
-      throw new ConnectionError(
+      throw buildPgConnectivityOutcome(
         "Failed to load pg.Client from the 'pg' module. Try: npm i pg",
       );
     }
@@ -133,8 +175,13 @@ export async function createPgSchemaAdapter(
   try {
     await client.connect();
   } catch (cause) {
-    // Map any pg driver error to a typed error (ConnectionError / PermissionError).
-    throw mapPgError(cause);
+    // Connect failure → build a ConnectivityOutcome with ≥3 options (Batch 3).
+    // mapPgError is still available for internal classification if needed, but
+    // the outer throw must be ConnectivityUnavailableError per the design seam.
+    const summary = cause instanceof Error
+      ? cause.message
+      : 'PostgreSQL connection failed.';
+    throw buildPgConnectivityOutcome(summary);
   }
 
   // ── 4. Wrap in the driver seam and return the adapter ────────────────────

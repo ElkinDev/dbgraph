@@ -41,7 +41,9 @@
 import type { ConnectivityStrategy, DetectResult, StrategyAttempt } from '../../../../core/ports/connectivity-strategy.js';
 import type { Logger } from '../../../../core/ports/logger.js';
 import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.js';
-import { StrategyExhaustionError } from '../../../../core/errors.js';
+// Note: StrategyExhaustionError is no longer thrown from selectStrategy as of Batch 3;
+// it remains defined in core/errors.ts for back-compat. Not imported here.
+import { ConnectivityUnavailableError } from '../../../../core/errors.js';
 import { noopLogger } from '../../../../core/ports/logger.js';
 import { NativeTediousStrategy } from './native-tedious.strategy.js';
 import { SqlcmdStrategy } from './sqlcmd.strategy.js';
@@ -49,6 +51,20 @@ import { ManualDumpStrategy } from './manual-dump.strategy.js';
 import { ConsentedInstallStrategy } from './consented-install.strategy.js';
 import { InvokeSqlcmdStrategy } from './invoke-sqlcmd.strategy.js';
 import { OdbcDriverStrategy } from './odbc-driver.strategy.js';
+import { buildConnectivityOutcome } from '../../_shared/connectivity-outcome.js';
+import {
+  SQL_MSSQL_TABLES,
+  SQL_MSSQL_COLUMNS,
+  SQL_MSSQL_KEY_CONSTRAINTS,
+  SQL_MSSQL_FOREIGN_KEYS,
+  SQL_MSSQL_CHECK_CONSTRAINTS,
+  SQL_MSSQL_INDEXES,
+  SQL_MSSQL_MODULES,
+  SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_SEQUENCES,
+  SQL_MSSQL_EXTENDED_PROPERTIES,
+  SQL_MSSQL_DEPENDENCIES,
+} from '../queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Dependency injection seam (for testability in Batch C)
@@ -76,6 +92,48 @@ export interface MssqlStrategyDeps {
    * Defaults to noopLogger when not provided (back-compat).
    */
   readonly logger?: Logger;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mssql catalog SELECTs for the run-it-yourself option (write-verb-free)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MSSQL_CATALOG_QUERIES: readonly string[] = [
+  SQL_MSSQL_TABLES,
+  SQL_MSSQL_COLUMNS,
+  SQL_MSSQL_KEY_CONSTRAINTS,
+  SQL_MSSQL_FOREIGN_KEYS,
+  SQL_MSSQL_CHECK_CONSTRAINTS,
+  SQL_MSSQL_INDEXES,
+  SQL_MSSQL_MODULES,
+  SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_SEQUENCES,
+  SQL_MSSQL_EXTENDED_PROPERTIES,
+  SQL_MSSQL_DEPENDENCIES,
+];
+
+const MSSQL_SQLCMD_DOC_URL =
+  'https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-utility';
+const MSSQL_DUMP_PATH = '.dbgraph/dumps/mssql-dump.json';
+
+function buildMssqlConnectivityOutcome(
+  attempts: readonly StrategyAttempt[],
+): ConnectivityUnavailableError {
+  const summary =
+    attempts.length === 0
+      ? 'No mssql connectivity strategy available.'
+      : `All mssql connectivity strategies exhausted. ${attempts.map((a) => `${a.id} — ${a.reason}`).join('; ')}`;
+
+  const outcome = buildConnectivityOutcome({
+    engine: 'mssql',
+    summary,
+    attempts,
+    runItYourselfQueries: MSSQL_CATALOG_QUERIES,
+    installTool: 'sqlcmd',
+    installDocUrl: MSSQL_SQLCMD_DOC_URL,
+    dumpPath: MSSQL_DUMP_PATH,
+  });
+  return new ConnectivityUnavailableError(outcome);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -178,8 +236,9 @@ export async function selectStrategy(
     return strategy;
   }
 
-  // All strategies exhausted — throw typed error with attempt list
-  throw new StrategyExhaustionError(attempts);
+  // All strategies exhausted — throw ConnectivityUnavailableError with outcome (Batch 3)
+  // StrategyExhaustionError is preserved (exported, usable) but no longer thrown here.
+  throw buildMssqlConnectivityOutcome(attempts);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

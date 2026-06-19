@@ -23,7 +23,15 @@
 import { describe, it, expect } from 'vitest';
 import type { PgAdapterConfig } from '../../../../src/core/ports/schema-adapter.js';
 import { createPgSchemaAdapter } from '../../../../src/adapters/engines/pg/factory.js';
-import { ConnectionError, PermissionError } from '../../../../src/core/errors.js';
+import {
+  ConnectionError,
+  ConnectivityUnavailableError,
+} from '../../../../src/core/errors.js';
+import {
+  SQL_PG_SCHEMAS,
+  SQL_PG_TABLES,
+  SQL_PG_COLUMNS,
+} from '../../../../src/adapters/engines/pg/queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fake ClientLike helpers
@@ -190,60 +198,125 @@ describe('createPgSchemaAdapter() — successful connect', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Missing pg driver → ConnectionError with "npm i pg"
-// Spec: "Absent pg driver names npm i pg"
+// Missing pg driver → ConnectivityUnavailableError with ≥3 options
+// Spec: connectivity-diagnostics "pg driver absent yields the three-option outcome"
+// Task 3.2 (resilient-connectivity Batch 3)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('createPgSchemaAdapter() — missing pg driver', () => {
-  it('throws ConnectionError when pg module cannot be loaded', async () => {
-    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, {
-      importPg: () => { throw Object.assign(new Error('Cannot find module'), { code: 'MODULE_NOT_FOUND' }); },
-    }).catch((e: unknown) => e);
+function makeDriverAbsentDeps() {
+  return {
+    importPg: (): unknown => {
+      throw Object.assign(new Error('Cannot find module'), { code: 'MODULE_NOT_FOUND' });
+    },
+  };
+}
 
-    expect(err).toBeInstanceOf(ConnectionError);
+describe('createPgSchemaAdapter() — pg driver absent → ConnectivityUnavailableError (Batch 3)', () => {
+  it('throws ConnectivityUnavailableError when pg module cannot be loaded', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('ConnectionError message contains exactly "npm i pg"', async () => {
-    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, {
-      importPg: () => { throw Object.assign(new Error('Cannot find module'), { code: 'MODULE_NOT_FOUND' }); },
-    }).catch((e: unknown) => e);
+  it('ConnectivityUnavailableError code is E_CONNECTIVITY_UNAVAILABLE', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).code).toBe('E_CONNECTIVITY_UNAVAILABLE');
+  });
 
-    expect((err as ConnectionError).message).toContain('npm i pg');
+  it('outcome.engine is "pg"', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).outcome.engine).toBe('pg');
+  });
+
+  it('outcome has exactly 3 options', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).outcome.options.length).toBe(3);
+  });
+
+  it('option kinds are exactly ["run-it-yourself","consented-install","manual-dump"]', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    expect(outcome.options.map((o) => o.kind)).toEqual([
+      'run-it-yourself',
+      'consented-install',
+      'manual-dump',
+    ]);
+  });
+
+  it('run-it-yourself option queries equal the shipped pg catalog SELECTs (at least schemas/tables/columns)', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const riyo = outcome.options[0];
+    if (riyo?.kind !== 'run-it-yourself') throw new Error('wrong kind');
+    // EXACT-set: the queries array must contain the shipped pg catalog SELECTs
+    expect(riyo.queries).toContain(SQL_PG_SCHEMAS);
+    expect(riyo.queries).toContain(SQL_PG_TABLES);
+    expect(riyo.queries).toContain(SQL_PG_COLUMNS);
+  });
+
+  it('run-it-yourself queries are write-verb-free', async () => {
+    const writeVerbPattern = /\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE)\b/i;
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const riyo = outcome.options[0];
+    if (riyo?.kind !== 'run-it-yourself') throw new Error('wrong kind');
+    for (const query of riyo.queries) {
+      expect(query).not.toMatch(writeVerbPattern);
+    }
+  });
+
+  it('consented-install option names "pg" as the tool', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const install = outcome.options[1];
+    if (install?.kind !== 'consented-install') throw new Error('wrong kind');
+    expect(install.tool).toBe('pg');
+  });
+
+  it('is NOT instanceof ConnectionError (replaced, not wrapped)', async () => {
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, makeDriverAbsentDeps()).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ConnectionError);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Connect errors → typed errors via mapPgError
-// Spec: "Authentication failure raises an actionable ConnectionError"
+// Connect errors → ConnectivityUnavailableError with ≥3 options (Batch 3)
+// The connect-fail path also builds the outcome via buildConnectivityOutcome.
+// Happy-path (client.connect() succeeds) is UNCHANGED.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('createPgSchemaAdapter() — connect errors', () => {
-  it('throws ConnectionError when authentication fails (28P01)', async () => {
+describe('createPgSchemaAdapter() — connect errors → ConnectivityUnavailableError (Batch 3)', () => {
+  it('throws ConnectivityUnavailableError when authentication fails (28P01)', async () => {
     const FakeClient = makeFakeClientCtor({ connectBehavior: 'auth-fail' });
     await expect(
       createPgSchemaAdapter(MINIMAL_CONFIG, { Client: FakeClient }),
-    ).rejects.toBeInstanceOf(ConnectionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('throws PermissionError when privilege missing (42501)', async () => {
+  it('throws ConnectivityUnavailableError when privilege missing (42501)', async () => {
     const FakeClient = makeFakeClientCtor({ connectBehavior: 'permission-fail' });
     await expect(
       createPgSchemaAdapter(MINIMAL_CONFIG, { Client: FakeClient }),
-    ).rejects.toBeInstanceOf(PermissionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('throws ConnectionError when database missing (3D000)', async () => {
+  it('throws ConnectivityUnavailableError when database missing (3D000)', async () => {
     const FakeClient = makeFakeClientCtor({ connectBehavior: 'db-missing' });
     await expect(
       createPgSchemaAdapter(MINIMAL_CONFIG, { Client: FakeClient }),
-    ).rejects.toBeInstanceOf(ConnectionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('throws ConnectionError when network unreachable (08001)', async () => {
+  it('throws ConnectivityUnavailableError when network unreachable (08001)', async () => {
     const FakeClient = makeFakeClientCtor({ connectBehavior: 'network-fail' });
     await expect(
       createPgSchemaAdapter(MINIMAL_CONFIG, { Client: FakeClient }),
-    ).rejects.toBeInstanceOf(ConnectionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
+  });
+
+  it('connect-fail outcome has 3 options', async () => {
+    const FakeClient = makeFakeClientCtor({ connectBehavior: 'auth-fail' });
+    const err = await createPgSchemaAdapter(MINIMAL_CONFIG, { Client: FakeClient }).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).outcome.options.length).toBe(3);
   });
 });
 
