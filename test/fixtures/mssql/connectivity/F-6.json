@@ -1,0 +1,35 @@
+{
+  "_fixture": "F-6",
+  "_description": "Reassembly fragility: 2033-char chunks split mid-word at arbitrary boundaries; no .trim() allowed; blank lines and (N rows affected) must be dropped",
+  "environment": {
+    "variantId": "legacy-odbc",
+    "detectedVersion": "15.0.1300",
+    "flags": ["-y", "0", "-f", "o:65001"]
+  },
+  "outputShape": {
+    "chunkSize": 2033,
+    "hasHeader": false,
+    "trailingSpacePadding": false
+  },
+  "reassemblyRules": {
+    "skipLeadingNonJsonLines": true,
+    "dropBlankLines": true,
+    "dropRowsAffectedTrailer": true,
+    "concatenateVerbatim": true,
+    "neverTrimAtChunkBoundary": true,
+    "malformedOutputAction": "typed-actionable-error-with-first-N-chars"
+  },
+  "syntheticSplitExample": {
+    "_note": "Content-free: chunk boundary falls inside a string value with spaces",
+    "chunkBoundaryPosition": "mid-string-value",
+    "preserveSpaces": true
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "reassembly-verbatim-no-trim-typed-error-on-malformed"
+}

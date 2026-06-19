@@ -1,0 +1,24 @@
+{
+  "_fixture": "F-3",
+  "_description": "Legacy sqlcmd 15.x flag mutual-exclusivities: -W incompatible with -y/-Y; -h incompatible with -y 0",
+  "environment": {
+    "variantId": "legacy-odbc",
+    "detectedVersion": "15.0.1300"
+  },
+  "flagConstraints": {
+    "mutuallyExclusive": [
+      { "flags": ["-W", "-y"], "reason": "-W (trim trailing spaces) is incompatible with -y/-Y on legacy 15.x" },
+      { "flags": ["-h", "-y0"], "reason": "-h (headers) is incompatible with -y 0 on legacy 15.x" }
+    ],
+    "requiredForJson": ["-y", "0"],
+    "safeCombo": ["-y", "0", "-f", "o:65001"]
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "flag-mutual-exclusivity-enforced"
+}

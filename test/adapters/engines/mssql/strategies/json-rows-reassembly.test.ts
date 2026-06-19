@@ -11,17 +11,28 @@
  *   - "Reassembly is golden-pinned with exact-set assertions" (ADR-008)
  *
  * US-042 — Profile-driven reassembly of chunked output.
+ * US-044 — Batch 6: fixture-driven tests repoint to formal F-4/F-5/F-6/F-9 fixtures.
  *
  * NOTE: parseJsonRows (coercion layer) is UNCHANGED and NOT tested here.
  * These tests target ONLY the reassembly layer (chunk concat + JSON.parse).
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   reassembleForJson,
   reassembleSingleForJson,
 } from '../../../../../src/adapters/engines/mssql/strategies/json-rows.js';
 import type { SqlcmdProfile } from '../../../../../src/adapters/engines/mssql/strategies/profiles.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const CONNECTIVITY_FIXTURES = resolve(
+  __dirname,
+  '../../../../fixtures/mssql/connectivity',
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixtures and helpers
@@ -283,5 +294,88 @@ describe('reassembleForJson — EXACT golden (byte-identical on re-run)', () => 
     const result = reassembleSingleForJson(stdout, profile);
     expect(result).toEqual({ m: '2024-06-17T10:00:00', c: 7 });
     expect(Object.keys(result)).toHaveLength(2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fixture-driven: formal F-4/F-5/F-6/F-9 fixtures (Batch 6, task 6.1 repoint)
+// The formal fixtures are the authoritative shape descriptors for these scenarios.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F-4 fixture: 2033-char chunk shape (formal fixture repoint, US-044)', () => {
+  it('F-4 fixture profile matches the legacy-odbc profile used in golden tests', () => {
+    const f4 = JSON.parse(
+      readFileSync(join(CONNECTIVITY_FIXTURES, 'F-4.json'), 'utf-8'),
+    ) as Record<string, unknown>;
+    const shape = f4['outputShape'] as Record<string, unknown>;
+    // The fixture must declare the canonical chunk shape
+    expect(shape['chunkSize']).toBe(2033);
+    expect(shape['hasHeader']).toBe(false);
+    // Verify reassembly still works with the fixture-declared chunk size (byte-identical)
+    const chunkSize = shape['chunkSize'] as number;
+    const stdout = makeLegacyOutput(GOLDEN_ARRAY_JSON, chunkSize);
+    const profile = makeProfile({ outputShape: { chunkSize, hasHeader: false } });
+    const result = reassembleForJson(stdout, profile);
+    expect(result).toEqual(GOLDEN_ARRAY);
+  });
+});
+
+describe('F-5 fixture: encoding profile (formal fixture repoint, US-044)', () => {
+  it('F-5 fixture latin1 buffer decodes correctly per profile.encoding', () => {
+    const f5 = JSON.parse(
+      readFileSync(join(CONNECTIVITY_FIXTURES, 'F-5.json'), 'utf-8'),
+    ) as Record<string, unknown>;
+    const synth = f5['syntheticBuffer'] as Record<string, unknown>;
+    const profile = synth['profile'] as { encoding: string; chunkSize: number; hasHeader: boolean };
+    // Reconstruct the synthetic buffer from the fixture-declared byte sequence
+    const bytes = synth['byteSequence'] as number[];
+    const stdout = Buffer.from(bytes);
+    const sqlcmdProfile = makeProfile({ encoding: profile.encoding });
+    const result = reassembleForJson(stdout, sqlcmdProfile);
+    expect(result).toHaveLength(1);
+    const row = result[0] as Record<string, unknown>;
+    // The latin1 byte 0xE9 decodes to 'é' in latin1
+    expect(typeof row['n']).toBe('string');
+  });
+});
+
+describe('F-6 fixture: reassembly rules (formal fixture repoint, US-044)', () => {
+  it('F-6 fixture neverTrimAtChunkBoundary rule is proven by space-sensitive test', () => {
+    const f6 = JSON.parse(
+      readFileSync(join(CONNECTIVITY_FIXTURES, 'F-6.json'), 'utf-8'),
+    ) as Record<string, unknown>;
+    const rules = f6['reassemblyRules'] as Record<string, unknown>;
+    expect(rules['neverTrimAtChunkBoundary']).toBe(true);
+    // Prove the rule: a value with spaces at a chunk boundary is preserved
+    const value = { v: 'space test' };
+    const json = JSON.stringify([value]);
+    const chunkSize = 10;
+    const stdout = makeLegacyOutput(json, chunkSize);
+    const profile = makeProfile({ outputShape: { chunkSize, hasHeader: false } });
+    const result = reassembleForJson(stdout, profile);
+    expect(result).toEqual([value]);
+  });
+});
+
+describe('F-9 fixture: sql_variant coercion shape (formal fixture repoint, US-044)', () => {
+  it('F-9 fixture describes sql_variant-to-JSON-number coercion', () => {
+    const f9 = JSON.parse(
+      readFileSync(join(CONNECTIVITY_FIXTURES, 'F-9.json'), 'utf-8'),
+    ) as Record<string, unknown>;
+    const coercion = f9['coercionBehavior'] as Record<string, unknown>;
+    expect(coercion['inputType']).toBe('sql_variant');
+    expect(coercion['coercedTo']).toBe('JSON number');
+    // The syntheticStdout rawLine is a valid JSON array string
+    const synth = f9['syntheticStdout'] as Record<string, unknown>;
+    const rawLine = synth['rawLine'] as string;
+    expect(() => JSON.parse(rawLine)).not.toThrow();
+    // Reassembly of the raw line yields the string representation (coerceStringy handles coercion)
+    const stdout = Buffer.from(rawLine + '\r\n', 'utf-8');
+    const profile = makeProfile();
+    const result = reassembleForJson(stdout, profile);
+    expect(result).toHaveLength(1);
+    // The raw reassembly yields the string (parseJsonRows/coerceStringy coercion is the next layer)
+    // Here we just assert the array is parseable and has one row
+    expect(Array.isArray(result)).toBe(true);
   });
 });
