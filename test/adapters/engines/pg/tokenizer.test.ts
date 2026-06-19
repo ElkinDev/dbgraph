@@ -192,4 +192,60 @@ $$`;
     const result = tokenizePgBody(body, deps);
     expect(result.dependencies[0]?.access).toBe('read');
   });
+
+  // WARNING-1 regression pin (NEW-1):
+  // A routine with BOTH reliable static edges AND a dynamic EXECUTE statement must
+  // keep its static edges (write + read survive) while flagging hasDynamicSql:true.
+  // Additionally, an object whose ONLY reference is inside the dynamic string
+  // literal must NOT produce an edge (maskDynamicStrings gate holds).
+  it('keeps static edges and flags hasDynamicSql when a body mixes static SQL with a dynamic EXECUTE; dynamic-string refs are excluded', () => {
+    // Arrange — a plpgsql body that contains:
+    //   • a static INSERT INTO app.audit_log  → write edge expected
+    //   • a static SELECT FROM app.products   → read edge expected
+    //   • EXECUTE format('... app.orders ...')→ app.orders is INSIDE the string
+    //     literal only, so it must NOT produce an edge; bare EXECUTE flags dynamic
+    const body = `
+CREATE OR REPLACE FUNCTION app.fn_mixed(p_id integer)
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO app.audit_log (action, entity_id) VALUES ('processed', p_id);
+  SELECT id FROM app.products WHERE id = p_id;
+  EXECUTE format('SELECT * FROM app.orders WHERE id = %L', p_id);
+END;
+$$`;
+
+    const deps = [
+      { schema: 'app', name: 'audit_log' },
+      { schema: 'app', name: 'products' },
+      { schema: 'app', name: 'orders' },
+    ];
+
+    // Act
+    const result = tokenizePgBody(body, deps);
+
+    // Assert — hasDynamicSql: bare EXECUTE is present (not EXECUTE FUNCTION)
+    expect(result.hasDynamicSql).toBe(true);
+
+    // Assert — static write edge for audit_log survives
+    const auditDep = result.dependencies.find((d) => d.target.name === 'audit_log');
+    expect(auditDep).toBeDefined();
+    expect(auditDep).toMatchObject({
+      target: { schema: 'app', name: 'audit_log' },
+      access: 'write',
+      confidence: 'parsed',
+    });
+
+    // Assert — static read edge for products survives
+    const productsDep = result.dependencies.find((d) => d.target.name === 'products');
+    expect(productsDep).toBeDefined();
+    expect(productsDep).toMatchObject({
+      target: { schema: 'app', name: 'products' },
+      access: 'read',
+      confidence: 'parsed',
+    });
+
+    // Assert — orders is absent (its only reference is inside the string literal)
+    const ordersDep = result.dependencies.find((d) => d.target.name === 'orders');
+    expect(ordersDep).toBeUndefined();
+  });
 });
