@@ -1,9 +1,28 @@
 /**
- * json-rows.ts — FOR-JSON validation/coercion → MssqlRowInput.
+ * json-rows.ts — FOR-JSON reassembly + validation/coercion → MssqlRowInput.
  *
  * Shared by the sqlcmd strategy (Batch B) and the manual-dump strategy (Batch D).
- * Takes the raw JSON-parsed output from sqlcmd FOR JSON / a dump file and
- * validates + coerces each row family into the exact *Row types from map.ts:
+ *
+ * ## Reassembly layer (NEW — Batch 4, task 4.2)
+ *
+ * `reassembleForJson(stdout, profile)` and `reassembleSingleForJson(stdout, profile)`
+ * are extracted from the private helpers in sqlcmd.strategy.ts. They are now
+ * exported, profile-driven, and independently tested.
+ *
+ * Reassembly rules (F-4/F-5/F-6 findings):
+ *   - Decode stdout using `profile.encoding` (NOT hard-coded utf8 — F-5).
+ *   - Skip leading non-JSON lines defensively (the real output starts at line 0,
+ *     but legacy/future variants may have a header — `profile.outputShape.hasHeader`
+ *     is informational; the defensive skip handles both cases).
+ *   - Drop blank lines and the "(N rows affected)" trailer (SET NOCOUNT ON safety net).
+ *   - Concatenate surviving lines VERBATIM — NO .trim() at chunk boundaries (F-4/F-6).
+ *   - On malformed/partial output throw a TYPED actionable error (what + first N chars)
+ *     — NOT a raw JSON.parse stack trace.
+ *
+ * ## Coercion layer (UNCHANGED)
+ *
+ * `parseJsonRows(input)` takes the raw JSON-parsed output from sqlcmd FOR JSON /
+ * a dump file and validates + coerces each row family into the exact *Row types:
  *
  *   - bit 0/1 (SQL Server emits numbers for BIT columns) → boolean
  *   - numeric-string → number for id/ordinal fields
@@ -13,8 +32,10 @@
  * Design §"json-rows.ts: shared FOR-JSON validation/coercion → MssqlRowInput".
  * Spec mssql-extraction "Malformed sqlcmd output is rejected, not cast".
  * connectivity-strategies Batch B, task B2.2.
+ * Resilient-connectivity Batch 4, task 4.2 (reassembly extraction).
  */
 
+import type { SqlcmdProfile } from './profiles.js';
 import type {
   MssqlRowInput,
   TableRow,
@@ -29,6 +50,135 @@ import type {
   ExtendedPropRow,
   DepRow,
 } from '../map.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reassembly layer — profile-driven stdout → parsed JSON
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Number of chars shown in the actionable error message for malformed output.
+ * Enough to identify the problem without flooding the log.
+ */
+const MALFORMED_PREVIEW_CHARS = 200;
+
+/**
+ * Extracts the JSON data lines from sqlcmd stdout, driven by the profile.
+ *
+ * Algorithm (F-4/F-6 findings — measured on legacy sqlcmd 15.x):
+ *   1. Decode stdout using `profile.encoding` (F-5 — NOT hard-coded 'utf8').
+ *   2. Split into lines, stripping trailing \r per line.
+ *   3. Skip leading non-JSON lines DEFENSIVELY: discard until the first line
+ *      whose trimStart begins with `[` or `{`. In the legacy-15.x profile
+ *      this is always line 0, but future/alternate variants may have a header.
+ *   4. From the remaining lines, drop truly-empty lines and the
+ *      "(N rows affected)" trailer (SET NOCOUNT ON suppresses it, but this
+ *      is kept as a safety net for edge cases).
+ *   5. Concatenate survivors VERBATIM (NO .trim() — FOR JSON chunks split
+ *      mid-token; any whitespace at a chunk boundary is content, not padding).
+ *   6. If nothing remains, return "" (caller decides how to handle empty).
+ */
+function extractJsonContent(stdout: Buffer, profile: SqlcmdProfile): string {
+  const text = stdout.toString(profile.encoding as BufferEncoding);
+  const lines = text.split('\n');
+
+  // Step 3: Skip leading non-JSON lines defensively
+  let dataStartIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const stripped = (lines[i] ?? '').replace(/\r$/, '');
+    const trimStart = stripped.trimStart();
+    if (trimStart.startsWith('[') || trimStart.startsWith('{')) {
+      dataStartIdx = i;
+      break;
+    }
+  }
+
+  const cleanLines: string[] = [];
+  for (let i = dataStartIdx; i < lines.length; i++) {
+    // Strip ONLY the trailing \r — do NOT trim content (chunk boundaries carry content)
+    const line = (lines[i] ?? '').replace(/\r$/, '');
+    // Skip truly-empty lines (blank separators at end of output)
+    if (line === '') continue;
+    // Skip the row-count trailer that SET NOCOUNT ON suppresses (safety net)
+    if (/^\(\d+ rows? affected\)$/.test(line.trim())) continue;
+    cleanLines.push(line); // preserve exact content — no .trim()
+  }
+
+  return cleanLines.join(''); // no spaces — FOR JSON chunks split mid-token
+}
+
+/**
+ * Reassembles FOR JSON PATH output from sqlcmd stdout into a parsed array.
+ *
+ * Handles the REAL legacy sqlcmd 15.x output shape (F-4): with `-y 0`,
+ * `SET NOCOUNT ON`, and `-f o:65001`, the JSON starts at line 0 (NO header,
+ * NO dashes separator). Large results are split into 2033-char chunks with
+ * NO trailing-space padding.
+ *
+ * Decodes stdout using `profile.encoding` (F-5).
+ * Concatenates chunks VERBATIM — never .trim() at boundaries (F-4/F-6).
+ *
+ * @throws Error with actionable message (first N chars) if not valid JSON array.
+ */
+export function reassembleForJson(stdout: Buffer, profile: SqlcmdProfile): unknown[] {
+  const concatenated = extractJsonContent(stdout, profile);
+  if (concatenated === '') return [];
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(concatenated);
+  } catch (e) {
+    throw new Error(
+      `sqlcmd: failed to parse FOR JSON output. ` +
+      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}. ` +
+      `Parse error: ${(e as Error).message}`,
+      { cause: e },
+    );
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error(
+      `sqlcmd: expected a JSON array from FOR JSON PATH output but got ${typeof parsed}. ` +
+      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}`,
+    );
+  }
+
+  return parsed;
+}
+
+/**
+ * Reassembles FOR JSON PATH, WITHOUT_ARRAY_WRAPPER output from sqlcmd stdout.
+ * Returns the parsed JSON object directly (not wrapped in an array).
+ * Used by fingerprint() which returns a single aggregate row, not an array.
+ *
+ * Uses the same profile-driven extractJsonContent logic as reassembleForJson.
+ *
+ * @throws Error with actionable message (first N chars) if not valid JSON object.
+ */
+export function reassembleSingleForJson(stdout: Buffer, profile: SqlcmdProfile): Record<string, unknown> {
+  const concatenated = extractJsonContent(stdout, profile);
+  if (concatenated === '') return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(concatenated);
+  } catch (e) {
+    throw new Error(
+      `sqlcmd: failed to parse WITHOUT_ARRAY_WRAPPER output. ` +
+      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}. ` +
+      `Parse error: ${(e as Error).message}`,
+      { cause: e },
+    );
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `sqlcmd: expected a JSON object from WITHOUT_ARRAY_WRAPPER output but got ${typeof parsed}. ` +
+      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}`,
+    );
+  }
+
+  return parsed as Record<string, unknown>;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Raw input shape (all families as unknown[])
