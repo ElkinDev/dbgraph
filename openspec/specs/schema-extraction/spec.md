@@ -1,16 +1,17 @@
-# Schema Extraction Specification (delta — phase-2-sqlite-extraction)
+# Schema Extraction Specification
 
 ## Purpose
 
 The engine-agnostic `SchemaAdapter` port contract: the lifecycle and guarantees EVERY source-database
-adapter MUST honour to feed the existing `graph-normalization` capability. This delta ADDS the port
-that turns a live source database into the engine-agnostic `RawCatalog` already defined by
-`graph-model`. Per ADR-004 the port lives in `src/core/ports` and references NO driver, adapter, MCP
-or CLI symbol. Stories: US-026 (first concrete adapter), US-031 (read-only by construction), US-009
-(per-engine fingerprint). This capability is purely additive; it consumes existing `graph-model`
-contracts (`CapabilityMatrix`, `ExtractionScope`, `RawCatalog`) without modifying them.
+adapter MUST honour to feed the existing `graph-normalization` capability. The port turns a live source
+database into the engine-agnostic `RawCatalog` defined by `graph-model`. Per ADR-004 the port lives in
+`src/core/ports` and references NO driver, adapter, MCP or CLI symbol. Stories: US-026 (first concrete
+adapter), US-031 (read-only by construction), US-009 (per-engine fingerprint). This capability
+consumes existing `graph-model` contracts (`CapabilityMatrix`, `ExtractionScope`, `RawCatalog`) without
+modifying them. Supported dialects: `sqlite` (phase-2-sqlite-extraction), `mssql`
+(phase-3-sqlserver-adapter), `pg` (phase-8a-pg), `mysql` (phase-8b-mysql).
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: SchemaAdapter port lives in core and imports no driver
 
@@ -19,15 +20,22 @@ The model SHALL define a `SchemaAdapter` port in `src/core/ports` exposing a `di
 `fingerprint(): Promise<string>` and `close()`. The port MUST be expressible without importing any
 driver, adapter, MCP or CLI symbol (ADR-004); the concrete join to a driver belongs to an adapter
 outside core. The `SchemaAdapterConfig` discriminated union (the config side of the port) SHALL include a
-`PgAdapterConfig` variant for the `pg` dialect alongside the existing `sqlite` and `mssql` variants; this
-extends the union ONLY — it adds no new port method and does not change the port SHAPE (the port file
-already cites `'pg'` as an example dialect).
+`MysqlAdapterConfig` variant for the `mysql` dialect alongside the existing `sqlite`, `mssql` and `pg`
+variants; this extends the union ONLY — it adds no new port method and does not change the port SHAPE.
+
+The union is INTENTIONALLY non-discriminable by structural shape: both `PgAdapterConfig` and
+`MysqlAdapterConfig` carry `host`, so the now-stale `PgAdapterConfig` JSDoc claiming it is "distinguished
+by `host`" MUST be corrected. Runtime dispatch (config parsing and adapter construction) keys on the
+EXPLICIT `dialect` field of the source config, NEVER on the union member's structural shape; each engine
+keeps its own factory taking its concrete config type directly. `MysqlAdapterConfig` MUST carry
+`host`, `port` (default `3306`), `database`, `user`, `password` (a `${env:VAR}` reference, env-only) and
+an optional `ssl`; it MUST NOT carry a `schema?` field (the connected database is the extraction scope).
 
 #### Scenario: Port type is driver-free
 
 - GIVEN the `SchemaAdapter` port type declaration in `src/core/ports`
 - WHEN the core module graph is statically analysed (boundary lint)
-- THEN it imports NO driver (`better-sqlite3`, `node:sqlite`, `mssql`, `pg`), adapter, MCP or CLI symbol
+- THEN it imports NO driver (`better-sqlite3`, `node:sqlite`, `mssql`, `pg`, `mysql2`), adapter, MCP or CLI symbol
 - AND it is implementable by a test double that requires no database connection
 
 #### Scenario: Port exposes dialect and capability matrix
@@ -37,12 +45,20 @@ already cites `'pg'` as an example dialect).
 - THEN `dialect` is a stable engine identifier
 - AND `capabilities` is a `CapabilityMatrix` as defined by `graph-model`
 
-#### Scenario: SchemaAdapterConfig union includes the pg variant without a shape change
+#### Scenario: SchemaAdapterConfig union includes the mysql variant without a shape change
 
 - GIVEN the `SchemaAdapterConfig` discriminated union in `src/core/ports`
 - WHEN its variants are enumerated
-- THEN it includes a `PgAdapterConfig` variant for the `pg` dialect alongside `sqlite` and `mssql`
+- THEN it includes a `MysqlAdapterConfig` variant for the `mysql` dialect alongside `sqlite`, `mssql` and `pg`
+- AND `MysqlAdapterConfig` carries `host`, optional `port`, `database`, `user`, `password` and optional `ssl`, and NO `schema?` field
 - AND no new method is added to the `SchemaAdapter` port (the port SHAPE is unchanged)
+
+#### Scenario: The union is non-discriminable by shape and dispatch keys on the explicit dialect
+
+- GIVEN both `PgAdapterConfig` and `MysqlAdapterConfig` carry a `host` field
+- WHEN the runtime resolves which adapter to construct from a source config
+- THEN it dispatches on the explicit `dialect` field, NOT on the union member's structural shape
+- AND the stale `PgAdapterConfig` JSDoc claiming it is "distinguished by `host`" is corrected to record the union is intentionally non-discriminable by shape
 
 ### Requirement: Adapter lifecycle is connect → extract/fingerprint → close
 
@@ -185,65 +201,72 @@ is the first to parse bodies into `confidence: parsed` edges).
 - THEN only catalog-trivial hints are required
 - AND full SQL-body dependency parsing is deferred to a later phase (first delivered by US-027, Phase 3)
 
-### Requirement: Supported dialects, capabilitiesFor and UnsupportedDialectError recognize pg
+### Requirement: Supported dialects, capabilitiesFor and UnsupportedDialectError recognize mysql
 
-The dialect registry SHALL recognize `pg` as a supported dialect across all four touch points TOGETHER:
-`SUPPORTED_DIALECTS` (config schema) MUST include `'pg'` (alongside `'sqlite'` and `'mssql'`);
-`capabilitiesFor(dialect)` MUST return `PG_CAPABILITIES` for `'pg'`; and the pinned `UnsupportedDialectError`
-message MUST list the supported dialects as `sqlite, mssql, pg`. The message is a CONTRACT: its updated
-text and its pinned assertion MUST change in the SAME batch, and the `UnsupportedDialectError` → exit code
-`4` mapping (exit-code mapping) MUST be VERIFIED unchanged. An unknown dialect MUST still raise
-`UnsupportedDialectError` (not an opaque error), and `'pg'` MUST NOT be reported as unsupported.
+The dialect registry SHALL recognize `mysql` as a supported dialect across all four touch points
+TOGETHER: `SUPPORTED_DIALECTS` (config schema) MUST include `'mysql'` (alongside `'sqlite'`, `'mssql'`
+and `'pg'`); `capabilitiesFor(dialect)` MUST return `MYSQL_CAPABILITIES` for `'mysql'`; and the pinned
+`UnsupportedDialectError` message MUST list the supported dialects as `sqlite, mssql, pg, mysql`. The
+message is a CONTRACT: its updated text and its pinned assertion MUST change in the SAME batch, and the
+`UnsupportedDialectError` → exit code `4` mapping (exit-code mapping) MUST be VERIFIED unchanged (no
+`exit-code.ts` code change — only a regression assertion). An unknown dialect MUST still raise
+`UnsupportedDialectError` (not an opaque error), and `'mysql'` MUST NOT be reported as unsupported.
 
-#### Scenario: pg is a supported dialect and resolves its capabilities
+Previous dialect history: `pg` added (phase-8a-pg, message `sqlite, mssql, pg`); `mysql` added
+(phase-8b-mysql, message `sqlite, mssql, pg, mysql`).
+
+#### Scenario: mysql is a supported dialect and resolves its capabilities
 
 - GIVEN the dialect registry after this change
-- WHEN `'pg'` is checked against `SUPPORTED_DIALECTS` and passed to `capabilitiesFor`
-- THEN `'pg'` is reported as supported
-- AND `capabilitiesFor('pg')` returns `PG_CAPABILITIES`
+- WHEN `'mysql'` is checked against `SUPPORTED_DIALECTS` and passed to `capabilitiesFor`
+- THEN `'mysql'` is reported as supported
+- AND `capabilitiesFor('mysql')` returns `MYSQL_CAPABILITIES`
 
-#### Scenario: UnsupportedDialectError lists pg and maps to exit code 4
+#### Scenario: UnsupportedDialectError lists mysql and maps to exit code 4
 
 - GIVEN an unknown (still-unsupported) dialect string
 - WHEN the dialect is resolved
-- THEN it raises `UnsupportedDialectError` whose message lists the supported dialects as `sqlite, mssql, pg`
-- AND the `UnsupportedDialectError` → exit code mapping remains exit code `4` (verified unchanged)
+- THEN it raises `UnsupportedDialectError` whose message lists the supported dialects as `sqlite, mssql, pg, mysql`
+- AND the `UnsupportedDialectError` → exit code mapping remains exit code `4` (verified unchanged, no code change)
 
 #### Scenario: Pinned message and its assertion change together
 
 - GIVEN the pinned `UnsupportedDialectError` message and its test assertion
-- WHEN the supported-dialect list is updated to include `pg`
+- WHEN the supported-dialect list is updated to include `mysql`
 - THEN the message text and its pinned assertion are updated in the SAME batch (the contract stays in sync)
 
-### Requirement: Body-tokenizer primitives factored into a shared module with no MSSQL behavior change
+### Requirement: Body-tokenizer primitives factored into a shared module with no MSSQL or PG behavior change
 
-The read/write body-tokenizer primitives (`canonicalizeQName`, `classifyAccess`, `extractWriteTargets`)
-SHALL be factored from `src/adapters/engines/mssql/tokenizer.ts` into a SHARED
-`src/adapters/engines/_shared/tokenizer-core.ts` module (US-028a). The SQL Server adapter MUST be
-refactored to import these primitives from `_shared/` with NO behavioral change: the MSSQL `RawCatalog`
-and all MSSQL goldens MUST remain BYTE-IDENTICAL after the refactor. Each engine SHALL supply its own
-dialect specifics (quoting and the `hasDynamicSql` pattern — `EXEC`/`sp_executesql` for MSSQL, the plpgsql
-`EXECUTE` statement for PG) on top of the shared primitives. The shared module is the SOLE tokenizer
-artifact the pre-planned `phase-8b-mysql` change consumes; this requirement neither imports `pg` nor
-changes the core/port shape.
+The read/write body-tokenizer primitives (`canonicalizeQName`, `classifyAccess`, `extractWriteTargets`,
+`maskDynamicStrings`, `bodyContainsRef`) SHALL live in a SHARED
+`src/adapters/engines/_shared/tokenizer-core.ts` module (US-028a, phase-8b-mysql D10). The original three
+primitives (`canonicalizeQName`, `classifyAccess`, `extractWriteTargets`) were factored from
+`src/adapters/engines/mssql/tokenizer.ts` (US-028a / phase-8a-pg). The SAFETY-CRITICAL phantom-edge
+helpers (`maskDynamicStrings` + `bodyContainsRef`) were promoted from `pg/tokenizer.ts` into `_shared/`
+(phase-8b-mysql D10) so both the PG and MySQL tokenizers share one implementation of the CRITICAL-1 fix
+with no risk of divergence. All adapters MUST import these primitives from `_shared/` rather than
+defining local copies; NO behavioral change to MSSQL or PG — their `RawCatalog` goldens MUST remain
+BYTE-IDENTICAL. Each engine SHALL supply its own dialect specifics (quoting and the `hasDynamicSql`
+pattern — `EXEC`/`sp_executesql` for MSSQL, plpgsql `EXECUTE` for PG, `PREPARE`/`EXECUTE` for MySQL)
+on top of the shared primitives.
 
-#### Scenario: Shared tokenizer-core is the single source of the primitives
+#### Scenario: Shared tokenizer-core is the single source of all body-tokenizer primitives
 
-- GIVEN the engines tree after this change
+- GIVEN the engines tree after phase-8b-mysql
 - WHEN the body-tokenizer primitives are located
-- THEN `canonicalizeQName`, `classifyAccess` and `extractWriteTargets` live in `src/adapters/engines/_shared/tokenizer-core.ts`
-- AND the MSSQL adapter imports them from `_shared/` rather than defining its own copies
+- THEN `canonicalizeQName`, `classifyAccess`, `extractWriteTargets`, `maskDynamicStrings` and `bodyContainsRef` all live in `src/adapters/engines/_shared/tokenizer-core.ts`
+- AND no adapter defines local copies of these functions
 
-#### Scenario: MSSQL goldens stay byte-identical after the refactor
+#### Scenario: MSSQL and PG goldens stay byte-identical after the _shared promotion
 
-- GIVEN the MSSQL adapter refactored to import the tokenizer primitives from `_shared/`
-- WHEN the MSSQL torture extraction and its goldens are re-run
-- THEN the MSSQL `RawCatalog` and golden outputs are BYTE-IDENTICAL to before the refactor (ADR-008)
-- AND the MSSQL behavior is unchanged
+- GIVEN the MSSQL and PG adapters importing the tokenizer primitives from `_shared/`
+- WHEN the torture extractions and their goldens are re-run
+- THEN the MSSQL and PG `RawCatalog` and golden outputs are BYTE-IDENTICAL to before the refactor (ADR-008)
+- AND neither MSSQL nor PG behavior is changed
 
 #### Scenario: Each engine supplies its own dynamic-SQL pattern over the shared primitives
 
 - GIVEN the shared `tokenizer-core.ts` primitives
-- WHEN MSSQL and PG classify their bodies
-- THEN MSSQL flags `hasDynamicSql` on `EXEC`/`sp_executesql` and PG flags it on the plpgsql `EXECUTE` statement
+- WHEN MSSQL, PG and MySQL classify their bodies
+- THEN MSSQL flags `hasDynamicSql` on `EXEC`/`sp_executesql`, PG on the plpgsql `EXECUTE` statement, and MySQL on `PREPARE`/`EXECUTE`
 - AND each engine applies its own dialect quoting while reusing the shared primitives
