@@ -26,6 +26,7 @@ import {
   createPgSchemaAdapter,
   createSqliteGraphStore,
 } from '../index.js';
+import { ConnectionError } from '../core/errors.js';
 import type { Logger } from '../core/ports/logger.js';
 import { noopLogger } from '../core/ports/logger.js';
 
@@ -83,6 +84,8 @@ export async function openConnections(
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
     | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
     | Awaited<ReturnType<typeof createPgSchemaAdapter>>;
+  // NOTE: createMysqlSchemaAdapter is added to the adapter union in Batch 5 (task 5.1).
+  // The mysql stub below keeps TypeScript narrowing sound now that 'mysql' is in DbgraphConfig.
 
   if (resolved.dialect === 'sqlite') {
     adapter = await createSqliteSchemaAdapter({
@@ -102,6 +105,13 @@ export async function openConnections(
       ...(src.ssl !== undefined ? { ssl: src.ssl === 'true' } : {}),
       ...(src.schema !== undefined ? { schema: src.schema } : {}),
     });
+  } else if (resolved.dialect === 'mysql') {
+    // Batch 5 (task 5.1) will wire createMysqlSchemaAdapter here.
+    // This stub keeps TypeScript narrowing sound now that 'mysql' is a valid DbgraphConfig member.
+    throw new ConnectionError(
+      'MySQL adapter wiring is not yet complete. ' +
+        'This branch will be wired in Batch 5 (open-connections.ts task 5.1).',
+    );
   } else {
     // mssql
     const src = resolved.source;
