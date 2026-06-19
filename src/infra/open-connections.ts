@@ -24,9 +24,9 @@ import {
   createSqliteSchemaAdapter,
   createMssqlSchemaAdapter,
   createPgSchemaAdapter,
+  createMysqlSchemaAdapter,
   createSqliteGraphStore,
 } from '../index.js';
-import { ConnectionError } from '../core/errors.js';
 import type { Logger } from '../core/ports/logger.js';
 import { noopLogger } from '../core/ports/logger.js';
 
@@ -38,7 +38,8 @@ export type AdapterAndStore = {
   adapter:
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
     | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
-    | Awaited<ReturnType<typeof createPgSchemaAdapter>>;
+    | Awaited<ReturnType<typeof createPgSchemaAdapter>>
+    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>;
   store: Awaited<ReturnType<typeof createSqliteGraphStore>>;
 };
 
@@ -83,9 +84,8 @@ export async function openConnections(
   let adapter:
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
     | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
-    | Awaited<ReturnType<typeof createPgSchemaAdapter>>;
-  // NOTE: createMysqlSchemaAdapter is added to the adapter union in Batch 5 (task 5.1).
-  // The mysql stub below keeps TypeScript narrowing sound now that 'mysql' is in DbgraphConfig.
+    | Awaited<ReturnType<typeof createPgSchemaAdapter>>
+    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>;
 
   if (resolved.dialect === 'sqlite') {
     adapter = await createSqliteSchemaAdapter({
@@ -106,12 +106,17 @@ export async function openConnections(
       ...(src.schema !== undefined ? { schema: src.schema } : {}),
     });
   } else if (resolved.dialect === 'mysql') {
-    // Batch 5 (task 5.1) will wire createMysqlSchemaAdapter here.
-    // This stub keeps TypeScript narrowing sound now that 'mysql' is a valid DbgraphConfig member.
-    throw new ConnectionError(
-      'MySQL adapter wiring is not yet complete. ' +
-        'This branch will be wired in Batch 5 (open-connections.ts task 5.1).',
-    );
+    // Wire the MysqlSchemaAdapter via its factory (Batch 5, task 5.1).
+    // resolved.source is MysqlSource (all ${env:VAR} already resolved by resolveSecrets).
+    const src = resolved.source;
+    adapter = await createMysqlSchemaAdapter({
+      host: src.host,
+      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
+      database: src.database,
+      user: src.user,
+      password: src.password,
+      ...(src.ssl !== undefined ? { ssl: src.ssl === 'true' } : {}),
+    });
   } else {
     // mssql
     const src = resolved.source;
