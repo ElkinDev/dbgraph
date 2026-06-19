@@ -40,35 +40,33 @@ const BASE_CONFIG: MysqlAdapterConfig = {
 type CreateConnectionFn = Required<MysqlSchemaAdapterDeps>['createConnection'];
 
 /**
- * A fake ConnectionLike whose connect() resolves successfully.
+ * A fake ConnectionLike — query/end only (auto-connected, no .connect() method).
+ * Mirrors the real mysql2/promise.Connection returned by createConnection().
  */
-function makeFakeConn(opts: {
-  connectError?: unknown;
-  onConfig?: (cfg: Record<string, unknown>) => void;
-}): ConnectionLike & { connect(): Promise<void> } {
+function makeFakeConn(): ConnectionLike {
   return {
-    connect: vi.fn(async () => {
-      if (opts.connectError !== undefined) throw opts.connectError;
-    }),
     query: vi.fn(async (sql: string) => { void sql; return [[], undefined] as [Record<string, unknown>[], unknown]; }),
     end: vi.fn(async () => undefined),
   };
 }
 
 /**
- * Build a fake createConnection function that succeeds and lets tests
- * inspect the connection config passed in.
+ * Build a fake createConnection function that matches mysql2/promise's API:
+ *   createConnection(config) => Promise<Connection> (auto-connected)
+ *
+ * - If connectError is provided, the Promise rejects with that error
+ *   (simulates connection failure during createConnection).
+ * - If captureConfig is provided, it receives the config before resolving.
  */
 function makeCreateConnection(
   opts: { connectError?: unknown; captureConfig?: (cfg: Record<string, unknown>) => void } = {},
 ): CreateConnectionFn {
-  let capturedConfig: Record<string, unknown> = {};
-  const fn = (cfg: Record<string, unknown>): ConnectionLike & { connect(): Promise<void> } => {
-    capturedConfig = cfg;
-    if (opts.captureConfig !== undefined) opts.captureConfig(capturedConfig);
-    return makeFakeConn({ connectError: opts.connectError });
+  const fn = async (cfg: Record<string, unknown>): Promise<ConnectionLike> => {
+    if (opts.captureConfig !== undefined) opts.captureConfig(cfg);
+    if (opts.connectError !== undefined) throw opts.connectError;
+    return makeFakeConn();
   };
-  return fn as CreateConnectionFn;
+  return fn;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

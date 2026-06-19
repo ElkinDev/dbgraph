@@ -44,9 +44,12 @@ export interface MysqlSchemaAdapterDeps {
   /**
    * mysql2/promise createConnection override — for unit testing only.
    * When provided, the factory skips the lazy import and uses this function.
-   * The returned connection must be a duck-typed ConnectionLike with connect().
+   *
+   * Matches the real mysql2/promise.createConnection() signature:
+   *   createConnection(config) => Promise<Connection>
+   * The Promise resolves with an already-connected ConnectionLike (no .connect() call needed).
    */
-  readonly createConnection?: (config: Record<string, unknown>) => ConnectionLike & { connect(): Promise<void> };
+  readonly createConnection?: (config: Record<string, unknown>) => Promise<ConnectionLike>;
   /**
    * Dynamic import override — for testing the MODULE_NOT_FOUND path only.
    * When provided, the factory calls this instead of import('mysql2/promise' as string).
@@ -76,7 +79,10 @@ export async function createMysqlSchemaAdapter(
   // ── 1. Resolve the mysql2/promise createConnection function ───────────────
   // In tests: deps.createConnection is provided → skip the lazy import.
   // In production: dynamically import mysql2/promise and extract createConnection.
-  let createConnectionFn: (config: Record<string, unknown>) => ConnectionLike & { connect(): Promise<void> };
+  //
+  // mysql2/promise.createConnection(config) returns Promise<Connection>.
+  // The connection is auto-connected when the Promise resolves — no .connect() call.
+  let createConnectionFn: (config: Record<string, unknown>) => Promise<ConnectionLike>;
 
   if (deps.createConnection !== undefined) {
     createConnectionFn = deps.createConnection;
@@ -101,9 +107,9 @@ export async function createMysqlSchemaAdapter(
     // Handles both CJS default export and ESM named export shapes.
     const mod = mysqlMod as Record<string, unknown>;
     const createConnFn =
-      (mod['createConnection'] as ((cfg: Record<string, unknown>) => ConnectionLike & { connect(): Promise<void> }) | undefined) ??
+      (mod['createConnection'] as ((cfg: Record<string, unknown>) => Promise<ConnectionLike>) | undefined) ??
       ((mod['default'] as Record<string, unknown> | undefined)?.['createConnection'] as
-        | ((cfg: Record<string, unknown>) => ConnectionLike & { connect(): Promise<void> })
+        | ((cfg: Record<string, unknown>) => Promise<ConnectionLike>)
         | undefined);
 
     if (createConnFn === undefined) {
@@ -129,13 +135,14 @@ export async function createMysqlSchemaAdapter(
     connConfig['ssl'] = config.ssl;
   }
 
-  // ── 3. createConnection + connect ─────────────────────────────────────────
-  const conn = createConnectionFn(connConfig);
-
+  // ── 3. createConnection (auto-connects on Promise resolution) ────────────
+  // mysql2/promise.createConnection returns a Promise that resolves with an
+  // already-connected Connection — no explicit .connect() call is needed.
+  let conn: ConnectionLike;
   try {
-    await conn.connect();
+    conn = await createConnectionFn(connConfig);
   } catch (cause) {
-    // Map any mysql2 driver error to a typed error (ConnectionError / PermissionError).
+    // Connection failure (wrong host, auth denied, etc.) → map to typed error.
     throw mapMysqlError(cause);
   }
 

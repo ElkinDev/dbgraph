@@ -67,3 +67,22 @@ jobs:
         env:
           DBGRAPH_INTEGRATION: '1'
         run: npm run test:integration
+
+  # Gated MySQL integration job: Linux-only (Docker available), independent
+  # of the unit matrix (`needs: []`). Uses an ephemeral mysql:8 Testcontainers
+  # instance — never connects to any persistent database. Gate: DBGRAPH_INTEGRATION=1.
+  # Does NOT block the unit matrix — failures here do not affect `test`.
+  mysql-integration:
+    runs-on: ubuntu-latest
+    # Independent — does not need `test` to pass first
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - name: Run MySQL integration tests
+        env:
+          DBGRAPH_INTEGRATION: '1'
+        run: npm run test:integration
