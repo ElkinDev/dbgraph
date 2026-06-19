@@ -92,6 +92,12 @@ export {
   type StrategyAttempt,
 } from './ports/connectivity-strategy.js';
 
+export {
+  type CapabilityProbe,
+  type ProbeResult,
+  type CliToolInfo,
+} from './ports/capability-probe.js';
+
 // ── Normalize ─────────────────────────────────────────────────────────────────
 export { normalizeCatalog } from './normalize/normalize.js';
 export { nodeId, edgeId, canonicalQName, stableStringify } from './normalize/id.js';
@@ -147,6 +153,10 @@ export {
 } from './present/status.js';
 
 export {
+  formatOutcome,
+} from './present/connectivity.js';
+
+export {
   formatPrecheck,
   type PrecheckDetail,
   type PrecheckView,
@@ -172,4 +182,7 @@ export {
   ConfigError,
   UnsupportedDialectError,
   StrategyExhaustionError,
+  ConnectivityUnavailableError,
+  type ConnectivityOption,
+  type ConnectivityOutcome,
 } from './errors.js';
