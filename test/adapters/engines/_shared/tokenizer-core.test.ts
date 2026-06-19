@@ -6,11 +6,13 @@
  * TDD RED → GREEN → REFACTOR
  * Pure unit tests — NO database, NO mocks.
  *
- * The four exports under test:
- *   - WRITE_VERB_PATTERNS : RegExp[]
- *   - canonicalizeQName   : (rawName: string) => string
- *   - classifyAccess      : (targetQName: string, body: string, canon?: (s: string) => string) => 'read' | 'write'
- *   - extractWriteTargets : (normalizedBody: string) => ReadonlySet<string>
+ * Exports under test:
+ *   - WRITE_VERB_PATTERNS    : RegExp[]
+ *   - canonicalizeQName      : (rawName: string) => string
+ *   - classifyAccess         : (targetQName: string, body: string, canon?) => 'read' | 'write'
+ *   - extractWriteTargets    : (normalizedBody: string) => ReadonlySet<string>
+ *   - maskDynamicStrings     : (body: string) => string   [promoted from pg/tokenizer — D10]
+ *   - bodyContainsRef        : (maskedBody: string, canonicalQName: string) => boolean  [promoted — D10]
  */
 
 import { describe, it, expect } from 'vitest';
@@ -19,6 +21,8 @@ import {
   canonicalizeQName,
   classifyAccess,
   extractWriteTargets,
+  maskDynamicStrings,
+  bodyContainsRef,
 } from '../../../../src/adapters/engines/_shared/tokenizer-core.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,5 +218,99 @@ describe('classifyAccess — injected canon parameter', () => {
     // Body uses only double-quotes; default MSSQL canon still handles them → still writes
     const body = 'INSERT INTO "app"."items" (id) VALUES (1)';
     expect(classifyAccess('app.items', body)).toBe('write');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// maskDynamicStrings — promoted from pg/tokenizer.ts (D10, task 1.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('maskDynamicStrings — single-quote literal masking (promoted from pg)', () => {
+  it('masks a simple single-quoted string literal', () => {
+    const body = "EXECUTE format('SELECT * FROM app.orders WHERE id = %L', p_id)";
+    const result = maskDynamicStrings(body);
+    // The literal contents must be replaced; the identifier inside it must not remain
+    expect(result).not.toContain('app.orders');
+    expect(result).toContain("'##MASKED##'");
+  });
+
+  it('masks multiple single-quoted literals in one body', () => {
+    const body = "INSERT INTO audit_log (action, note) VALUES ('processed', 'ok')";
+    const result = maskDynamicStrings(body);
+    expect(result).not.toContain('processed');
+    expect(result).not.toContain("'ok'");
+    // Both literals collapsed to the placeholder
+    expect(result.split("'##MASKED##'").length - 1).toBe(2);
+  });
+
+  it("handles '' (escaped single quote) inside a literal without splitting", () => {
+    // The literal 'it''s fine' contains an escaped single quote (two consecutive)
+    const body = "SELECT 'it''s fine' AS msg FROM app.products";
+    const result = maskDynamicStrings(body);
+    // The whole literal including the escape is masked
+    expect(result).not.toContain("it''s fine");
+    expect(result).toContain("'##MASKED##'");
+    // The static table reference outside the literal is preserved
+    expect(result).toContain('app.products');
+  });
+
+  it('does NOT touch dollar-quoted blocks (pg function body delimiters)', () => {
+    const body = "SELECT $$dollar quoted content$$";
+    const result = maskDynamicStrings(body);
+    // Dollar-quoting is NOT masked — the body content is static SQL
+    expect(result).toContain('$$dollar quoted content$$');
+  });
+
+  it('returns body unchanged when there are no string literals', () => {
+    const body = 'SELECT order_id FROM app.orders WHERE order_id = 1';
+    expect(maskDynamicStrings(body)).toBe(body);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bodyContainsRef — promoted from pg/tokenizer.ts (D10, task 1.1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('bodyContainsRef — word-boundary presence check (promoted from pg)', () => {
+  it('returns true when the fully-qualified qname appears in the masked body', () => {
+    const body = 'SELECT id FROM app.orders WHERE id = 1';
+    expect(bodyContainsRef(body, 'app.orders')).toBe(true);
+  });
+
+  it('returns true when only the simple name (no schema prefix) appears in the body', () => {
+    // bodyContainsRef checks both fully-qualified AND simple-name
+    const body = 'INSERT INTO orders (id) VALUES (1)';
+    expect(bodyContainsRef(body, 'app.orders')).toBe(true);
+  });
+
+  it('returns false when the qname is completely absent from the body', () => {
+    const body = 'SELECT id FROM app.products WHERE id = 1';
+    expect(bodyContainsRef(body, 'app.orders')).toBe(false);
+  });
+
+  it('returns false for a substring-only near-match (word-boundary required)', () => {
+    // 'order' is a substring of 'orders' — must NOT match 'app.orders'
+    const body = 'SELECT id FROM app.order_history WHERE id = 1';
+    expect(bodyContainsRef(body, 'app.orders')).toBe(false);
+  });
+
+  it('is case-insensitive (checks against lowercased body)', () => {
+    const body = 'SELECT id FROM APP.ORDERS WHERE id = 1';
+    expect(bodyContainsRef(body, 'app.orders')).toBe(true);
+  });
+
+  it('returns false when the ref is only inside a masked dynamic string', () => {
+    // This test uses a pre-masked body (as maskDynamicStrings would produce)
+    const original = "EXECUTE format('SELECT * FROM app.orders WHERE id = %L', p_id)";
+    const masked = maskDynamicStrings(original);
+    expect(bodyContainsRef(masked, 'app.orders')).toBe(false);
+  });
+
+  it('returns true for a static ref even when a dynamic string is also present', () => {
+    // Static INSERT survives; the dynamic format() target does not
+    const original = "INSERT INTO app.audit_log (e) VALUES ('x'); EXECUTE format('SELECT * FROM app.orders', p)";
+    const masked = maskDynamicStrings(original);
+    expect(bodyContainsRef(masked, 'app.audit_log')).toBe(true);
+    expect(bodyContainsRef(masked, 'app.orders')).toBe(false);
   });
 });

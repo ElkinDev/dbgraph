@@ -28,7 +28,7 @@
  */
 
 import type { RawDependency } from '../../../core/model/catalog.js';
-import { classifyAccess } from '../_shared/tokenizer-core.js';
+import { classifyAccess, maskDynamicStrings, bodyContainsRef } from '../_shared/tokenizer-core.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PG canonicalizer — double-quote stripping only (no brackets)
@@ -89,72 +89,8 @@ export function hasPgDynamicSql(body: string): boolean {
   return /\bexecute\b/i.test(withoutTriggerExec);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// maskDynamicStrings — remove string literal contents from body
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns a "static body" with the CONTENTS of single-quoted string literals
- * replaced by a neutral placeholder. This prevents identifiers that appear only
- * inside dynamic SQL strings (e.g. format('SELECT ... FROM app.orders ...'))
- * from generating dependency edges.
- *
- * Only single-quoted string literals are masked. Dollar-quoted blocks (which are
- * the function body delimiters from pg_get_functiondef) are NOT masked — they
- * contain the actual SQL code whose static references we DO want to classify.
- *
- * Pattern: '...' including '' escape sequences inside the literal.
- *
- * Examples:
- *   format('SELECT order_id FROM app.orders WHERE ...')
- *     → format('##MASKED##')
- *   VALUES (TG_TABLE_NAME, TG_OP)
- *     → unchanged (no string literals containing object names)
- *
- * ADR-007 (conservative — when in doubt, exclude).
- */
-export function maskDynamicStrings(body: string): string {
-  // Mask single-quoted string literals. '' (escaped single quote) inside a literal
-  // is handled by the alternation [^'] | '' — consume either a non-quote char or
-  // a pair of single quotes (escape sequence), matching the full literal.
-  return body.replace(/'(?:[^']|'')*'/g, "'##MASKED##'");
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// bodyContainsRef — presence check in the static (masked) body
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Returns true if the canonicalized qname (fully qualified OR simple name)
- * actually appears as an identifier in the masked static body.
- *
- * This is the gate that prevents classifyAccess from defaulting to 'read' for
- * objects that are NOT referenced in the body at all (CRITICAL-1 fix).
- *
- * Checks both:
- *   - schema.name  (e.g. app.orders)
- *   - name only    (e.g. orders)
- * Both checks use word-boundary matching on the lowercased masked body.
- */
-function bodyContainsRef(maskedBody: string, canonicalQName: string): boolean {
-  // The masked body is already lowercased by pgCanonicalize applied during classifyAccess.
-  // We need to check the masked body in its lowercased form here too.
-  const lowerMasked = maskedBody.toLowerCase();
-  const simpleName = canonicalQName.includes('.')
-    ? canonicalQName.split('.').slice(1).join('.')
-    : canonicalQName;
-
-  // Word-boundary check: the name must appear as a standalone identifier token.
-  // We use \b word boundaries. SQL also allows dot-separated qnames like schema.table.
-  const qnamePattern = new RegExp(`\\b${escapeRegex(canonicalQName)}\\b`);
-  const simplePattern = new RegExp(`\\b${escapeRegex(simpleName)}\\b`);
-
-  return qnamePattern.test(lowerMasked) || simplePattern.test(lowerMasked);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// maskDynamicStrings and bodyContainsRef are now imported from _shared/tokenizer-core.ts
+// (D10 promotion — phase-8b Batch 1). They are PURE, engine-agnostic functions.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // tokenizePgBody — dependency classification
