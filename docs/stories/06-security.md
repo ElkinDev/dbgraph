@@ -27,11 +27,11 @@ _Note: scanner and readonly enforcement done in Phase 2 for SQLite. Per-engine p
 
 ### US-033 — Minimal permissions and actionable errors
 **As** a user without DBA privileges, **I want** to know exactly which permission is missing and how to request it, **so that** I do not give up during installation.
-**Phase:** 3 onwards (per adapter) · **Depends on:** US-027 · **Status:** ☐ partial (mssql permission doc done in phase-3-sqlserver-adapter)
+**Phase:** 3 onwards (per adapter) · **Depends on:** US-027 · **Status:** ☐ partial (mssql + pg + mysql permission docs done)
 
 **Acceptance criteria:**
-- For every supported engine there is a `docs/permissions/<engine>.md` with the MINIMAL read-only user script (no data access when statistics/sampling are off). ✓ mssql: `docs/permissions/mssql.md` created. ✓ pg: `docs/permissions/pg.md` created (phase-8a-pg).
-- Given a missing catalog permission at runtime, the error names the permission, the object that required it, and links to the corresponding doc. ✓ mssql: error-mapper maps error 229 / "permission denied" → PermissionError with VIEW DEFINITION + docs link. ✓ pg: error-mapper maps SQLSTATE 42501 → PermissionError naming SELECT privilege + `docs/permissions/pg.md` link (phase-8a-pg).
-- Verified in integration: a user with minimal permissions extracts the full torture schema; one without `VIEW DEFINITION` (mssql) / `USAGE` (pg) receives the expected actionable error. ☐ pending (integration with restricted user not yet added; full extraction under SA in torture tests passes)
+- For every supported engine there is a `docs/permissions/<engine>.md` with the MINIMAL read-only user script (no data access when statistics/sampling are off). ✓ mssql: `docs/permissions/mssql.md` created. ✓ pg: `docs/permissions/pg.md` created (phase-8a-pg). ✓ mysql: `docs/permissions/mysql.md` created (phase-8b-mysql).
+- Given a missing catalog permission at runtime, the error names the permission, the object that required it, and links to the corresponding doc. ✓ mssql: error-mapper maps error 229 / "permission denied" → PermissionError with VIEW DEFINITION + docs link. ✓ pg: error-mapper maps SQLSTATE 42501 → PermissionError naming SELECT privilege + `docs/permissions/pg.md` link (phase-8a-pg). ✓ mysql: error-mapper maps errno 1044/1142/1143/1370 → PermissionError naming the privilege + `docs/permissions/mysql.md` link (phase-8b-mysql).
+- Verified in integration: a user with minimal permissions extracts the full torture schema; one without `VIEW DEFINITION` (mssql) / `USAGE` (pg) / `SELECT` on `information_schema` (mysql) receives the expected actionable error. ☐ pending (integration with restricted user not yet added; full extraction under SA in torture tests passes)
 
-_MySQL, MongoDB permission docs pending their respective adapters (Phases 8, 9)._
+_MongoDB permission doc pending the MongoDB adapter (Phase 9)._
