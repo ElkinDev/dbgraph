@@ -141,5 +141,6 @@ export async function createMysqlSchemaAdapter(
 
   // ── 4. Wrap in the driver seam and return the adapter ─────────────────────
   const driver = createMysqlReadonlyDriver(conn);
-  return new MysqlSchemaAdapter(driver);
+  // Pass the database name so the adapter can populate RawCatalog.schemas.
+  return new MysqlSchemaAdapter(driver, config.database);
 }

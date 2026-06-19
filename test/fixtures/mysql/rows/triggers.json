@@ -1,0 +1,10 @@
+[
+  {
+    "trigger_schema": "app",
+    "trigger_name": "trg_orders_after_update",
+    "event_manipulation": "UPDATE",
+    "action_timing": "AFTER",
+    "event_object_table": "orders",
+    "action_statement": "BEGIN\n  INSERT INTO audit_log (event_type) VALUES ('order_updated');\nEND"
+  }
+]
