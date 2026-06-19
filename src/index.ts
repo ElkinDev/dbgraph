@@ -26,6 +26,19 @@ export { createMssqlSchemaAdapter } from './adapters/engines/mssql/factory.js';
 export { createPgSchemaAdapter } from './adapters/engines/pg/factory.js';
 export { createMysqlSchemaAdapter } from './adapters/engines/mysql/factory.js';
 
+// ── Capability probe factories (resilient-connectivity Batch 5) ──────────────
+// The CLI (and future MCP) must NOT import adapter modules directly (ADR-004).
+// These probe classes are exposed here as the legal composition-root seam
+// so the doctor command can instantiate probes without traversing into adapters.
+export { MssqlCapabilityProbe } from './adapters/engines/mssql/probe.js';
+export { PgCapabilityProbe } from './adapters/engines/pg/probe.js';
+export { MysqlCapabilityProbe } from './adapters/engines/mysql/probe.js';
+export { SqliteCapabilityProbe } from './adapters/engines/sqlite/probe.js';
+// SqlcmdProfile registry — resolveProfile exposed so doctor can derive profile name
+// without importing the adapter module directly (ADR-004 boundary).
+export { resolveProfile } from './adapters/engines/mssql/strategies/profiles.js';
+export type { SqlcmdProfile } from './adapters/engines/mssql/strategies/profiles.js';
+
 // ── Capability lookup (Decision 6, phase-4-cli-config) ───────────────────────
 // The CLI (and future MCP) must NOT import adapter modules directly (ADR-004).
 // This composition root is the legal seam that exposes dialect matrices.

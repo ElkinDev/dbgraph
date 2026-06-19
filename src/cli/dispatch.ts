@@ -20,6 +20,7 @@ import { runExplore } from './commands/explore.js';
 import { runDiff } from './commands/diff.js';
 import { runAffected } from './commands/affected.js';
 import { runInstall, realFsSeam } from './commands/install.js';
+import { runDoctor } from './commands/doctor.js';
 import { openConnections } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +227,81 @@ async function handleInstall(args: ParsedArgs): Promise<HandlerOutcome> {
 }
 
 /**
+ * Runs the content-free connectivity self-test (dbgraph doctor).
+ * No DB connection opened — only capability probes are run stand-alone.
+ * Writes the formatted report to stdout, returns success.
+ * Always resolves — never throws (non-throwing per design).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function handleDoctor(_args: ParsedArgs): Promise<HandlerOutcome> {
+  const projectRoot = process.cwd();
+
+  // Determine the engine from config (optional — degrade gracefully when absent).
+  let engine = 'mssql';
+  try {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { parseConfig } = await import('../infra/config/parse-config.js');
+    const configPath = join(projectRoot, 'dbgraph.config.json');
+    const rawJson: unknown = JSON.parse(readFileSync(configPath, 'utf-8'));
+    const cfg = parseConfig(rawJson);
+    engine = cfg.dialect;
+  } catch {
+    // No config or unreadable config — default to 'mssql' (most probes applicable).
+    // The doctor output will still be useful as a capability snapshot.
+  }
+
+  // Wire the appropriate probe for the detected engine.
+  const probe = await buildProbe(engine);
+
+  // Run doctor — non-throwing by contract.
+  const output = await runDoctor({ engine, probe });
+
+  process.stdout.write(output);
+  return { type: 'success' };
+}
+
+/**
+ * Builds the appropriate CapabilityProbe for the given engine.
+ * All probe classes are imported via the public barrel (../index.js) — ADR-004
+ * prohibits direct imports from src/adapters/** in src/cli/** files.
+ *
+ * Falls back to a no-op probe when the engine's probe class cannot be loaded.
+ */
+async function buildProbe(engine: string): Promise<() => Promise<import('../index.js').ProbeResult>> {
+  try {
+    // All imports go through the public barrel — never directly into /adapters/.
+    const barrel = await import('../index.js');
+
+    if (engine === 'mssql') {
+      const probe = new barrel.MssqlCapabilityProbe();
+      return () => probe.probe();
+    }
+    if (engine === 'pg') {
+      const probe = new barrel.PgCapabilityProbe();
+      return () => probe.probe();
+    }
+    if (engine === 'mysql') {
+      const probe = new barrel.MysqlCapabilityProbe();
+      return () => probe.probe();
+    }
+    if (engine === 'sqlite') {
+      const probe = new barrel.SqliteCapabilityProbe();
+      return () => probe.probe();
+    }
+  } catch {
+    // Probe not available — fall through to no-op probe
+  }
+
+  // No-op fallback probe for unrecognized or probe-absent engines
+  return async () => ({
+    nativeDriver: false,
+    cliTools: [],
+    odbc: false,
+  });
+}
+
+/**
  * Compares two snapshot manifests and returns the per-object diff.
  * --last: compare the two most-recent snapshots.
  * <snapA> <snapB>: compare explicit snapshot IDs.
@@ -266,6 +342,7 @@ const COMMAND_TABLE: Readonly<Record<string, CommandHandler>> = {
   diff: handleDiff,
   affected: handleAffected,
   install: handleInstall,
+  doctor: handleDoctor,
 };
 
 /**
