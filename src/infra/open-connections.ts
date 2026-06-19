@@ -23,6 +23,7 @@ import { resolveSecrets } from './config/resolve-secrets.js';
 import {
   createSqliteSchemaAdapter,
   createMssqlSchemaAdapter,
+  createPgSchemaAdapter,
   createSqliteGraphStore,
 } from '../index.js';
 import type { Logger } from '../core/ports/logger.js';
@@ -35,7 +36,8 @@ import { noopLogger } from '../core/ports/logger.js';
 export type AdapterAndStore = {
   adapter:
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
-    | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
+    | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
+    | Awaited<ReturnType<typeof createPgSchemaAdapter>>;
   store: Awaited<ReturnType<typeof createSqliteGraphStore>>;
 };
 
@@ -79,12 +81,26 @@ export async function openConnections(
   // Open adapter based on dialect
   let adapter:
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
-    | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>;
+    | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
+    | Awaited<ReturnType<typeof createPgSchemaAdapter>>;
 
   if (resolved.dialect === 'sqlite') {
     adapter = await createSqliteSchemaAdapter({
       file: resolved.source.file,
       ...(resolved.driver !== undefined ? { driver: resolved.driver } : {}),
+    });
+  } else if (resolved.dialect === 'pg') {
+    // Wire the PgSchemaAdapter via its factory (Batch 5, task 5.2).
+    // resolved.source is PgSource (all ${env:VAR} already resolved by resolveSecrets).
+    const src = resolved.source;
+    adapter = await createPgSchemaAdapter({
+      host: src.host,
+      ...(src.port !== undefined ? { port: parseInt(src.port, 10) } : {}),
+      database: src.database,
+      user: src.user,
+      password: src.password,
+      ...(src.ssl !== undefined ? { ssl: src.ssl === 'true' } : {}),
+      ...(src.schema !== undefined ? { schema: src.schema } : {}),
     });
   } else {
     // mssql

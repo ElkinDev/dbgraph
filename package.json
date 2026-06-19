@@ -42,7 +42,8 @@
     "better-sqlite3": "12.11.1"
   },
   "optionalDependencies": {
-    "mssql": "12.5.5"
+    "mssql": "12.5.5",
+    "pg": "^8.21.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

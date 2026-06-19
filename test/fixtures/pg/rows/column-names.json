@@ -1,0 +1,16 @@
+[
+  { "schema_name": "app", "table_name": "orders",      "table_oid": 10001, "attnum": 1, "column_name": "id" },
+  { "schema_name": "app", "table_name": "orders",      "table_oid": 10001, "attnum": 2, "column_name": "customer_id" },
+  { "schema_name": "app", "table_name": "orders",      "table_oid": 10001, "attnum": 3, "column_name": "total" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 1, "column_name": "id" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 2, "column_name": "order_id" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 3, "column_name": "product_id" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 4, "column_name": "qty" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 5, "column_name": "price" },
+  { "schema_name": "app", "table_name": "order_items", "table_oid": 10002, "attnum": 6, "column_name": "line_total" },
+  { "schema_name": "app", "table_name": "products",    "table_oid": 10003, "attnum": 1, "column_name": "id" },
+  { "schema_name": "app", "table_name": "products",    "table_oid": 10003, "attnum": 2, "column_name": "name" },
+  { "schema_name": "audit","table_name": "audit_log",  "table_oid": 10004, "attnum": 1, "column_name": "id" },
+  { "schema_name": "audit","table_name": "audit_log",  "table_oid": 10004, "attnum": 2, "column_name": "table_name" },
+  { "schema_name": "audit","table_name": "audit_log",  "table_oid": 10004, "attnum": 3, "column_name": "action" }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "schema_name": "app",
+    "view_name": "v_order_summary",
+    "rel_kind": "v",
+    "view_def": " SELECT o.id, o.customer_id, sum(oi.line_total) AS total\n   FROM orders o\n  JOIN order_items oi ON oi.order_id = o.id\n GROUP BY o.id, o.customer_id;",
+    "comment": "Order summary view"
+  },
+  {
+    "schema_name": "app",
+    "view_name": "mv_product_stats",
+    "rel_kind": "m",
+    "view_def": " SELECT p.id, p.name, count(oi.id) AS order_count\n   FROM products p\n  JOIN order_items oi ON oi.product_id = p.id\n GROUP BY p.id, p.name;",
+    "comment": null
+  }
+]

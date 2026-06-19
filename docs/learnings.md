@@ -246,6 +246,22 @@ Entry format:
 - **Bigint precision caveat:** JSON numbers cannot represent integers > 2^53-1 exactly (IEEE-754 double precision). A `bigint` sequence with `maximum_value` > Number.MAX_SAFE_INTEGER will lose precision when transmitted as a JSON number. The canonical fix is to CAST those columns to `nvarchar` in the query itself. `coerceStringy` handles the `bigint` type for environments that pass pre-parsed bigint values, but cannot recover precision already lost in JSON serialisation.
 - **Derived rule (F-9):** For `sql_variant` fields read via FOR JSON, NEVER use `requireString`. Use a coercion helper that handles number, bigint, and boolean in addition to string. If the query can be modified, prefer an explicit `CAST(col AS nvarchar)` so the JSON output is already a string.
 
+## 2026-06-18 — pg adapter: hasDynamicSql suppresses ALL dependency edges (not just the unanalyzable portion)
+- **Context:** Batch 7 integration run — `fn_dynamic_search` (body uses `EXECUTE format(...)`) was emitting 6 dependency edges from `tokenizePgBody` even though `hasDynamicSql=true`.
+- **What failed:** The `buildRoutines()` function in `map.ts` called `tokenizePgBody(body, potentialDeps)` and collected BOTH `hasDynSql` flag AND `result.dependencies`, even when the body was entirely dynamic.
+- **Root cause:** The tokenizer scans the whole body text for potential dep references, finding `app.orders` inside `format('SELECT order_id FROM app.orders WHERE status = %L', p_status)`. Those "matches" are inside the dynamic SQL string — they are not reliable static reads.
+- **Fix:** In `map.ts buildRoutines()`, when `result.hasDynamicSql` is true, set `hasDynSql = true` and leave `dependencies` undefined — emit NO edges. This matches the spec: "MUST NOT fabricate any reads_from/writes_to/depends_on edge for the unanalyzable portion" (ADR-007 / US-007).
+- **Reality vs authored:** Unit fixtures for `dynamic_query` already asserted `hasDynamicSql:true` and no edges — the fix makes production match those specs exactly.
+- **Derived rule:** When `hasDynamicSql` is true, the ENTIRE body is considered unanalyzable for dependency classification purposes. Emit `hasDynamicSql:true` and zero dependency edges. Never collect partial dependency edges alongside the hasDynamicSql flag.
+
+## 2026-06-18 — pg `torture.sql` must be applied as one multi-statement batch (not split on `;`)
+- **Context:** Batch 7 — `applyTortureSql()` initially split `torture.sql` on `;` and ran each statement individually.
+- **What failed:** `syntax error at or near "products"` — the plpgsql `$$...$$` dollar-quoted function bodies contain embedded semicolons (end of each PL/pgSQL statement). Splitting on `;` outside `$$` boundaries broke the bodies into invalid fragments.
+- **Root cause:** Naive semicolon splitting cannot distinguish statement-terminating `;` from `;` inside dollar-quoted `$$...$$` blocks.
+- **Fix:** Pass the entire `torture.sql` file contents as a single `client.query(sqlContent)` call. PostgreSQL's server-side parser handles multi-statement queries with embedded `$$`-quoted bodies correctly in a single call.
+- **Note:** This is OPPOSITE to the MSSQL pattern where SQL Server requires GO-separated batches run individually. Each engine has its own batch execution model.
+- **Derived rule:** For PostgreSQL test harnesses, run the entire fixture SQL as one `client.query()` call — the server handles `$$`-quoted bodies, multi-statement batches, and semicolons correctly. Do NOT split on `;`.
+
 ## 2026-06-16 — mssql 12.x ships no bundled type declarations (L-005)
 - **Context:** Task 3.3 — factory.ts uses `await import('mssql')` inside a try/catch. tsc reported TS7016 "Could not find a declaration file for module 'mssql'".
 - **What failed:** `mssql@12.5.5` does not ship a `types` field in package.json and there is no `@types/mssql` package. Direct `await import('mssql') as SomeType` causes tsc error.

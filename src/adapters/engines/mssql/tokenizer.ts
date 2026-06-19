@@ -15,118 +15,45 @@
  *
  * US-007 (reads_from / writes_to classification, dynamic SQL flagged not guessed).
  * ADR-007 (no T-SQL grammar; conservative classification + honest dynamic-SQL flag).
+ *
+ * The three engine-agnostic primitives (canonicalizeQName, classifyAccess,
+ * extractWriteTargets) and WRITE_VERB_PATTERNS are now defined in _shared/tokenizer-core.ts
+ * and re-exported here for backwards compatibility with existing callers.
  */
 
 import type { RawDependency } from '../../../core/model/catalog.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// canonicalizeQName — bracket/quote stripping + lowercase
+// Re-export shared primitives — public surface preserved for existing callers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Strips bracket delimiters `[...]` and double-quote delimiters `"..."` from a
- * qualified name and lowercases the result.
- *
- * Examples:
- *   [dbo].[orders]  → dbo.orders
- *   "dbo"."orders"  → dbo.orders
- *   [DBO].Orders    → dbo.orders
- *   orders          → orders
- */
-export function canonicalizeQName(rawName: string): string {
-  // Remove bracket pairs and double-quote pairs around each segment
-  return rawName
-    .replace(/\[([^\]]*)\]/g, '$1')   // [schema] → schema
-    .replace(/"([^"]*)"/g, '$1')       // "schema" → schema
-    .toLowerCase();
-}
+export {
+  canonicalizeQName,
+  WRITE_VERB_PATTERNS,
+  extractWriteTargets,
+  classifyAccess,
+} from '../_shared/tokenizer-core.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Write-verb patterns (with capturing group for the operand position)
+// Local import for internal use within this module
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Regex patterns that identify write-verb operands.
- * Each pattern captures the target table qualified name IMMEDIATELY AFTER the verb.
- * Operates on a normalized (lowercased, bracket-stripped) body.
- *
- * Write-verb operand patterns:
- *   - INSERT INTO followed by target
- *   - UPDATE followed by target
- *   - DELETE FROM followed by target
- *   - MERGE INTO followed by target (with and without INTO)
- *   - TRUNCATE TABLE followed by target
- */
-const WRITE_VERB_PATTERNS: RegExp[] = [
-  /\binsert\s+into\s+([\w.]+)/gi,
-  /\bupdate\s+([\w.]+)/gi,
-  /\bdelete\s+from\s+([\w.]+)/gi,
-  /\bmerge\s+into\s+([\w.]+)/gi,
-  /\bmerge\s+([\w.]+)/gi,
-  /\btruncate\s+table\s+([\w.]+)/gi,
-];
-
-/**
- * Extracts the set of canonicalized qnames that appear as write-verb operands
- * in the given (already bracket-stripped + lowercased) body.
- */
-function extractWriteTargets(normalizedBody: string): ReadonlySet<string> {
-  const targets = new Set<string>();
-  for (const pattern of WRITE_VERB_PATTERNS) {
-    pattern.lastIndex = 0; // reset stateful global regex
-    let m: RegExpExecArray | null;
-    while ((m = pattern.exec(normalizedBody)) !== null) {
-      if (m[1] !== undefined) {
-        // m[1] is already lowercased because normalizedBody is lowercased;
-        // but brackets were already stripped at normalization time.
-        targets.add(m[1]);
-      }
-    }
-  }
-  return targets;
-}
+import { canonicalizeQName, classifyAccess } from '../_shared/tokenizer-core.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// hasDynamicSql — EXEC / sp_executesql presence
+// hasDynamicSql — EXEC / sp_executesql presence (MSSQL-specific)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Returns true if the body contains EXEC or sp_executesql (case-insensitive).
  * Presence indicates dynamic SQL that the conservative tokenizer cannot analyze.
  * US-007: declared blindness — flag and stop, never guess.
+ *
+ * MSSQL-specific: PG uses a different dynamic-SQL marker (bare EXECUTE statement
+ * vs EXECUTE FUNCTION trigger clause).
  */
 export function hasDynamicSql(body: string): boolean {
   return /\b(exec|sp_executesql)\b/i.test(body);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// classifyAccess — per-target read/write classification
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Classifies the access mode for a single dependency target given a module body.
- *
- * @param targetQName  Canonical qualified name of the target (e.g. 'dbo.orders').
- *                     Must already be canonicalized via canonicalizeQName().
- * @param body         The module body (sys.sql_modules.definition).
- * @returns 'write' if the target appears as a write-verb operand; 'read' otherwise.
- */
-export function classifyAccess(targetQName: string, body: string): 'read' | 'write' {
-  // Normalize body: strip brackets and lowercase so regex matching is uniform
-  const normalizedBody = canonicalizeQName(body);
-  const writeTargets = extractWriteTargets(normalizedBody);
-
-  // Check both fully-qualified (schema.name) and simple-name matches
-  // to handle bodies that reference objects without schema prefix.
-  const canonicalTarget = canonicalizeQName(targetQName);
-  const simpleName = canonicalTarget.includes('.')
-    ? canonicalTarget.split('.').slice(1).join('.')
-    : canonicalTarget;
-
-  if (writeTargets.has(canonicalTarget) || writeTargets.has(simpleName)) {
-    return 'write';
-  }
-  return 'read';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

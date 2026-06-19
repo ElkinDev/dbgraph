@@ -60,12 +60,36 @@ export interface MssqlAdapterConfig {
 }
 
 /**
+ * Configuration for the PostgreSQL schema adapter.
+ * Structural union member — distinguished from SqliteAdapterConfig by the
+ * presence of `host` (sqlite uses `file`, mssql uses `server`).
+ * NO `dialect` field is added — each engine keeps its own factory taking its
+ * concrete config type directly (design §union discriminator).
+ *
+ * `password` MUST be supplied as a `${env:VAR}` reference — never a literal.
+ * `port` defaults to 5432 when omitted.
+ * `schema` is optional: omit to extract all non-system schemas; supply to scope
+ * extraction to a single schema.
+ *
+ * US-028 (PostgreSQL adapter), pg-extraction spec "Connectivity via host/port".
+ */
+export interface PgAdapterConfig {
+  readonly host: string;
+  readonly port?: number;            // default 5432
+  readonly database: string;
+  readonly user: string;
+  readonly password: string;         // resolved from ${env:VAR}; literals REJECTED by parser
+  readonly ssl?: boolean | { readonly rejectUnauthorized?: boolean };
+  readonly schema?: string;          // omit = all non-system schemas; set = scoped
+}
+
+/**
  * Union of all engine-specific config shapes.
  * Future engines add their own member without touching existing members.
  * Each engine keeps its OWN factory taking its concrete config type directly —
  * no runtime discriminant is needed at the union level.
  */
-export type SchemaAdapterConfig = SqliteAdapterConfig | MssqlAdapterConfig;
+export type SchemaAdapterConfig = SqliteAdapterConfig | MssqlAdapterConfig | PgAdapterConfig;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SchemaAdapter port
