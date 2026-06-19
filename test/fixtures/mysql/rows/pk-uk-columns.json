@@ -1,0 +1,32 @@
+[
+  {
+    "table_schema": "app", "table_name": "audit_log",
+    "constraint_name": "PRIMARY", "constraint_type": "PRIMARY KEY",
+    "column_name": "audit_id", "ordinal_position": 1
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "constraint_name": "pk_order_items", "constraint_type": "PRIMARY KEY",
+    "column_name": "order_id", "ordinal_position": 1
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "constraint_name": "pk_order_items", "constraint_type": "PRIMARY KEY",
+    "column_name": "product_id", "ordinal_position": 2
+  },
+  {
+    "table_schema": "app", "table_name": "orders",
+    "constraint_name": "PRIMARY", "constraint_type": "PRIMARY KEY",
+    "column_name": "order_id", "ordinal_position": 1
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "constraint_name": "PRIMARY", "constraint_type": "PRIMARY KEY",
+    "column_name": "product_id", "ordinal_position": 1
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "constraint_name": "uq_products_name", "constraint_type": "UNIQUE",
+    "column_name": "name", "ordinal_position": 1
+  }
+]

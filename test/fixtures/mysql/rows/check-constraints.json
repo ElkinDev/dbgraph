@@ -1,0 +1,7 @@
+[
+  {
+    "table_schema": "app", "table_name": "products",
+    "constraint_name": "chk_products_price",
+    "check_clause": "(unit_price >= 0)"
+  }
+]

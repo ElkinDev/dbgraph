@@ -67,6 +67,29 @@ export interface PgSource {
 }
 
 /**
+ * Source block for a MySQL database.
+ * ALL identity fields (host, database, user, password) must use
+ * ${env:VAR} references for sensitive values. The plaintext-rejection rule
+ * for password is enforced by parseMysqlSource when reading identity fields.
+ *
+ * `port` is a string in config (env-ref or literal numeric string); parse-config
+ * converts the default to 3306 when absent.
+ * `ssl` is optional: 'true' / 'false' literal or omitted.
+ * NO `schema?` field: the connected database IS the extraction scope
+ * (schema == database in MySQL; there is no schema-vs-database distinction).
+ *
+ * US-029 (MySQL adapter, Phase 8b), mysql-extraction spec "Connectivity via host/port".
+ */
+export interface MysqlSource {
+  readonly host: string;
+  readonly port?: string;      // parsed to number; default 3306
+  readonly database: string;
+  readonly user: string;
+  readonly password: string;   // MUST be ${env:VAR}; rejected if literal
+  readonly ssl?: string;       // 'true' | 'false' or omitted
+}
+
+/**
  * The committeable dbgraph.config.json schema.
  * dialect discriminant determines the source shape.
  */
@@ -86,6 +109,11 @@ export type DbgraphConfig =
       readonly dialect: 'pg';
       readonly source: PgSource;
       readonly levels?: Partial<ObjectTypeLevels>;
+    }
+  | {
+      readonly dialect: 'mysql';
+      readonly source: MysqlSource;
+      readonly levels?: Partial<ObjectTypeLevels>;
     };
 
 /** Valid index level values. */
@@ -93,5 +121,5 @@ export const VALID_LEVELS = ['off', 'metadata', 'full'] as const;
 export type ValidLevel = (typeof VALID_LEVELS)[number];
 
 /** Supported dialects. */
-export const SUPPORTED_DIALECTS = ['sqlite', 'mssql', 'pg'] as const;
+export const SUPPORTED_DIALECTS = ['sqlite', 'mssql', 'pg', 'mysql'] as const;
 export type SupportedDialect = (typeof SUPPORTED_DIALECTS)[number];

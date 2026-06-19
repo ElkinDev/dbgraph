@@ -28,6 +28,7 @@ export type {
   SqliteAdapterConfig,
   MssqlAdapterConfig,
   PgAdapterConfig,
+  MysqlAdapterConfig,
 } from './schema-adapter.js';
 
 export type {

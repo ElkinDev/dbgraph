@@ -18,7 +18,7 @@ function missingCredential(field: string): never {
     `source (mssql): field "${field}" is required for sql/ntlm authentication.`,
   );
 }
-import type { DbgraphConfig, SqliteSource, MssqlSource, PgSource } from './schema.js';
+import type { DbgraphConfig, SqliteSource, MssqlSource, PgSource, MysqlSource } from './schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ${env:VAR} expansion
@@ -154,7 +154,41 @@ export function resolveSecrets(
           : { dialect: 'pg', source: resolvedSource };
       return result;
     }
+    case 'mysql': {
+      const resolvedSource = resolveMysqlSource(cfg.source, envMap);
+      const result: DbgraphConfig =
+        cfg.levels !== undefined
+          ? { dialect: 'mysql', source: resolvedSource, levels: cfg.levels }
+          : { dialect: 'mysql', source: resolvedSource };
+      return result;
+    }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MysqlSource resolver (added by phase-8b-mysql Batch 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function resolveMysqlSource(
+  source: MysqlSource,
+  envMap: Record<string, string | undefined>,
+): MysqlSource {
+  const resolved: {
+    host: string;
+    database: string;
+    user: string;
+    password: string;
+    port?: string;
+    ssl?: string;
+  } = {
+    host: resolveValue(source.host, envMap),
+    database: resolveValue(source.database, envMap),
+    user: resolveValue(source.user, envMap),
+    password: resolveValue(source.password, envMap),
+  };
+  if (source.port !== undefined) resolved.port = resolveValue(source.port, envMap);
+  if (source.ssl !== undefined) resolved.ssl = resolveValue(source.ssl, envMap);
+  return resolved;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

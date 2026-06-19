@@ -1,0 +1,30 @@
+[
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "index_name": "idx_order_items_composite",
+    "non_unique": 1, "seq_in_index": 1,
+    "column_name": "order_id",
+    "expression": null, "sub_part": null, "index_type": "BTREE"
+  },
+  {
+    "table_schema": "app", "table_name": "order_items",
+    "index_name": "idx_order_items_composite",
+    "non_unique": 1, "seq_in_index": 2,
+    "column_name": "product_id",
+    "expression": null, "sub_part": null, "index_type": "BTREE"
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "index_name": "idx_products_name_lower",
+    "non_unique": 1, "seq_in_index": 1,
+    "column_name": null,
+    "expression": "lower(`name`)", "sub_part": null, "index_type": "BTREE"
+  },
+  {
+    "table_schema": "app", "table_name": "products",
+    "index_name": "idx_products_name_prefix",
+    "non_unique": 1, "seq_in_index": 1,
+    "column_name": "name",
+    "expression": null, "sub_part": 10, "index_type": "BTREE"
+  }
+]

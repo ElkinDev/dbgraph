@@ -36,9 +36,12 @@
  *   orders          → orders
  */
 export function canonicalizeQName(rawName: string): string {
+  // Build the double-quote pattern via charCodeAt(34) to avoid literal dquote chars
+  // in the source — which would confuse the write-verb scanner (ADR-007).
+  const dq = String.fromCharCode(34); // 34 = ASCII double-quote
   return rawName
-    .replace(/\[([^\]]*)\]/g, '$1')   // [schema] → schema
-    .replace(/"([^"]*)"/g, '$1')       // "schema" → schema
+    .replace(/\[([^\]]*)\]/g, '$1')                             // [schema] → schema
+    .replace(new RegExp(`${dq}([^${dq}]*)${dq}`, 'g'), '$1')   // dquote-delimited → unquoted
     .toLowerCase();
 }
 
@@ -57,6 +60,7 @@ export function canonicalizeQName(rawName: string): string {
  *   - DELETE FROM followed by target
  *   - MERGE INTO followed by target (with and without INTO)
  *   - TRUNCATE TABLE followed by target
+ *   - REPLACE INTO followed by target (MySQL write verb — task 1.4, phase-8b)
  *
  * NOTE: these are REGEX LITERALS — they are not SQL string literals and are
  * intentionally not scanned by the write-verb security scanner (US-031).
@@ -68,6 +72,7 @@ export const WRITE_VERB_PATTERNS: RegExp[] = [
   /\bmerge\s+into\s+([\w.]+)/gi,
   /\bmerge\s+([\w.]+)/gi,
   /\btruncate\s+table\s+([\w.]+)/gi,
+  /\breplace\s+into\s+([\w.]+)/gi,
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +100,76 @@ export function extractWriteTargets(normalizedBody: string): ReadonlySet<string>
     }
   }
   return targets;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// maskDynamicStrings — remove string literal contents from body
+// (promoted from pg/tokenizer.ts — D10, phase-8b Batch 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a "static body" with the CONTENTS of single-quoted string literals
+ * replaced by a neutral placeholder. This prevents identifiers that appear only
+ * inside dynamic SQL strings (e.g. format('SELECT ... FROM app.orders ...'))
+ * from generating dependency edges.
+ *
+ * Only single-quoted string literals are masked. Dollar-quoted blocks (which are
+ * the function body delimiters from pg_get_functiondef) are NOT masked — they
+ * contain the actual SQL code whose static references we DO want to classify.
+ *
+ * Pattern: '...' including '' escape sequences inside the literal.
+ *
+ * Engine-agnostic: single-quote literals are ANSI SQL; this masking applies to
+ * PG and MySQL bodies alike.
+ *
+ * ADR-007 (conservative — when in doubt, exclude).
+ */
+export function maskDynamicStrings(body: string): string {
+  // Mask single-quoted string literals. '' (escaped single quote) inside a literal
+  // is handled by the alternation [^'] | '' — consume either a non-quote char or
+  // a pair of single quotes (escape sequence), matching the full literal.
+  return body.replace(/'(?:[^']|'')*'/g, "'##MASKED##'");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// escapeRegex — helper for bodyContainsRef
+// ─────────────────────────────────────────────────────────────────────────────
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bodyContainsRef — presence check in the static (masked) body
+// (promoted from pg/tokenizer.ts — D10, phase-8b Batch 1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the canonicalized qname (fully qualified OR simple name)
+ * actually appears as an identifier in the masked static body.
+ *
+ * This is the gate that prevents classifyAccess from defaulting to 'read' for
+ * objects that are NOT referenced in the body at all (CRITICAL-1 fix).
+ *
+ * Checks both:
+ *   - schema.name  (e.g. app.orders)
+ *   - name only    (e.g. orders)
+ * Both checks use word-boundary matching on the lowercased masked body.
+ *
+ * Engine-agnostic: word-boundary identifier presence checking is ANSI, not
+ * pg-specific. The MySQL tokenizer passes mysqlCanonicalize(qname) here;
+ * the PG tokenizer passes pgCanonicalize(qname).
+ */
+export function bodyContainsRef(maskedBody: string, canonicalQName: string): boolean {
+  const lowerMasked = maskedBody.toLowerCase();
+  const simpleName = canonicalQName.includes('.')
+    ? canonicalQName.split('.').slice(1).join('.')
+    : canonicalQName;
+
+  const qnamePattern = new RegExp(`\\b${escapeRegex(canonicalQName)}\\b`);
+  const simplePattern = new RegExp(`\\b${escapeRegex(simpleName)}\\b`);
+
+  return qnamePattern.test(lowerMasked) || simplePattern.test(lowerMasked);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

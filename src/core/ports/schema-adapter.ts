@@ -61,10 +61,13 @@ export interface MssqlAdapterConfig {
 
 /**
  * Configuration for the PostgreSQL schema adapter.
- * Structural union member — distinguished from SqliteAdapterConfig by the
- * presence of `host` (sqlite uses `file`, mssql uses `server`).
- * NO `dialect` field is added — each engine keeps its own factory taking its
- * concrete config type directly (design §union discriminator).
+ *
+ * IMPORTANT — union discriminability: These config shapes are NOT discriminable
+ * by structure alone (both PgAdapterConfig and MysqlAdapterConfig carry `host`).
+ * The union is a plain structural union for typing only; runtime dispatch is by
+ * the EXPLICIT config `dialect` field in parse-config.ts / open-connections.ts,
+ * and each engine factory takes its own concrete config type directly.
+ * No `dialect` discriminant is added to the union members.
  *
  * `password` MUST be supplied as a `${env:VAR}` reference — never a literal.
  * `port` defaults to 5432 when omitted.
@@ -84,12 +87,46 @@ export interface PgAdapterConfig {
 }
 
 /**
- * Union of all engine-specific config shapes.
- * Future engines add their own member without touching existing members.
- * Each engine keeps its OWN factory taking its concrete config type directly —
- * no runtime discriminant is needed at the union level.
+ * Configuration for the MySQL schema adapter.
+ *
+ * IMPORTANT — union discriminability: Both PgAdapterConfig and MysqlAdapterConfig
+ * carry `host`; the union is intentionally NON-discriminable by structural shape.
+ * Runtime dispatch keys on the EXPLICIT config `dialect` field in parse-config.ts
+ * and open-connections.ts. Each engine factory takes its own concrete config type
+ * directly. No `dialect` discriminant is added to union members.
+ *
+ * `password` MUST be supplied as a `${env:VAR}` reference — never a literal.
+ * `port` defaults to 3306 when omitted.
+ * NO `schema?` field: the connected `database` IS the extraction scope
+ * (schema == database in MySQL — there is no schema-vs-database distinction).
+ *
+ * US-029 (MySQL adapter, Phase 8b), mysql-extraction spec "Connectivity via host/port".
  */
-export type SchemaAdapterConfig = SqliteAdapterConfig | MssqlAdapterConfig | PgAdapterConfig;
+export interface MysqlAdapterConfig {
+  readonly host: string;
+  readonly port?: number;            // default 3306
+  readonly database: string;         // the connected database IS the schema scope; no schema? knob
+  readonly user: string;
+  readonly password: string;         // resolved from ${env:VAR}; literals REJECTED by parser
+  readonly ssl?: boolean | { readonly rejectUnauthorized?: boolean };
+}
+
+/**
+ * Union of all engine-specific config shapes.
+ *
+ * This is a STRUCTURAL union for typing only — it is intentionally
+ * NON-discriminable by shape (pg and mysql both carry `host`; sqlite uses `file`;
+ * mssql uses `server`). Runtime dispatch is by the EXPLICIT config `dialect` field
+ * in parse-config.ts / open-connections.ts; each engine factory takes its own
+ * concrete config type directly. No `dialect` discriminant is added to members.
+ *
+ * Future engines add their own member without touching existing members.
+ */
+export type SchemaAdapterConfig =
+  | SqliteAdapterConfig
+  | MssqlAdapterConfig
+  | PgAdapterConfig
+  | MysqlAdapterConfig;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SchemaAdapter port

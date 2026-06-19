@@ -1,0 +1,7 @@
+[
+  {
+    "table_schema": "app",
+    "table_name": "v_order_summary",
+    "view_definition": "select `app`.`orders`.`order_id` AS `order_id`,`app`.`orders`.`customer_name` AS `customer_name`,sum(`app`.`order_items`.`total_price`) AS `total` from (`app`.`orders` join `app`.`order_items` on((`app`.`orders`.`order_id` = `app`.`order_items`.`order_id`))) group by `app`.`orders`.`order_id`,`app`.`orders`.`customer_name`"
+  }
+]

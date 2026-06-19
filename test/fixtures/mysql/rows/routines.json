@@ -1,0 +1,23 @@
+[
+  {
+    "routine_schema": "app",
+    "routine_name": "place_order",
+    "routine_type": "PROCEDURE",
+    "routine_definition": "BEGIN\n  INSERT INTO orders (customer_name) VALUES (p_customer);\n  INSERT INTO order_items (order_id, product_id, qty, unit_price) VALUES (LAST_INSERT_ID(), p_product_id, p_qty, (SELECT unit_price FROM products WHERE product_id = p_product_id));\nEND",
+    "routine_comment": ""
+  },
+  {
+    "routine_schema": "app",
+    "routine_name": "log_audit",
+    "routine_type": "FUNCTION",
+    "routine_definition": "BEGIN\n  INSERT INTO audit_log (event_type) VALUES (p_event);\n  RETURN 1;\nEND",
+    "routine_comment": "Logs an audit event"
+  },
+  {
+    "routine_schema": "app",
+    "routine_name": "dynamic_routine",
+    "routine_type": "PROCEDURE",
+    "routine_definition": "BEGIN\n  DECLARE v_sql VARCHAR(500);\n  SET v_sql = 'SELECT * FROM audit_log WHERE audit_id = 1';\n  PREPARE stmt FROM v_sql;\n  EXECUTE stmt;\n  DEALLOCATE PREPARE stmt;\nEND",
+    "routine_comment": ""
+  }
+]
