@@ -68,16 +68,25 @@ _Note: `pg_depend`-based dependency hints (`supportsDependencyHints:true`) defer
 - `pg_matviews` + `pg_class.relkind = 'm'` used as the source; body retrieved via `pg_get_viewdef`. ✓
 - Queries and map verified against captured `pg_catalog` JSON row fixtures (pure unit, no DB). ✓
 
-### US-029 — MySQL/MariaDB adapter
-**Phase:** 8 · **Depends on:** US-027 · **Status:** ☐ pending
+### US-029 — MySQL adapter (Phase 8b)
+**Phase:** 8b · **Depends on:** US-027, US-028a (shared tokenizer) · **Status:** ☐ pending (phase-8b-mysql)
 
-> **Pre-planned next change:** `phase-8b-mysql` (zero carry-over from `phase-8a-pg`). Patterns established in
-> phase-8a-pg (shared tokenizer, lazy driver import, thin adapter shape) apply directly.
+> **Refined for `phase-8b-mysql`.** Scope narrowed to MySQL on `mysql:8` ONLY; patterns established in
+> phase-8a-pg (shared tokenizer, lazy driver import, thin adapter shape) apply directly. MariaDB
+> (real `SEQUENCE` objects, behavioural forks) and MySQL `EVENT` objects are DEFERRED to a future
+> `phase-8c`. The shared `_shared/tokenizer-core.ts` is consumed UNCHANGED (no tokenizer-extraction batch).
 
 **Acceptance criteria:**
-- Extracts the common set + events; `information_schema` gives no view dependencies → view definitions are parsed and marked `confidence: parsed`.
-- Compatible with MySQL 8 and MariaDB LTS (CI matrix).
-- `docs/permissions/mysql.md` with the minimal read-only user.
+- `schema == database`: every catalog query is filtered `TABLE_SCHEMA = DATABASE()`; each object carries the connected database as its schema; `RawCatalog.schemas` is that one database; NO `schema?` config knob.
+- Extracts the common set: tables/columns/types/nullability/defaults; `AUTO_INCREMENT` surfaced ON THE COLUMN via `COLUMNS.EXTRA` (NO sequence node — `MYSQL_CAPABILITIES` has no `sequence` and no standalone `schema` kind); PK/FK (incl. composite, ordered)/unique/CHECK (CHECK via `CHECK_CONSTRAINTS`, MySQL 8.0.16+); indexes from `STATISTICS` (uniqueness via `NON_UNIQUE`, composite via `SEQ_IN_INDEX`); triggers (event + timing); `TABLE_COMMENT`/`COLUMN_COMMENT`.
+- View bodies via `VIEWS.VIEW_DEFINITION` (reparsed/possibly-truncated form documented, NO `SHOW CREATE VIEW`); routine bodies (functions + procedures) via `ROUTINES.ROUTINE_DEFINITION`; `supportsBodies: true`.
+- `reads_from`/`writes_to` classified via the SHARED body tokenizer at `confidence: parsed`; `supportsDependencyHints: false` (no MySQL dependency view — body tokenizer is the sole edge source). Emission is PHANTOM-FREE and presence-gated (edge ONLY for an object whose name appears in the dynamic-string-MASKED static body; never default-to-read; never a self-reference — carries the phase-8a CRITICAL-1 remediation). `PREPARE`/`EXECUTE` → `hasDynamicSql: true`; a non-dynamic body is NOT flagged.
+- `fingerprint()`: ONE cheap query whose marker MOVES on DDL INCLUDING `ADD COLUMN` (combines `TABLES` + `COLUMNS` markers over `DATABASE()`, SHA-256) and is STABLE on data-only DML.
+- Connectivity via host/port (3306)/database/user/password (+ optional ssl); `password` is `${env:VAR}` env-only; absent `mysql2` raises `ConnectionError('npm i mysql2')`.
+- Read-only by construction: catalog SELECTs only (write-verb scanner stays green); NO `SET TRANSACTION READ ONLY`; `docs/permissions/mysql.md` with the minimal read-only user; a missing privilege raises an actionable `PermissionError` naming the privilege + doc.
+- Determinism (ADR-008): golden-pinned `RawCatalog` (zero sequence objects); gated `mysql:8` Testcontainers E2E (`DBGRAPH_INTEGRATION=1`, never blocks the unit matrix) pinning exact edge counts AND endpoints, `stubCount: 0`, no self-reference.
+
+_Note: original US-029 stated "MySQL 8 AND MariaDB LTS (CI matrix)" + "events". REFINED here: MySQL-8-only; MariaDB sequences/forks and MySQL `EVENT` objects → pre-planned `phase-8c-mariadb`. `mysql2` is a PRE-APPROVED `optionalDependency` (ADR-002/006), lazy `import('mysql2/promise')`._
 
 ### US-030 — MongoDB adapter + structural sampling
 **As** a NoSQL user, **I want** an inferred schema of my collections WITHOUT persisting values, **so that** the AI knows the structure with zero data risk.
