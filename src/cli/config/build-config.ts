@@ -136,6 +136,20 @@ function buildOrderedSource(cfg: DbgraphConfig): unknown {
   if (cfg.dialect === 'sqlite') {
     return { file: cfg.source.file };
   }
+  if (cfg.dialect === 'pg') {
+    // pg: fixed key order (wiring completed in Batch 5)
+    const src = cfg.source;
+    const ordered: Record<string, unknown> = {
+      host: src.host,
+      database: src.database,
+      user: src.user,
+      password: src.password,
+    };
+    if (src.port !== undefined) ordered['port'] = src.port;
+    if (src.ssl !== undefined) ordered['ssl'] = src.ssl;
+    if (src.schema !== undefined) ordered['schema'] = src.schema;
+    return ordered;
+  }
   // mssql: fixed key order
   const src = cfg.source;
   const ordered: Record<string, unknown> = {

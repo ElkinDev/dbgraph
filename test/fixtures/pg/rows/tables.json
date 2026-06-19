@@ -1,0 +1,26 @@
+[
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "table_oid": 10001,
+    "comment": "Order records"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "table_oid": 10002,
+    "comment": null
+  },
+  {
+    "schema_name": "app",
+    "table_name": "products",
+    "table_oid": 10003,
+    "comment": null
+  },
+  {
+    "schema_name": "audit",
+    "table_name": "audit_log",
+    "table_oid": 10004,
+    "comment": null
+  }
+]

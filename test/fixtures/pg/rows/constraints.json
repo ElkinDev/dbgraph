@@ -1,0 +1,68 @@
+[
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "constraint_name": "orders_pkey",
+    "constraint_type": "p",
+    "column_positions": [1],
+    "fk_ref_positions": null,
+    "fk_ref_schema": null,
+    "fk_ref_table": null,
+    "constraint_def": "PRIMARY KEY (id)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "orders",
+    "constraint_name": "orders_total_positive",
+    "constraint_type": "c",
+    "column_positions": [],
+    "fk_ref_positions": null,
+    "fk_ref_schema": null,
+    "fk_ref_table": null,
+    "constraint_def": "CHECK ((total > (0)::numeric))"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "constraint_name": "order_items_pkey",
+    "constraint_type": "p",
+    "column_positions": [1],
+    "fk_ref_positions": null,
+    "fk_ref_schema": null,
+    "fk_ref_table": null,
+    "constraint_def": "PRIMARY KEY (id)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "constraint_name": "order_items_order_id_product_id_key",
+    "constraint_type": "u",
+    "column_positions": [2, 3],
+    "fk_ref_positions": null,
+    "fk_ref_schema": null,
+    "fk_ref_table": null,
+    "constraint_def": "UNIQUE (order_id, product_id)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "constraint_name": "order_items_order_id_fkey",
+    "constraint_type": "f",
+    "column_positions": [2],
+    "fk_ref_positions": [1],
+    "fk_ref_schema": "app",
+    "fk_ref_table": "orders",
+    "constraint_def": "FOREIGN KEY (order_id) REFERENCES orders(id)"
+  },
+  {
+    "schema_name": "app",
+    "table_name": "order_items",
+    "constraint_name": "order_items_composite_fkey",
+    "constraint_type": "f",
+    "column_positions": [2, 3],
+    "fk_ref_positions": [1, 1],
+    "fk_ref_schema": "app",
+    "fk_ref_table": "orders",
+    "constraint_def": "FOREIGN KEY (order_id, product_id) REFERENCES orders(id, id)"
+  }
+]

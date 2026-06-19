@@ -1,0 +1,30 @@
+[
+  {
+    "schema_name": "app",
+    "routine_name": "process_order",
+    "routine_kind": "f",
+    "routine_def": "CREATE OR REPLACE FUNCTION app.process_order(p_order_id integer)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO audit.audit_log (table_name, action) VALUES ('orders', 'processed');\n  INSERT INTO audit.audit_log (table_name, action) VALUES ('order_items', 'processed');\n  SELECT id FROM app.products WHERE id = 1;\nEND;\n$function$",
+    "comment": "Processes an order and logs to audit"
+  },
+  {
+    "schema_name": "app",
+    "routine_name": "dynamic_query",
+    "routine_kind": "f",
+    "routine_def": "CREATE OR REPLACE FUNCTION app.dynamic_query(tbl text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n  sql text;\nBEGIN\n  sql := format('SELECT * FROM %I', tbl);\n  EXECUTE sql;\nEND;\n$function$",
+    "comment": "Function with dynamic SQL"
+  },
+  {
+    "schema_name": "app",
+    "routine_name": "audit_fn",
+    "routine_kind": "f",
+    "routine_def": "CREATE OR REPLACE FUNCTION app.audit_fn()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  INSERT INTO audit.audit_log (table_name, action) VALUES (TG_TABLE_NAME, TG_OP);\n  RETURN NEW;\nEND;\n$function$",
+    "comment": "Audit trigger function"
+  },
+  {
+    "schema_name": "app",
+    "routine_name": "sync_products",
+    "routine_kind": "p",
+    "routine_def": "CREATE OR REPLACE PROCEDURE app.sync_products()\n LANGUAGE plpgsql\nAS $procedure$\nBEGIN\n  INSERT INTO audit.audit_log (table_name, action) VALUES ('products', 'synced');\nEND;\n$procedure$",
+    "comment": "Procedure to sync products"
+  }
+]
