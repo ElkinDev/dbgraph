@@ -15,6 +15,7 @@ import {
   type SqliteSource,
   type MssqlSource,
   type PgSource,
+  type MysqlSource,
   VALID_LEVELS,
   SUPPORTED_DIALECTS,
 } from './schema.js';
@@ -190,6 +191,42 @@ function parsePgSource(raw: unknown): PgSource {
   return result;
 }
 
+function parseMysqlSource(raw: unknown): MysqlSource {
+  if (!isRecord(raw)) {
+    throw new ConfigError('Config: "source" must be an object for dialect "mysql".');
+  }
+  const host = requireString(raw, 'host', 'source (mysql)');
+  const database = requireString(raw, 'database', 'source (mysql)');
+  const user = requireString(raw, 'user', 'source (mysql)');
+  const password = requireString(raw, 'password', 'source (mysql)');
+
+  // Spec: "Password must be supplied by env reference, not a literal" (US-029, US-032).
+  if (!isEnvRef(password)) {
+    throw new ConfigError(
+      'source (mysql): field "password" must be a ${env:VAR} reference, not a literal value. ' +
+        'Use an environment variable reference such as ${env:MYSQL_PASSWORD}.',
+    );
+  }
+
+  const port = optionalString(raw, 'port', 'source (mysql)');
+  const ssl = optionalString(raw, 'ssl', 'source (mysql)');
+  // NO schema field — the connected database IS the extraction scope (schema == database).
+
+  const result: {
+    host: string;
+    database: string;
+    user: string;
+    password: string;
+    port?: string;
+    ssl?: string;
+  } = { host, database, user, password };
+
+  if (port !== undefined) result.port = port;
+  if (ssl !== undefined) result.ssl = ssl;
+
+  return result;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main parser
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,6 +296,13 @@ export function parseConfig(raw: unknown): DbgraphConfig {
       const cfg: DbgraphConfig = levels !== undefined
         ? { dialect: 'pg', source, levels }
         : { dialect: 'pg', source };
+      return cfg;
+    }
+    case 'mysql': {
+      const source = parseMysqlSource(raw['source']);
+      const cfg: DbgraphConfig = levels !== undefined
+        ? { dialect: 'mysql', source, levels }
+        : { dialect: 'mysql', source };
       return cfg;
     }
     default:
