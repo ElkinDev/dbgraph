@@ -569,13 +569,16 @@ function buildRoutines(
         ...input.views.map((v) => ({ schema: v.schema_name, name: v.view_name })),
       ];
       const result = tokenizePgBody(body, potentialDeps);
+      // WARNING-1 FIX: static edges SURVIVE even when hasDynamicSql is true.
+      // tokenizePgBody already masks string-literal contents so only static
+      // references generate edges (CRITICAL-1 fix). Dynamic SQL is flagged via
+      // hasDynamicSql:true; the static portion is still classified and emitted.
+      // This makes PG consistent with MSSQL (which keeps catalog-confirmed static
+      // edges alongside hasDynamicSql:true). ADR-007 / US-007.
       if (result.hasDynamicSql) {
-        // Spec: when dynamic SQL is detected, mark hasDynamicSql:true and emit
-        // NO dependency edges — the body is unanalyzable and edges would be fabricated.
-        // ADR-007 / US-007: declared blindness, never guess.
         hasDynSql = true;
-        // dependencies remains undefined (no fabricated edges)
-      } else if (result.dependencies.length > 0) {
+      }
+      if (result.dependencies.length > 0) {
         dependencies = result.dependencies;
       }
     }

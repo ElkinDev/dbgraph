@@ -341,19 +341,34 @@ ORDER BY n.nspname, c.relname
 
 /**
  * One-query catalog change fingerprint (US-009).
- * Returns {m: MAX(oid), c: COUNT(*)} over non-system pg_class entries.
- * OIDs advance monotonically on CREATE (DDL change); COUNT moves on CREATE/DROP.
- * Data-only DML (rows inserted/updated) does NOT change oids or relation counts.
- * sha256(`${m}|${c}`) is computed by the adapter class.
+ * Returns {m: MAX(oid_and_attnum), c: COUNT(*)} over non-system pg_class + pg_attribute entries.
+ *
+ * Marker components:
+ *   MAX(c.oid)                — moves on CREATE TABLE/VIEW/INDEX/SEQUENCE (OIDs advance on DDL)
+ *   MAX(a.attnum)             — moves when a column is added (attnum = column ordinal, advances
+ *                                per-table on ALTER TABLE ADD COLUMN; does not regress on DROP)
+ *   COUNT(DISTINCT c.oid)     — moves on CREATE/DROP of any relation
+ *   COUNT(a.attnum)           — moves on ADD COLUMN or DROP COLUMN (row count in pg_attribute)
+ *
+ * Together these detect both ADD OBJECT and ADD COLUMN, which MAX(oid)+COUNT(*) alone would miss
+ * when ALTER TABLE ADD COLUMN adds no new relation oid. (SUGGESTION-2 fix.)
+ *
+ * sha256(`${maxOid}|${maxAttnum}|${relCount}|${attrCount}`) is computed by the adapter class.
  *
  * Optional $1 scopes to a single schema (NULL = all non-system schemas).
  */
 export const SQL_PG_FINGERPRINT = `
 SELECT
-  MAX(c.oid)   AS m,
-  COUNT(*)     AS c
+  MAX(c.oid)          AS max_oid,
+  COALESCE(MAX(a.attnum), 0) AS max_attnum,
+  COUNT(DISTINCT c.oid) AS rel_count,
+  COUNT(a.attnum)     AS attr_count
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_catalog.pg_attribute a
+  ON a.attrelid = c.oid
+  AND a.attnum > 0
+  AND NOT a.attisdropped
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND n.nspname NOT LIKE 'pg_toast%'
   AND n.nspname NOT LIKE 'pg_temp%'

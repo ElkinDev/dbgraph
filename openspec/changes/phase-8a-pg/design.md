@@ -69,7 +69,7 @@ export interface PgAdapterConfig {
   readonly database: string;
   readonly user: string;
   readonly password: string;         // resolved from ${env:VAR}
-  readonly ssl?: boolean;
+  readonly ssl?: boolean | { rejectUnauthorized?: boolean };  // boolean | object (as implemented)
   readonly schema?: string;          // omit = all non-system schemas
 }
 export type SchemaAdapterConfig = SqliteAdapterConfig | MssqlAdapterConfig | PgAdapterConfig;
