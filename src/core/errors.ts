@@ -115,6 +115,58 @@ export class UnsupportedDialectError extends DbgraphError {
 // StrategyAttempt is defined in the port file; we re-use the type here.
 import type { StrategyAttempt } from './ports/connectivity-strategy.js';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ConnectivityOption + ConnectivityOutcome — core types (driver-free)
+// resilient-connectivity Batch 1, task 1.2
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A discriminated union of the actionable options presented to the user when no
+ * connectivity method can be established. Three variants MUST always be present.
+ *
+ * Design §"ConnectivityOutcome + options live in core" — these are pure data
+ * (engine-neutral, driver-free). Adapters BUILD the value; present/ RENDERS it.
+ */
+export type ConnectivityOption =
+  | {
+      /** Emit the exact read-only catalog SELECT queries for the user to run themselves. */
+      readonly kind: 'run-it-yourself';
+      readonly description: string;
+      /** The EXACT read-only catalog SELECT statements, write-verb-free. */
+      readonly queries: readonly string[];
+    }
+  | {
+      /** Offer to install the missing driver/tool ONLY with explicit user consent. */
+      readonly kind: 'consented-install';
+      readonly description: string;
+      readonly tool: string;
+      readonly docUrl: string;
+    }
+  | {
+      /** Import a combined JSON dump the user produced externally. */
+      readonly kind: 'manual-dump';
+      readonly description: string;
+      readonly outputPath: string;
+    };
+
+/**
+ * The structured, engine-neutral outcome yielded when no connectivity method
+ * can establish a connection. Carries at least three actionable options.
+ *
+ * Design §"typed throw, not return-type change" — thrown as ConnectivityUnavailableError.
+ * The summary field MUST be content-free (no schema names, object identifiers, or secrets).
+ */
+export interface ConnectivityOutcome {
+  /** Stable engine identifier, e.g. 'mssql', 'pg', 'mysql', 'sqlite'. */
+  readonly engine: string;
+  /** Content-free human-readable summary. MUST NOT contain schema/identifier/secret. */
+  readonly summary: string;
+  /** Ordered list of strategies attempted and the reason each was skipped. */
+  readonly attempts: readonly StrategyAttempt[];
+  /** The at-least-three options offered to the user. Length MUST be >= 3. */
+  readonly options: readonly ConnectivityOption[];
+}
+
 /**
  * Thrown when all connectivity strategies for an engine have been exhausted —
  * none could both detect their prerequisite AND successfully probe a connection.
@@ -165,5 +217,21 @@ export class PermissionError extends DbgraphError {
     if (cause !== undefined) {
       this.cause = cause;
     }
+  }
+}
+
+/**
+ * Thrown when no connectivity method can be established for an engine.
+ * Carries a structured, engine-neutral `ConnectivityOutcome` with at least
+ * three actionable options (run-it-yourself, consented-install, manual-dump).
+ *
+ * Code: E_CONNECTIVITY_UNAVAILABLE.
+ * Design §"typed throw, not return-type change" — bubbles to cli.ts catch boundary.
+ * The message is content-free (carries outcome.summary only — no identifier/secret).
+ * resilient-connectivity Batch 1, task 1.2.
+ */
+export class ConnectivityUnavailableError extends DbgraphError {
+  constructor(readonly outcome: ConnectivityOutcome) {
+    super(outcome.summary, 'E_CONNECTIVITY_UNAVAILABLE');
   }
 }

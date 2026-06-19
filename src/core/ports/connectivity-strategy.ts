@@ -11,6 +11,7 @@
 
 import type { RawCatalog } from '../model/catalog.js';
 import type { ExtractionScope } from '../model/capability.js';
+import type { ProbeResult } from './capability-probe.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Result and attempt types
@@ -80,6 +81,19 @@ export interface ConnectivityStrategy {
    * MUST issue ONLY catalog SELECT statements (read-only inviolable, US-031).
    */
   runCatalog(scope: ExtractionScope): Promise<RawCatalog>;
+
+  /**
+   * Run a capability detection for this strategy's engine and return the result.
+   * Optional — existing strategies that omit it remain valid (back-compat).
+   * When present:
+   *   MUST resolve — never reject.
+   *   MUST NOT open a database connection.
+   *   MUST NOT issue any write.
+   * Consumed by adapters/engines/<engine>/strategies/registry.ts (selectStrategy)
+   * and cli/commands/doctor.ts (runDoctor) via the core port shape.
+   * resilient-connectivity Batch 1, task 1.4.
+   */
+  probe?(): Promise<ProbeResult>;
 
   /**
    * Compute a cheap DDL-sensitive fingerprint for the current schema.
