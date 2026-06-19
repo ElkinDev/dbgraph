@@ -69,7 +69,7 @@ _Note: `pg_depend`-based dependency hints (`supportsDependencyHints:true`) defer
 - Queries and map verified against captured `pg_catalog` JSON row fixtures (pure unit, no DB). ✓
 
 ### US-029 — MySQL adapter (Phase 8b)
-**Phase:** 8b · **Depends on:** US-027, US-028a (shared tokenizer) · **Status:** ☐ partial (phase-8b-mysql — Batches 1-6 done; Batch 7 integration/E2E pending)
+**Phase:** 8b · **Depends on:** US-027, US-028a (shared tokenizer) · **Status:** ☑ done (phase-8b-mysql)
 
 > **Refined for `phase-8b-mysql`.** Scope is MySQL **8 ONLY** (`mysql:8` Testcontainers, `mysql2` driver).
 > MariaDB (real `SEQUENCE` objects, behavioural forks) and MySQL `EVENT` objects are DEFERRED to the
@@ -96,7 +96,7 @@ _Note: `pg_depend`-based dependency hints (`supportsDependencyHints:true`) defer
 - `fingerprint()`: ONE cheap query whose marker MOVES on DDL INCLUDING `ADD COLUMN` (combines `TABLES` + `COLUMNS` + `ROUTINES` markers over `DATABASE()`, SHA-256) and is STABLE on data-only DML. ☑ (Batch 4)
 - Connectivity via host/port (3306)/database/user/password (+ optional ssl); `password` is `${env:VAR}` env-only; absent `mysql2` raises `ConnectionError('npm i mysql2')`. ☑ (Batch 2/3)
 - Read-only by construction: catalog SELECTs only (write-verb scanner stays green); NO `SET TRANSACTION READ ONLY`; `docs/permissions/mysql.md` with the minimal read-only user; a missing privilege raises an actionable `PermissionError` naming the privilege + doc. ☑ (Batches 3/4/6)
-- Determinism (ADR-008): golden-pinned `RawCatalog` (zero sequence objects); gated `mysql:8` Testcontainers E2E (`DBGRAPH_INTEGRATION=1`, never blocks the unit matrix) pinning exact edge counts AND endpoints, `stubCount: 0`, no self-reference. ☐ pending (Batch 7)
+- Determinism (ADR-008): golden-pinned `RawCatalog` (zero sequence objects); gated `mysql:8` Testcontainers E2E (`DBGRAPH_INTEGRATION=1`, never blocks the unit matrix) pinning exact edge counts AND endpoints, `stubCount: 0`, no self-reference. ☑ (Batch 7)
 
 _Note: original US-029 stated "MySQL 8 AND MariaDB LTS (CI matrix)" + "events". REFINED here: MySQL-8-only; MariaDB sequences/forks and MySQL `EVENT` objects → pre-planned `phase-8c`. `mysql2` is a PRE-APPROVED `optionalDependency` (ADR-002/006), lazy `import('mysql2/promise')`._
 
