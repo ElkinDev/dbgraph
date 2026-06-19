@@ -1,7 +1,7 @@
 # dbgraph — User stories
 
 Requirements input for each phase's SDD spec (master plan kept by the maintainer).
-38 stories across 7 epics.
+44 stories across 8 epics.
 
 ## Protocol for the implementing agent
 
@@ -25,10 +25,11 @@ Requirements input for each phase's SDD spec (master plan kept by the maintainer
 | E5 — Engine adapters | `05-adapters.md` | US-026..030 | 2, 3, 8, 9 |
 | E6 — Security | `06-security.md` | US-031..033 | cross-cutting |
 | E7 — Quality, publication & distribution | `07-quality-publication.md` | US-034..038 | 6, 7, 9.5 |
+| E8 — Resilient connectivity | `08-resilient-connectivity.md` | US-039..044 | 8.5 |
 
 ## Global status
 
-Update this table when closing each epic. Last update: 2026-06-16.
+Update this table when closing each epic. Last update: 2026-06-19.
 
 | Epic | Pending | Done |
 |---|---|---|
@@ -39,3 +40,4 @@ Update this table when closing each epic. Last update: 2026-06-16.
 | E5 | 3 | 2 |
 | E6 | 3 | 0 |
 | E7 | 5 | 0 |
+| E8 | 0 | 6 |
