@@ -21,10 +21,53 @@
 
 import type { SchemaAdapter } from '../../../core/ports/schema-adapter.js';
 import type { MysqlAdapterConfig } from '../../../core/ports/schema-adapter.js';
-import { ConnectionError } from '../../../core/errors.js';
-import { mapMysqlError } from './error-mapper.js';
+import { ConnectivityUnavailableError } from '../../../core/errors.js';
 import { createMysqlReadonlyDriver, type ConnectionLike } from './driver.js';
 import { MysqlSchemaAdapter } from './mysql-schema-adapter.js';
+import { buildConnectivityOutcome } from '../_shared/connectivity-outcome.js';
+import {
+  SQL_MYSQL_TABLES,
+  SQL_MYSQL_COLUMNS,
+  SQL_MYSQL_PK_UK_COLUMNS,
+  SQL_MYSQL_FK_COLUMNS,
+  SQL_MYSQL_CHECK_CONSTRAINTS,
+  SQL_MYSQL_STATISTICS,
+  SQL_MYSQL_VIEWS,
+  SQL_MYSQL_ROUTINES,
+  SQL_MYSQL_TRIGGERS,
+} from './queries.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// mysql catalog SELECTs surfaced in the run-it-yourself option (write-verb-free)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MYSQL_CATALOG_QUERIES: readonly string[] = [
+  SQL_MYSQL_TABLES,
+  SQL_MYSQL_COLUMNS,
+  SQL_MYSQL_PK_UK_COLUMNS,
+  SQL_MYSQL_FK_COLUMNS,
+  SQL_MYSQL_CHECK_CONSTRAINTS,
+  SQL_MYSQL_STATISTICS,
+  SQL_MYSQL_VIEWS,
+  SQL_MYSQL_ROUTINES,
+  SQL_MYSQL_TRIGGERS,
+];
+
+const MYSQL_NPM_DOC_URL = 'https://www.npmjs.com/package/mysql2';
+const MYSQL_DUMP_PATH = '.dbgraph/dumps/mysql-dump.json';
+
+function buildMysqlConnectivityOutcome(summary: string): ConnectivityUnavailableError {
+  const outcome = buildConnectivityOutcome({
+    engine: 'mysql',
+    summary,
+    attempts: [],
+    runItYourselfQueries: MYSQL_CATALOG_QUERIES,
+    installTool: 'mysql2',
+    installDocUrl: MYSQL_NPM_DOC_URL,
+    dumpPath: MYSQL_DUMP_PATH,
+  });
+  return new ConnectivityUnavailableError(outcome);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Optional deps (test seam — omit entirely for production use)
@@ -95,11 +138,10 @@ export async function createMysqlSchemaAdapter(
       mysqlMod = deps.importMysql !== undefined
         ? await deps.importMysql()
         : await (import('mysql2/promise' as string));
-    } catch (cause) {
-      // MODULE_NOT_FOUND → instruct the user to install the optional dep
-      throw new ConnectionError(
+    } catch {
+      // MODULE_NOT_FOUND → build a ConnectivityOutcome with ≥3 options (Batch 3)
+      throw buildMysqlConnectivityOutcome(
         "Required driver 'mysql2' is not installed. Run: npm i mysql2",
-        cause,
       );
     }
 
@@ -113,7 +155,7 @@ export async function createMysqlSchemaAdapter(
         | undefined);
 
     if (createConnFn === undefined) {
-      throw new ConnectionError(
+      throw buildMysqlConnectivityOutcome(
         "Failed to load mysql2/promise.createConnection. Try: npm i mysql2",
       );
     }
@@ -142,8 +184,11 @@ export async function createMysqlSchemaAdapter(
   try {
     conn = await createConnectionFn(connConfig);
   } catch (cause) {
-    // Connection failure (wrong host, auth denied, etc.) → map to typed error.
-    throw mapMysqlError(cause);
+    // Connection failure → build a ConnectivityOutcome with ≥3 options (Batch 3).
+    const summary = cause instanceof Error
+      ? cause.message
+      : 'MySQL connection failed.';
+    throw buildMysqlConnectivityOutcome(summary);
   }
 
   // ── 4. Wrap in the driver seam and return the adapter ─────────────────────

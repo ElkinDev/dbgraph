@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { StrategyExhaustionError } from '../../../../src/core/errors.js';
+import { ConnectivityUnavailableError } from '../../../../src/core/errors.js';
 import type { ConnectivityStrategy, DetectResult } from '../../../../src/core/ports/connectivity-strategy.js';
 import type { MssqlAdapterConfig } from '../../../../src/core/ports/schema-adapter.js';
 import type { RawCatalog } from '../../../../src/core/model/catalog.js';
@@ -167,18 +167,18 @@ describe('createMssqlSchemaAdapter() — login failed', () => {
     lastPoolConfig = null;
   });
 
-  it('throws StrategyExhaustionError when native login fails and sqlcmd unavailable', async () => {
+  it('throws ConnectivityUnavailableError when native login fails and sqlcmd unavailable (Batch 3)', async () => {
     await expect(
       createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable }),
-    ).rejects.toBeInstanceOf(StrategyExhaustionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('StrategyExhaustionError lists native-tedious as an attempt', async () => {
+  it('ConnectivityUnavailableError.outcome.attempts lists native-tedious as an attempt (Batch 3)', async () => {
     const error = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable })
       .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(StrategyExhaustionError);
-    const ex = error as StrategyExhaustionError;
-    const ids = ex.attempts.map((a) => a.id);
+    expect(error).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = error as ConnectivityUnavailableError;
+    const ids = ex.outcome.attempts.map((a) => a.id);
     expect(ids).toContain('native-tedious');
   });
 });
@@ -193,18 +193,18 @@ describe('createMssqlSchemaAdapter() — Kerberos / SSO unsupported', () => {
     lastPoolConfig = null;
   });
 
-  it('throws StrategyExhaustionError when Kerberos auth fails and sqlcmd unavailable', async () => {
+  it('throws ConnectivityUnavailableError when Kerberos auth fails and sqlcmd unavailable (Batch 3)', async () => {
     await expect(
       createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable }),
-    ).rejects.toBeInstanceOf(StrategyExhaustionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('StrategyExhaustionError lists native-tedious as an attempt', async () => {
+  it('ConnectivityUnavailableError.outcome.attempts lists native-tedious as an attempt (Batch 3)', async () => {
     const error = await createMssqlSchemaAdapter(SQL_CONFIG, { Sqlcmd: SqlcmdUnavailable })
       .catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(StrategyExhaustionError);
-    const ex = error as StrategyExhaustionError;
-    const ids = ex.attempts.map((a) => a.id);
+    expect(error).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = error as ConnectivityUnavailableError;
+    const ids = ex.outcome.attempts.map((a) => a.id);
     expect(ids).toContain('native-tedious');
   });
 });

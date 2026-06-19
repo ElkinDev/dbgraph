@@ -1,108 +1,93 @@
 /**
- * exhaustion.ts — CLI presenter for StrategyExhaustionError.
+ * exhaustion.ts — thin SHIM delegating to core `formatOutcome`.
  *
- * When every connectivity strategy fails, the CLI surfaces TWO actionable options:
+ * Task 3.7 (resilient-connectivity Batch 3).
+ * Design §"the legacy `cli/format/exhaustion.ts` becomes a thin shim" —
+ *   this function builds a `ConnectivityOutcome` from the `StrategyExhaustionError.attempts`
+ *   and delegates to the PURE core `formatOutcome`. It no longer hand-rolls option text.
  *
- *   (a) MANUAL-DUMP PATH: run the emitted dump script against your SQL Server
- *       instance (via SSMS or sqlcmd -E) and place the combined JSON output at
- *       .dbgraph/dumps/mssql-dump.json — then re-run dbgraph sync.
- *
- *   (b) GUIDED INSTALL (B1): install the required tool from the official Microsoft
- *       source. Nothing is installed automatically. Instructions are printed behind
- *       an explicit consent notice.
- *
- * Automated installer execution (B2) is DEFERRED to a follow-up change.
- * This is an acknowledged limitation, not a hidden gap.
+ * ADR-004: CLI layer imports ONLY from the public barrel (src/index.ts) and cli siblings.
+ * The mssql catalog query strings are duplicated inline to avoid importing from src/adapters/**
+ * (the boundary scanner enforces this — "Duplicate any needed constants inline").
  *
  * PURE function: no I/O, no process access. The caller (cli.ts or dispatch.ts)
  * decides where to write the output.
  *
- * ADR-004: CLI-only formatter; imports only from the public barrel and cli layer.
  * Spec cli-config "Exhausted strategies present manual-dump and guided-install options".
- * connectivity-strategies Batch E, task E5.3.
+ * connectivity-strategies Batch E, task E5.3 (legacy entry point kept for back-compat).
+ * resilient-connectivity Batch 3, task 3.7.
  */
 
 import type { StrategyExhaustionError } from '../../index.js';
+import { formatOutcome, type ConnectivityOutcome, type ConnectivityOption } from '../../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// Constants (inline copies — ADR-004: CLI must not import from src/adapters/**)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const OFFICIAL_SQLCMD_URL = 'https://learn.microsoft.com/sql/tools/sqlcmd/sqlcmd-utility';
+const DUMP_OUTPUT_PATH = '.dbgraph/dumps/mssql-dump.json';
 
-// These match the values exported by dump-emitter.ts — kept in sync here to
-// avoid a cross-layer import violation (ADR-004: CLI must not import adapters).
-const DUMP_DIR = '.dbgraph/dumps';
-const DUMP_FILE = 'mssql-dump.json';
-const DUMP_OUTPUT_PATH = `${DUMP_DIR}/${DUMP_FILE}`;
+/**
+ * The read-only mssql catalog SELECT strings surfaced in the run-it-yourself option.
+ * These mirror the constants in src/adapters/engines/mssql/queries.ts — duplicated
+ * inline here to comply with ADR-004 (CLI layer must not import from adapters/**).
+ * Keep in sync with the adapter's queries.ts if catalog queries change.
+ */
+const MSSQL_CATALOG_QUERIES: readonly string[] = [
+  // Tables
+  `SELECT s.name AS schema_name, t.name AS table_name, t.object_id AS object_id FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id WHERE t.is_ms_shipped = 0 ORDER BY s.name, t.name`,
+  // Columns
+  `SELECT s.name AS schema_name, t.name AS table_name, c.column_id, c.name AS column_name, tp.name AS data_type, c.is_nullable FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id JOIN sys.columns c ON c.object_id = t.object_id JOIN sys.types tp ON tp.user_type_id = c.user_type_id WHERE t.is_ms_shipped = 0 ORDER BY s.name, t.name, c.column_id`,
+  // Key constraints
+  `SELECT s.name AS schema_name, t.name AS table_name, kc.name AS constraint_name, kc.type AS constraint_type, c.name AS column_name FROM sys.key_constraints kc JOIN sys.tables t ON t.object_id = kc.parent_object_id JOIN sys.schemas s ON s.schema_id = t.schema_id JOIN sys.indexes i ON i.object_id = kc.parent_object_id AND i.name = kc.name JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id JOIN sys.columns c ON c.object_id = t.object_id AND c.column_id = ic.column_id WHERE t.is_ms_shipped = 0 AND ic.is_included_column = 0 ORDER BY s.name, t.name, kc.name`,
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// formatExhaustionError
+// formatExhaustionError — SHIM: delegates to core formatOutcome
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Formats a StrategyExhaustionError into a multi-line, user-facing actionable
- * message with two clear recovery paths.
+ * message by building a ConnectivityOutcome and delegating to the core `formatOutcome`.
+ *
+ * The ≥3 options rendered are: run-it-yourself (mssql catalog SELECTs),
+ * consented-install (sqlcmd + official MS URL), manual-dump (.dbgraph/dumps/mssql-dump.json).
  *
  * @param err - The StrategyExhaustionError thrown when all strategies are exhausted.
  * @returns A formatted string ready to be written to stderr or stdout.
  */
 export function formatExhaustionError(err: StrategyExhaustionError): string {
-  const lines: string[] = [];
+  const summary =
+    err.attempts.length === 0
+      ? 'All mssql connectivity strategies were exhausted. No database connection could be established.'
+      : `All mssql connectivity strategies exhausted. ${err.attempts.map((a) => `${a.id} — ${a.reason}`).join('; ')}`;
 
-  lines.push('dbgraph: All connectivity strategies were exhausted. No database connection could be established.');
-  lines.push('');
+  const options: ConnectivityOption[] = [
+    {
+      kind: 'run-it-yourself',
+      description: 'Run these read-only catalog SELECT statements in your own client.',
+      queries: MSSQL_CATALOG_QUERIES,
+    },
+    {
+      kind: 'consented-install',
+      description: 'Install sqlcmd from the official Microsoft source. No install is performed automatically.',
+      tool: 'sqlcmd',
+      docUrl: OFFICIAL_SQLCMD_URL,
+    },
+    {
+      kind: 'manual-dump',
+      description: `Place a combined JSON dump at: ${DUMP_OUTPUT_PATH}`,
+      outputPath: DUMP_OUTPUT_PATH,
+    },
+  ];
 
-  // ── Strategy attempt summary ──────────────────────────────────────────────
-  if (err.attempts.length > 0) {
-    lines.push('Strategies tried (in order):');
-    for (const attempt of err.attempts) {
-      lines.push(`  - ${attempt.id}: ${attempt.reason}`);
-    }
-    lines.push('');
-  }
+  const outcome: ConnectivityOutcome = {
+    engine: 'mssql',
+    summary,
+    attempts: err.attempts,
+    options,
+  };
 
-  // ── Option (a): Manual-dump path ──────────────────────────────────────────
-  lines.push('OPTION A — Manual-dump (offline path, works on air-gapped machines):');
-  lines.push('');
-  lines.push('  1. Generate the dump script:');
-  lines.push('       dbgraph sync --emit-dump-script');
-  lines.push('     (or find it at: .dbgraph/dumps/dbgraph-dump.sql after first run)');
-  lines.push('');
-  lines.push('  2. Run the emitted script against your SQL Server instance:');
-  lines.push('       sqlcmd -E -S <server> -d <database> -i dbgraph-dump.sql -y 0 -h -1 -W');
-  lines.push('     OR open the script in SSMS and run it, saving the output.');
-  lines.push('');
-  lines.push(`  3. Place the combined JSON output at: ${DUMP_OUTPUT_PATH}`);
-  lines.push('     (this directory is gitignored — it contains sensitive schema source)');
-  lines.push('');
-  lines.push('  4. Re-run: dbgraph sync');
-  lines.push('');
-
-  // ── Option (b): Guided install (B1) ───────────────────────────────────────
-  lines.push('OPTION B — Guided install (B1) — install sqlcmd from an official Microsoft source:');
-  lines.push('');
-  lines.push('  CONSENT NOTICE: dbgraph can guide you to install sqlcmd from an official');
-  lines.push('  Microsoft source. Nothing is installed automatically by dbgraph.');
-  lines.push('');
-  lines.push('  Windows (winget):');
-  lines.push('    winget install --id Microsoft.Sqlcmd');
-  lines.push('');
-  lines.push('  macOS (brew):');
-  lines.push('    brew install microsoft/mssql-release/sqlcmd');
-  lines.push('');
-  lines.push('  Linux / other platforms:');
-  lines.push(`    See: ${OFFICIAL_SQLCMD_URL}`);
-  lines.push('');
-  lines.push('  Official documentation: ' + OFFICIAL_SQLCMD_URL);
-  lines.push('');
-  lines.push('  After installing sqlcmd, re-run: dbgraph sync');
-  lines.push('');
-
-  // ── B2 deferred notice ────────────────────────────────────────────────────
-  lines.push('NOTE: Automated installer execution (B2) is DEFERRED to a follow-up change.');
-  lines.push('This is an acknowledged limitation. Manual installation via the official');
-  lines.push('Microsoft source (winget / brew / docs URL) is the supported path today.');
-
-  return lines.join('\n');
+  return formatOutcome(outcome);
 }
