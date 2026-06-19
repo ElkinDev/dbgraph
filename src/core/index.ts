@@ -157,6 +157,11 @@ export {
 } from './present/connectivity.js';
 
 export {
+  formatDoctor,
+  type DoctorView,
+} from './present/doctor.js';
+
+export {
   formatPrecheck,
   type PrecheckDetail,
   type PrecheckView,
