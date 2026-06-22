@@ -176,12 +176,15 @@ export async function createPgSchemaAdapter(
     await client.connect();
   } catch (cause) {
     // Connect failure → build a ConnectivityOutcome with ≥3 options (Batch 3).
-    // mapPgError is still available for internal classification if needed, but
-    // the outer throw must be ConnectivityUnavailableError per the design seam.
-    const summary = cause instanceof Error
-      ? cause.message
-      : 'PostgreSQL connection failed.';
-    throw buildPgConnectivityOutcome(summary);
+    // CONTENT-FREE CONTRACT: the summary MUST NOT carry the raw driver error
+    // (which routinely contains host/user/db in the message). Keep the raw
+    // cause as error.cause only — never surfaced to the user.
+    const err = buildPgConnectivityOutcome(
+      'Could not connect to the PostgreSQL database. Verify the host, credentials, and network accessibility.',
+    );
+    // Attach the raw cause for debugging (not rendered by formatOutcome).
+    err.cause = cause;
+    throw err;
   }
 
   // ── 4. Wrap in the driver seam and return the adapter ────────────────────

@@ -185,10 +185,15 @@ export async function createMysqlSchemaAdapter(
     conn = await createConnectionFn(connConfig);
   } catch (cause) {
     // Connection failure → build a ConnectivityOutcome with ≥3 options (Batch 3).
-    const summary = cause instanceof Error
-      ? cause.message
-      : 'MySQL connection failed.';
-    throw buildMysqlConnectivityOutcome(summary);
+    // CONTENT-FREE CONTRACT: the summary MUST NOT carry the raw driver error
+    // (which routinely contains host/user/db in the message). Keep the raw
+    // cause as error.cause only — never surfaced to the user.
+    const err = buildMysqlConnectivityOutcome(
+      'Could not connect to the MySQL database. Verify the host, credentials, and network accessibility.',
+    );
+    // Attach the raw cause for debugging (not rendered by formatOutcome).
+    err.cause = cause;
+    throw err;
   }
 
   // ── 4. Wrap in the driver seam and return the adapter ─────────────────────

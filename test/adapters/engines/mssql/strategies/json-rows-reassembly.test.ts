@@ -178,38 +178,40 @@ describe('reassembleForJson — encoding (F-5)', () => {
 });
 
 describe('reassembleForJson — malformed output yields typed actionable error', () => {
-  it('throws a typed error (not a raw JSON.parse stack) on truncated JSON', () => {
+  it('throws a TransportError (E_TRANSPORT) on truncated JSON (C2 — redacted, not a raw stack)', async () => {
+    // C2 (R1 remediation): malformed output must throw TransportError (E_TRANSPORT)
+    // with a REDACTED message — raw content must NOT appear in the message.
+    const { TransportError } = await import('../../../../../src/core/errors.js');
     const truncated = Buffer.from('[{"id": 1, "name":', 'utf8');
     const profile = makeProfile();
-    expect(() => reassembleForJson(truncated, profile)).toThrow();
+    let caught: unknown;
     try {
       reassembleForJson(truncated, profile);
     } catch (err) {
-      const msg = (err as Error).message;
-      // Must mention what was received (first N chars)
-      expect(msg).toContain('[{');
-      // Must NOT be a raw JSON.parse stack frame
-      expect(msg).not.toMatch(/at JSON\.parse/i);
+      caught = err;
     }
+    expect(caught).toBeInstanceOf(TransportError);
+    const msg = (caught as Error).message;
+    // Must NOT echo raw content (REDACTION contract)
+    expect(msg).not.toContain('[{"id"');
+    // Must NOT be a raw JSON.parse stack frame
+    expect(msg).not.toMatch(/at JSON\.parse/i);
+    // Must have E_TRANSPORT code
+    expect((caught as { code?: string }).code).toBe('E_TRANSPORT');
   });
 
-  it('error message contains first N chars of received content', () => {
-    const truncated = Buffer.from('[{"bad":"value"', 'utf8');
-    const profile = makeProfile();
-    let caught: Error | null = null;
-    try {
-      reassembleForJson(truncated, profile);
-    } catch (err) {
-      caught = err as Error;
-    }
-    expect(caught).not.toBeNull();
-    expect(caught?.message).toContain('[{');
-  });
-
-  it('throws when output parses but is not an array', () => {
+  it('throws TransportError when output parses as non-array (C2 — redacted)', async () => {
+    const { TransportError } = await import('../../../../../src/core/errors.js');
     const singleObj = Buffer.from('{"key":"val"}', 'utf8');
     const profile = makeProfile();
-    expect(() => reassembleForJson(singleObj, profile)).toThrow();
+    let caught: unknown;
+    try {
+      reassembleForJson(singleObj, profile);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(TransportError);
+    expect((caught as { code?: string }).code).toBe('E_TRANSPORT');
   });
 });
 
@@ -252,18 +254,24 @@ describe('reassembleSingleForJson — single object output', () => {
     expect(result).toEqual({});
   });
 
-  it('throws a typed error on truncated JSON (not a raw stack)', () => {
+  it('throws TransportError (E_TRANSPORT) on truncated JSON (C2 — redacted, not raw stack)', async () => {
+    // C2 (R1 remediation): malformed output must throw TransportError (E_TRANSPORT)
+    // with a REDACTED message — raw content must NOT appear in the message.
+    const { TransportError } = await import('../../../../../src/core/errors.js');
     const truncated = Buffer.from('{"m":"2024', 'utf8');
     const profile = makeProfile();
-    let caught: Error | null = null;
+    let caught: unknown;
     try {
       reassembleSingleForJson(truncated, profile);
     } catch (err) {
-      caught = err as Error;
+      caught = err;
     }
-    expect(caught).not.toBeNull();
-    expect(caught?.message).toContain('{"m"');
-    expect(caught?.message).not.toMatch(/at JSON\.parse/i);
+    expect(caught).toBeInstanceOf(TransportError);
+    const msg = (caught as Error).message;
+    // Raw content must NOT appear (REDACTION contract)
+    expect(msg).not.toContain('{"m"');
+    expect(msg).not.toMatch(/at JSON\.parse/i);
+    expect((caught as { code?: string }).code).toBe('E_TRANSPORT');
   });
 
   it('throws when output parses as an array instead of an object', () => {

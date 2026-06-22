@@ -190,6 +190,26 @@ export class StrategyExhaustionError extends DbgraphError {
 }
 
 /**
+ * Thrown when a transport, format, or parse failure occurs during mssql catalog
+ * extraction via sqlcmd. The message is REDACTED — it never echoes raw stderr,
+ * host names, or connection-string identifiers. The raw cause (if any) is
+ * preserved as `error.cause` for debugging only and is never surfaced to the user.
+ *
+ * Code: E_TRANSPORT.
+ * connectivity MODIFIED requirement: "a transport/format/parse failure is
+ *   redacted into a typed error".
+ * resilient-connectivity R1 remediation (C2).
+ */
+export class TransportError extends DbgraphError {
+  constructor(message: string, cause?: unknown) {
+    super(message, 'E_TRANSPORT');
+    if (cause !== undefined) {
+      this.cause = cause;
+    }
+  }
+}
+
+/**
  * Thrown when the engine adapter cannot connect to the source database.
  * Covers: file not found, file not a valid database, database locked/busy,
  * and required driver package not installed.

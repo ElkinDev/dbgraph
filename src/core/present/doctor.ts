@@ -17,6 +17,7 @@
  */
 
 import type { CliToolInfo } from '../ports/capability-probe.js';
+import { basename } from 'node:path';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -92,7 +93,10 @@ export function formatDoctor(view: DoctorView): string {
     lines.push('  CLI tools:');
     for (const tool of view.cliTools) {
       const versionPart = tool.version !== null ? tool.version : 'not detected';
-      const pathPart = tool.path !== null ? tool.path : 'not found';
+      // S1 (R1 remediation): render BASENAME only — never the full path, which
+      // can embed a username (e.g. C:\Users\ecardoso\...). basename() handles
+      // both Windows (backslash) and POSIX (forward slash) paths.
+      const pathPart = tool.path !== null ? basename(tool.path) : 'not found';
       lines.push(`    ${tool.tool.padEnd(12)}  version: ${versionPart}  path: ${pathPart}`);
     }
   }

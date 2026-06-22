@@ -239,6 +239,93 @@ describe('createMysqlSchemaAdapter — default port 3306', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C1 — content-free leak test (R1 remediation)
+// The connect-FAILURE path must NOT leak host/user/db/password into the
+// rendered formatOutcome output.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { formatOutcome } from '../../../../src/core/present/connectivity.js';
+
+const PLANTED_MYSQL_HOST = 'mysql-prod.internal.company.com';
+const PLANTED_MYSQL_USER = 'svc_reader_prod';
+const PLANTED_MYSQL_DB   = 'billing_prod';
+const PLANTED_MYSQL_PASS = 'MySuperS3cr3t!';
+
+function makePlantedMysqlError(): unknown {
+  const msg =
+    `Access denied for user '${PLANTED_MYSQL_USER}'@'${PLANTED_MYSQL_HOST}' ` +
+    `to database '${PLANTED_MYSQL_DB}' using password '${PLANTED_MYSQL_PASS}'`;
+  return Object.assign(new Error(msg), { errno: 1045, code: 'ER_ACCESS_DENIED_ERROR' });
+}
+
+describe('createMysqlSchemaAdapter — C1: connect-failure must NOT leak planted identifiers', () => {
+  it('formatted outcome does NOT contain the planted host when connect fails', async () => {
+    const deps: MysqlSchemaAdapterDeps = {
+      createConnection: makeCreateConnection({ connectError: makePlantedMysqlError() }),
+    };
+    const err = await createMysqlSchemaAdapter(
+      { host: PLANTED_MYSQL_HOST, database: PLANTED_MYSQL_DB, user: PLANTED_MYSQL_USER, password: PLANTED_MYSQL_PASS },
+      deps,
+    ).catch((e: unknown) => e) as import('../../../../src/core/errors.js').ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_MYSQL_HOST);
+  });
+
+  it('formatted outcome does NOT contain the planted user when connect fails', async () => {
+    const deps: MysqlSchemaAdapterDeps = {
+      createConnection: makeCreateConnection({ connectError: makePlantedMysqlError() }),
+    };
+    const err = await createMysqlSchemaAdapter(
+      { host: PLANTED_MYSQL_HOST, database: PLANTED_MYSQL_DB, user: PLANTED_MYSQL_USER, password: PLANTED_MYSQL_PASS },
+      deps,
+    ).catch((e: unknown) => e) as import('../../../../src/core/errors.js').ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_MYSQL_USER);
+  });
+
+  it('formatted outcome does NOT contain the planted db when connect fails', async () => {
+    const deps: MysqlSchemaAdapterDeps = {
+      createConnection: makeCreateConnection({ connectError: makePlantedMysqlError() }),
+    };
+    const err = await createMysqlSchemaAdapter(
+      { host: PLANTED_MYSQL_HOST, database: PLANTED_MYSQL_DB, user: PLANTED_MYSQL_USER, password: PLANTED_MYSQL_PASS },
+      deps,
+    ).catch((e: unknown) => e) as import('../../../../src/core/errors.js').ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_MYSQL_DB);
+  });
+
+  it('formatted outcome does NOT contain the planted password when connect fails', async () => {
+    const deps: MysqlSchemaAdapterDeps = {
+      createConnection: makeCreateConnection({ connectError: makePlantedMysqlError() }),
+    };
+    const err = await createMysqlSchemaAdapter(
+      { host: PLANTED_MYSQL_HOST, database: PLANTED_MYSQL_DB, user: PLANTED_MYSQL_USER, password: PLANTED_MYSQL_PASS },
+      deps,
+    ).catch((e: unknown) => e) as import('../../../../src/core/errors.js').ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_MYSQL_PASS);
+  });
+
+  it('outcome summary is content-free (does not contain planted host or user)', async () => {
+    const deps: MysqlSchemaAdapterDeps = {
+      createConnection: makeCreateConnection({ connectError: makePlantedMysqlError() }),
+    };
+    const err = await createMysqlSchemaAdapter(
+      { host: PLANTED_MYSQL_HOST, database: PLANTED_MYSQL_DB, user: PLANTED_MYSQL_USER, password: PLANTED_MYSQL_PASS },
+      deps,
+    ).catch((e: unknown) => e) as import('../../../../src/core/errors.js').ConnectivityUnavailableError;
+
+    expect(err.outcome.summary).not.toContain(PLANTED_MYSQL_HOST);
+    expect(err.outcome.summary).not.toContain(PLANTED_MYSQL_USER);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ssl config forwarding
 // ─────────────────────────────────────────────────────────────────────────────
 

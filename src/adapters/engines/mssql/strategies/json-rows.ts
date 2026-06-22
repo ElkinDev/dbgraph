@@ -36,6 +36,7 @@
  */
 
 import type { SqlcmdProfile } from './profiles.js';
+import { TransportError } from '../../../../core/errors.js';
 import type {
   MssqlRowInput,
   TableRow,
@@ -55,11 +56,8 @@ import type {
 // Reassembly layer — profile-driven stdout → parsed JSON
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Number of chars shown in the actionable error message for malformed output.
- * Enough to identify the problem without flooding the log.
- */
-const MALFORMED_PREVIEW_CHARS = 200;
+// MALFORMED_PREVIEW_CHARS was used for the old raw-content error messages.
+// Removed in R1 (C2): errors are now REDACTED (TransportError, no raw output content).
 
 /**
  * Extracts the JSON data lines from sqlcmd stdout, driven by the profile.
@@ -127,18 +125,20 @@ export function reassembleForJson(stdout: Buffer, profile: SqlcmdProfile): unkno
   try {
     parsed = JSON.parse(concatenated);
   } catch (e) {
-    throw new Error(
-      `sqlcmd: failed to parse FOR JSON output. ` +
-      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}. ` +
-      `Parse error: ${(e as Error).message}`,
-      { cause: e },
+    // REDACTED: raw output may contain host/user/db identifiers. Message is
+    // content-free; raw parse error preserved as cause for debugging only.
+    throw new TransportError(
+      'sqlcmd: failed to parse FOR JSON output. The output was malformed or incomplete. ' +
+      'Check that SET NOCOUNT ON is active and the query ran successfully.',
+      e,
     );
   }
 
   if (!Array.isArray(parsed)) {
-    throw new Error(
+    // REDACTED: same rule — no raw output content in the message.
+    throw new TransportError(
       `sqlcmd: expected a JSON array from FOR JSON PATH output but got ${typeof parsed}. ` +
-      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}`,
+      'The query may have returned unexpected output. Enable verbose logging for details.',
     );
   }
 
@@ -162,18 +162,19 @@ export function reassembleSingleForJson(stdout: Buffer, profile: SqlcmdProfile):
   try {
     parsed = JSON.parse(concatenated);
   } catch (e) {
-    throw new Error(
-      `sqlcmd: failed to parse WITHOUT_ARRAY_WRAPPER output. ` +
-      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}. ` +
-      `Parse error: ${(e as Error).message}`,
-      { cause: e },
+    // REDACTED: raw output may contain host/user/db identifiers.
+    throw new TransportError(
+      'sqlcmd: failed to parse WITHOUT_ARRAY_WRAPPER output. The output was malformed or incomplete. ' +
+      'Check that SET NOCOUNT ON is active and the query ran successfully.',
+      e,
     );
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(
+    // REDACTED: no raw output content in the message.
+    throw new TransportError(
       `sqlcmd: expected a JSON object from WITHOUT_ARRAY_WRAPPER output but got ${typeof parsed}. ` +
-      `Received (first ${MALFORMED_PREVIEW_CHARS} chars): ${concatenated.slice(0, MALFORMED_PREVIEW_CHARS)}`,
+      'The query may have returned unexpected output. Enable verbose logging for details.',
     );
   }
 
