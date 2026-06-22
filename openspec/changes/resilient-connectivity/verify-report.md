@@ -1,3 +1,56 @@
+# Re-Verification Report (R1) - resilient-connectivity (Phase 8.5)
+
+**Change**: resilient-connectivity (engine-agnostic connectivity resilience)
+**Branch**: resilient-connectivity (base 462c06d, HEAD e51103e)
+**Remediation under test**: R1 commit e51103e ("content-free summaries, typed TransportError, drop dead exhaustion shim, basename in doctor")
+**Mode**: Strict TDD
+**Date**: 2026-06-22
+**Verdict**: PASS WITH WARNINGS - all 4 targeted findings (C1, C2, W1, S1) are RESOLVED with file:line + planted-secret test evidence. Both CRITICALs are cleared. The unit gate is fully green (tsc 0, lint 0/0, 141 files / 2247 tests, 0 failed, 0 skipped). The only open items are the two pre-tracked follow-ups (W2 + S2), neither of which blocks archive. Integration could NOT be executed this session because the Docker daemon is not running (environmental, not a code defect - see Gate note).
+
+## Resolution of Prior Findings
+
+| Prior finding | Status | Evidence |
+|---------------|--------|----------|
+| C1 - content-free leak on pg/mysql connect-failure | RESOLVED | pg/factory.ts:182-187 + mysql/factory.ts:191-196: connect-failure builds a CANNED content-free summary and attaches the raw driver error as err.cause ONLY. present/connectivity.ts:40 renders outcome.summary and NEVER touches .cause. ALL outcome-building paths content-free: pg/mysql driver-absent (canned npm i strings), pg/mysql connect-failure (canned), mssql exhaustion (buildConnectivityOutcome, single source). New leak tests pg/factory.test.ts:366-417 + mysql/factory.test.ts:261-325 plant host/user/db/password into the raw driver error, drive the REAL connect-failure path, render via formatOutcome, assert not.toContain all four planted values + summary content-free; pg also asserts the raw cause IS preserved. |
+| C2 - TransportError (E_TRANSPORT) unimplemented | RESOLVED | core/errors.ts:203-210: class TransportError extends DbgraphError (code E_TRANSPORT), raw cause as .cause only; exported core/index.ts:185. Thrown at all transport/format/parse failure points with REDACTED messages: json-rows.ts:130,139,166,175 (malformed/non-array reassembly) and sqlcmd.strategy.ts:266,323 (runCatalog + fingerprint spawn failures - raw stderr kept only in rawCause to .cause). New transport-error.test.ts (296 lines) plants a password+server secret and host in BOTH the malformed-JSON path AND the spawn-stderr path, asserting TransportError.message excludes them (lines 114, 172, 242-243, 293-294) + code === E_TRANSPORT + instanceof TransportError. exit-code.ts mapping consistent: TransportError falls through generic DbgraphError to return 2 (no existing mapping broken). |
+| W1 - dead exhaustion shim with stale inline queries | RESOLVED | src/cli/format/exhaustion.ts + test/cli/format/exhaustion.test.ts DELETED (filesystem-confirmed; format dir holds only diff.ts/query.ts/status.ts). No src/ reference to formatExhaustionError remains (only archived prior-change docs + this change historical spec/design text). boundaries.test.ts:375-386 has a dedicated describe block pinning the file is GONE via readFileSync to ENOENT. The live exhaustion path renders via formatOutcome. |
+| S1 - doctor rendered full CLI tool path (username leak) | RESOLVED | present/doctor.ts:99 renders basename(tool.path) (import at line 20); explicit comment re C:\Users\<user> username leakage. doctor-format.test.ts:279-331 (S1 describe block) plants a full Windows path embedding username ecardoso + a POSIX path and asserts the rendered output excludes the full path AND the username, while the basename DOES appear. |
+| W2 - probe-selected profile not wired into runCatalog/sync | DEFERRED (tracked, does NOT block archive) | Unchanged by R1 and correct today: SqlcmdStrategy resolves the conservative default profile at construction; default flags equal shipped -y 0 -f o:65001, so byte-identical holds. The probe-to-profile round-trip into extraction remains a tracked follow-up. No regression. |
+| S2 - test-filename drift vs tasks doc | DEFERRED (tracked, does NOT block archive) | Harmless naming drift (e.g. connectivity-format.test.ts, doctor-format.test.ts); all tests exist and pass. Reconcile tasks-doc paths during archive if an exact audit trail is wanted. |
+
+## Gate Output (R1 re-run)
+
+| Gate | Command | Result |
+|------|---------|--------|
+| Type-check | npx tsc --noEmit | PASS (exit 0) |
+| Lint | npm run lint | PASS (0 errors / 0 warnings, exit 0) |
+| Unit tests | npm test | PASS - 141 files / 2247 tests, 0 failed, 0 skipped (was 2240; +7 net from new C1/C2/S1 leak tests minus deleted exhaustion.test assertions) |
+| Targeted regression | vitest run parity + connectivity-outcome + pg/mysql factory + transport-error + doctor-format + boundaries | PASS - 7 files / 134 tests |
+| Integration (gated) | DBGRAPH_INTEGRATION=1 npm run test:integration | NOT EXECUTED - Docker daemon not running (failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine). 204 tests correctly skipped; 2 non-container tests passed; the 9 "failed" files are container-startup failures in test harness beforeAll, NOT assertion failures. Environmental, not a code regression. |
+| mssql goldens | git diff 462c06d HEAD -- test/fixtures/mssql/golden/ | EMPTY - byte-identical (R1 did not touch goldens) |
+| R1 source scope | git diff --name-only 1f4b7c8 HEAD -- src/ | 8 files only (4 fix targets + errors.ts/index.ts + deleted exhaustion.ts); _shared/connectivity-outcome.ts UNTOUCHED |
+
+## No-Regression Confirmation
+
+- Engine-agnostic parity (highest prior scrutiny point): buildConnectivityOutcome single source UNTOUCHED by R1 (empty diff); parity suite green; pg/mysql/mssql still produce the identical 3-option shape [run-it-yourself, consented-install, manual-dump]; run-it-yourself queries write-verb-free (security-scan green within the 2247).
+- mssql goldens byte-identical; full mssql unit suite (reassembly/runCatalog/fingerprint against recorded fixtures) green within the 2247.
+- Opt-in sqlcmd-transport CI lane still NOT in the unit test job needs: (the test job has no needs key; lane is a separate root job gated by workflow_dispatch / vars.DBGRAPH_SQLCMD_LANE).
+- ZERO new npm dependencies (R1 diff touched no package.json / lock).
+
+## Remaining Open Items
+
+Only W2 (probe-selected profile not wired into runCatalog/sync - default==legacy-15.x correct today) and S2 (test-filename drift). Both are pre-existing, tracked follow-ups. NEITHER blocks archive.
+
+## NEW Findings (introduced by R1)
+
+None. R1 introduced no new CRITICAL/WARNING/SUGGESTION. The only non-source caveat is the integration gate could not run locally (Docker daemon down) - to be re-confirmed in CI where the gated lanes run with a live runtime.
+
+## Verdict
+
+PASS WITH WARNINGS. All four targeted findings (C1, C2, W1, S1) are RESOLVED with file:line + planted-secret test evidence; both CRITICALs are cleared. The unit gate is fully green and the remediation is surgical (8 files, single-source builder untouched, goldens byte-identical). Recommend sdd-archive - the two remaining items (W2, S2) are tracked follow-ups that do NOT block archive. Re-run the gated integration in CI (live Docker) as a closeout confirmation.
+
+---
+
 # Verification Report - resilient-connectivity (Phase 8.5)
 
 **Change**: resilient-connectivity (engine-agnostic connectivity resilience)
