@@ -117,6 +117,13 @@ export async function openConnections(
       password: src.password,
       ...(src.ssl !== undefined ? { ssl: src.ssl === 'true' } : {}),
     });
+  } else if (resolved.dialect === 'mongodb') {
+    // Batch 2 exhaustiveness stub — real wiring deferred to Batch 5 (createMongodbSchemaAdapter).
+    // This branch keeps TypeScript narrowing sound and ensures SUPPORTED_DIALECTS recognises mongodb.
+    throw new Error(
+      'MongoDB adapter wiring is not yet implemented. ' +
+        'This branch will be wired in Batch 5 (createMongodbSchemaAdapter).',
+    );
   } else {
     // mssql
     const src = resolved.source;

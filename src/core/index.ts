@@ -86,6 +86,7 @@ export {
   type MssqlAdapterConfig,
   type PgAdapterConfig,
   type MysqlAdapterConfig,
+  type MongodbAdapterConfig,
 } from './ports/schema-adapter.js';
 
 export {

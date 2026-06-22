@@ -16,6 +16,7 @@ import {
   type MssqlSource,
   type PgSource,
   type MysqlSource,
+  type MongodbSource,
   VALID_LEVELS,
   SUPPORTED_DIALECTS,
 } from './schema.js';
@@ -227,6 +228,60 @@ function parseMysqlSource(raw: unknown): MysqlSource {
   return result;
 }
 
+function parseMongodbSource(raw: unknown): MongodbSource {
+  if (!isRecord(raw)) {
+    throw new ConfigError('Config: "source" must be an object for dialect "mongodb".');
+  }
+  const uri = requireString(raw, 'uri', 'source (mongodb)');
+  const database = requireString(raw, 'database', 'source (mongodb)');
+
+  // Spec: "URI must be supplied by env reference, not a literal" (US-030, security).
+  // The URI may contain embedded credentials; it MUST be an env ref, never a literal.
+  if (!isEnvRef(uri)) {
+    throw new ConfigError(
+      'source (mongodb): field "uri" must be a ${env:VAR} reference, not a literal value. ' +
+        'Use an environment variable reference such as ${env:MONGODB_URI}.',
+    );
+  }
+
+  // Optional sampleSize — must be a positive number when provided.
+  const sampleSizeRaw = raw['sampleSize'];
+  let sampleSize: number | undefined;
+  if (sampleSizeRaw !== undefined) {
+    if (typeof sampleSizeRaw !== 'number' || !Number.isFinite(sampleSizeRaw) || sampleSizeRaw <= 0) {
+      throw new ConfigError(
+        'source (mongodb): field "sampleSize" must be a positive number when provided.',
+      );
+    }
+    sampleSize = sampleSizeRaw;
+  }
+
+  // Optional tls — must be a boolean when provided.
+  const tlsRaw = raw['tls'];
+  let tls: boolean | undefined;
+  if (tlsRaw !== undefined) {
+    if (typeof tlsRaw !== 'boolean') {
+      throw new ConfigError(
+        'source (mongodb): field "tls" must be a boolean when provided.',
+      );
+    }
+    tls = tlsRaw;
+  }
+
+  // NO schema/host/port/user/password fields (URI-based; all creds in the URI).
+  const result: {
+    uri: string;
+    database: string;
+    sampleSize?: number;
+    tls?: boolean;
+  } = { uri, database };
+
+  if (sampleSize !== undefined) result.sampleSize = sampleSize;
+  if (tls !== undefined) result.tls = tls;
+
+  return result;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main parser
 // ─────────────────────────────────────────────────────────────────────────────
@@ -303,6 +358,13 @@ export function parseConfig(raw: unknown): DbgraphConfig {
       const cfg: DbgraphConfig = levels !== undefined
         ? { dialect: 'mysql', source, levels }
         : { dialect: 'mysql', source };
+      return cfg;
+    }
+    case 'mongodb': {
+      const source = parseMongodbSource(raw['source']);
+      const cfg: DbgraphConfig = levels !== undefined
+        ? { dialect: 'mongodb', source, levels }
+        : { dialect: 'mongodb', source };
       return cfg;
     }
     default:
