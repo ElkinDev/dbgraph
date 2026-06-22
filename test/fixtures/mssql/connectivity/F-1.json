@@ -1,0 +1,17 @@
+{
+  "_fixture": "F-1",
+  "_description": "Integrated Security environment — Windows auth only, no SQL login available",
+  "environment": {
+    "authMode": "integrated",
+    "sqlLoginAvailable": false,
+    "sspiAvailable": true
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": true
+  },
+  "conclusion": "integrated-auth-only"
+}

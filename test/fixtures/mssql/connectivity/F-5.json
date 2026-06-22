@@ -1,0 +1,36 @@
+{
+  "_fixture": "F-5",
+  "_description": "Output encoding: legacy sqlcmd emits ANSI codepage by default; -f o:65001 forces UTF-8",
+  "environment": {
+    "variantId": "legacy-odbc",
+    "detectedVersion": "15.0.1300",
+    "systemCodepage": 1252,
+    "defaultOutputEncoding": "cp1252"
+  },
+  "encodingBehavior": {
+    "withoutFlag": {
+      "flag": null,
+      "encoding": "cp1252",
+      "nonAsciiCorrupt": true
+    },
+    "withFlag": {
+      "flag": "-f o:65001",
+      "encoding": "utf8",
+      "nonAsciiCorrupt": false
+    }
+  },
+  "syntheticBuffer": {
+    "_note": "Content-free: synthetic latin1-encoded bytes; 0xE9 represents an accented character (e acute) in latin1",
+    "byteSequence": [91, 123, 34, 110, 34, 58, 34, 99, 97, 102, 233, 34, 125, 93],
+    "decodedAsLatin1": "[{\"n\":\"cafe-accent\"}]",
+    "profile": { "encoding": "latin1", "chunkSize": 2033, "hasHeader": false }
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "explicit-encoding-required-f-o-65001"
+}

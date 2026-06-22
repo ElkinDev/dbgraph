@@ -1,0 +1,28 @@
+{
+  "_fixture": "F-2",
+  "_description": "Multiple sqlcmd variants detected — legacy ODBC vs go-sqlcmd; detection must distinguish",
+  "environment": {
+    "variants": [
+      {
+        "variantId": "legacy-odbc",
+        "detectedVersion": "15.0.1300",
+        "binaryPath": "C:\\synthetic\\odbc-tools\\sqlcmd.exe",
+        "flagStyle": "odbc"
+      },
+      {
+        "variantId": "go-sqlcmd",
+        "detectedVersion": "1.7.0",
+        "binaryPath": "C:\\synthetic\\go-sqlcmd\\sqlcmd.exe",
+        "flagStyle": "go"
+      }
+    ]
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\odbc-tools\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "variant-detection-required"
+}

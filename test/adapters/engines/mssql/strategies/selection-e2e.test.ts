@@ -14,9 +14,12 @@
  *
  * Scenario 2 (exhaustion — sqlcmd unavailable + no dump):
  *   integrated config → native skipped → sqlcmd unavailable → manual-dump
- *   unavailable → consented-install skipped → StrategyExhaustionError thrown →
- *   formatExhaustionError output presents BOTH fallback options (manual-dump path
- *   + guided install) and deferred-B2 notice.
+ *   unavailable → consented-install skipped → ConnectivityUnavailableError thrown →
+ *   outcome carries attempts + ≥3 options; rendered via formatOutcome (core).
+ *
+ * NOTE (W1 R1 remediation): cli/format/exhaustion.ts was a dead shim and has been
+ *   DELETED. The live registry path throws ConnectivityUnavailableError (not
+ *   StrategyExhaustionError). Tests here now assert on the outcome directly.
  *
  * Uses the existing in-process patterns:
  *   - SpawnSyncFn injection seam in SqlcmdStrategy (no global child_process mock)
@@ -34,10 +37,10 @@ import { createMssqlSchemaAdapter, type MssqlSchemaAdapterDeps } from '../../../
 import { SqlcmdStrategy, type SpawnSyncFn } from '../../../../../src/adapters/engines/mssql/strategies/sqlcmd.strategy.js';
 import type { ConnectivityStrategy, DetectResult } from '../../../../../src/core/ports/connectivity-strategy.js';
 import type { MssqlAdapterConfig } from '../../../../../src/core/ports/schema-adapter.js';
-import { StrategyExhaustionError } from '../../../../../src/core/errors.js';
+import { ConnectivityUnavailableError } from '../../../../../src/core/errors.js';
 import { createSqliteGraphStore } from '../../../../../src/adapters/storage/sqlite/factory.js';
 import { normalizeCatalog } from '../../../../../src/core/normalize/normalize.js';
-import { formatExhaustionError } from '../../../../../src/cli/format/exhaustion.js';
+import { formatOutcome } from '../../../../../src/core/present/connectivity.js';
 import { DEFAULT_LEVELS } from '../../../../../src/core/model/capability.js';
 import type { ExtractionScope } from '../../../../../src/core/model/capability.js';
 
@@ -293,9 +296,9 @@ describe('selection E2E — integrated config, sqlcmd wins (F6.3 scenario 1)', (
 // Scenario 2: exhaustion — sqlcmd unavailable + no dump file
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('selection E2E — exhaustion path (F6.3 scenario 2)', () => {
-  it('throws StrategyExhaustionError when sqlcmd unavailable and no dump file', async () => {
-    // All strategies report unavailable — factory must throw StrategyExhaustionError.
+describe('selection E2E — exhaustion path (F6.3 scenario 2 → Batch 3 ConnectivityUnavailableError)', () => {
+  it('throws ConnectivityUnavailableError when sqlcmd unavailable and no dump file (Batch 3)', async () => {
+    // All strategies report unavailable — factory must throw ConnectivityUnavailableError.
     await expect(
       createMssqlSchemaAdapter(INTEGRATED_CONFIG, {
         NativeTedious: NativeTediousStub,
@@ -303,10 +306,10 @@ describe('selection E2E — exhaustion path (F6.3 scenario 2)', () => {
         ManualDump: ManualDumpStub,
         ConsentedInstall: ConsentedInstallStub,
       }),
-    ).rejects.toBeInstanceOf(StrategyExhaustionError);
+    ).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('StrategyExhaustionError.attempts lists sqlcmd and manual-dump', async () => {
+  it('ConnectivityUnavailableError.outcome.attempts lists sqlcmd and manual-dump (Batch 3)', async () => {
     const err = await createMssqlSchemaAdapter(INTEGRATED_CONFIG, {
       NativeTedious: NativeTediousStub,
       Sqlcmd: SqlcmdStub,
@@ -314,14 +317,17 @@ describe('selection E2E — exhaustion path (F6.3 scenario 2)', () => {
       ConsentedInstall: ConsentedInstallStub,
     }).catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(StrategyExhaustionError);
-    const ex = err as StrategyExhaustionError;
-    const attemptIds = ex.attempts.map((a) => a.id);
+    expect(err).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = err as ConnectivityUnavailableError;
+    const attemptIds = ex.outcome.attempts.map((a) => a.id);
     expect(attemptIds).toContain('sqlcmd');
     expect(attemptIds).toContain('manual-dump');
   });
 
-  it('formatExhaustionError output contains both fallback options (manual-dump path + guided install)', async () => {
+  it('formatOutcome renders fallback options from the ConnectivityUnavailableError outcome (W1 — exhaustion.ts deleted)', async () => {
+    // W1 (R1 remediation): exhaustion.ts was a dead shim and has been deleted.
+    // The live registry path throws ConnectivityUnavailableError, which carries a
+    // built outcome. formatOutcome (core) renders it with ≥3 options.
     const err = await createMssqlSchemaAdapter(INTEGRATED_CONFIG, {
       NativeTedious: NativeTediousStub,
       Sqlcmd: SqlcmdStub,
@@ -329,24 +335,24 @@ describe('selection E2E — exhaustion path (F6.3 scenario 2)', () => {
       ConsentedInstall: ConsentedInstallStub,
     }).catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(StrategyExhaustionError);
-    const message = formatExhaustionError(err as StrategyExhaustionError);
+    expect(err).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = err as ConnectivityUnavailableError;
 
-    // Option (a): manual-dump path must be present
-    expect(message).toContain('OPTION A');
+    // Render the outcome directly via the core formatter
+    const message = formatOutcome(ex.outcome);
+
+    expect(message).toContain('CONNECTIVITY UNAVAILABLE');
     expect(message).toContain('.dbgraph/dumps');
     expect(message).toContain('mssql-dump.json');
-
-    // Option (b): guided install must be present
-    expect(message).toContain('OPTION B');
     expect(message).toContain('microsoft.com');
-
-    // B2 deferred notice must be present
-    expect(message).toContain('B2');
-    expect(message).toContain('DEFERRED');
+    expect(message).toContain('Option 1');
+    expect(message).toContain('Option 2');
+    expect(message).toContain('Option 3');
   });
 
-  it('formatExhaustionError output includes the attempt list', async () => {
+  it('ConnectivityUnavailableError outcome includes strategy attempt ids (W1 — exhaustion.ts deleted)', async () => {
+    // W1 (R1 remediation): verify the outcome.attempts contain the strategy ids
+    // that formatOutcome will render (was previously tested via the dead shim).
     const err = await createMssqlSchemaAdapter(INTEGRATED_CONFIG, {
       NativeTedious: NativeTediousStub,
       Sqlcmd: SqlcmdStub,
@@ -354,11 +360,11 @@ describe('selection E2E — exhaustion path (F6.3 scenario 2)', () => {
       ConsentedInstall: ConsentedInstallStub,
     }).catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(StrategyExhaustionError);
-    const message = formatExhaustionError(err as StrategyExhaustionError);
+    expect(err).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = err as ConnectivityUnavailableError;
 
-    // The formatted message should mention at least one strategy that was tried
-    expect(message).toContain('Strategies tried');
+    const message = formatOutcome(ex.outcome);
+    // sqlcmd attempt must appear in the rendered attempts section
     expect(message).toContain('sqlcmd');
   });
 });

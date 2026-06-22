@@ -1,0 +1,33 @@
+{
+  "_fixture": "F-4",
+  "_description": "Legacy sqlcmd FOR JSON output shape: 2033-char chunks, no header, no dashes, no trailing-space padding",
+  "environment": {
+    "variantId": "legacy-odbc",
+    "detectedVersion": "15.0.1300",
+    "flags": ["-y", "0", "-f", "o:65001"],
+    "nocount": true
+  },
+  "outputShape": {
+    "chunkSize": 2033,
+    "hasHeader": false,
+    "hasDashesSeparator": false,
+    "trailingSpacePadding": false,
+    "lineTerminator": "CRLF"
+  },
+  "syntheticStdout": {
+    "_note": "Content-free synthetic buffer: 2033-char chunks of a generic JSON array, no real schema/identifiers",
+    "chunkCount": 2,
+    "totalChars": 4066,
+    "encoding": "utf8",
+    "firstChunkPrefix": "[{\"col_a\":\"",
+    "assemblyRule": "concatenate verbatim, strip trailing CRLF only, never .trim()"
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "2033-char-chunks-no-header-verbatim-concat"
+}

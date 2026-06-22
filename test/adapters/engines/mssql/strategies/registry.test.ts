@@ -14,13 +14,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { ConnectivityStrategy, DetectResult } from '../../../../../src/core/ports/connectivity-strategy.js';
 import type { Logger } from '../../../../../src/core/ports/logger.js';
-import { StrategyExhaustionError } from '../../../../../src/core/errors.js';
+import { StrategyExhaustionError, ConnectivityUnavailableError } from '../../../../../src/core/errors.js';
 import {
   buildMssqlStrategies,
   selectStrategy,
   detectAllCandidates,
   type MssqlStrategyDeps,
 } from '../../../../../src/adapters/engines/mssql/strategies/registry.js';
+import {
+  SQL_MSSQL_TABLES,
+  SQL_MSSQL_COLUMNS,
+} from '../../../../../src/adapters/engines/mssql/queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test configs
@@ -245,33 +249,33 @@ describe('selectStrategy()', () => {
     expect(strat.canConnect).not.toHaveBeenCalled();
   });
 
-  it('throws StrategyExhaustionError when all strategies fail', async () => {
+  it('throws ConnectivityUnavailableError when all strategies fail (Batch 3 — replaces StrategyExhaustionError)', async () => {
     const s1 = makeStrategy('native-tedious', { available: false }, false);
     const s2 = makeStrategy('sqlcmd', { available: true }, false);
-    await expect(selectStrategy([s1, s2], logger)).rejects.toBeInstanceOf(StrategyExhaustionError);
+    await expect(selectStrategy([s1, s2], logger)).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
-  it('StrategyExhaustionError lists each failed attempt', async () => {
+  it('ConnectivityUnavailableError.outcome.attempts lists each failed attempt (Batch 3)', async () => {
     const s1 = makeStrategy('native-tedious', { available: false }, false);
     const s2 = makeStrategy('sqlcmd', { available: true }, false);
     const error = await selectStrategy([s1, s2], logger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(StrategyExhaustionError);
-    const ex = error as StrategyExhaustionError;
-    const ids = ex.attempts.map((a) => a.id);
+    expect(error).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = error as ConnectivityUnavailableError;
+    const ids = ex.outcome.attempts.map((a) => a.id);
     expect(ids).toContain('native-tedious');
     expect(ids).toContain('sqlcmd');
   });
 
-  it('StrategyExhaustionError attempt includes a reason string', async () => {
+  it('ConnectivityUnavailableError.outcome.attempts[0] includes a reason string (Batch 3)', async () => {
     const s1 = makeStrategy('native-tedious', { available: false, detail: 'no mssql installed' }, false);
     const error = await selectStrategy([s1], logger).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(StrategyExhaustionError);
-    const ex = error as StrategyExhaustionError;
-    expect(ex.attempts[0]?.reason).toBeTruthy();
+    expect(error).toBeInstanceOf(ConnectivityUnavailableError);
+    const ex = error as ConnectivityUnavailableError;
+    expect(ex.outcome.attempts[0]?.reason).toBeTruthy();
   });
 
-  it('throws StrategyExhaustionError for empty strategies list', async () => {
-    await expect(selectStrategy([], logger)).rejects.toBeInstanceOf(StrategyExhaustionError);
+  it('throws ConnectivityUnavailableError for empty strategies list (Batch 3)', async () => {
+    await expect(selectStrategy([], logger)).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 
   it('logs a debug message for each probe attempt', async () => {
@@ -452,5 +456,102 @@ describe('detectAllCandidates() — WARN-3', () => {
     expect(results[0]?.detect.available).toBe(true);
     expect(results[1]?.detect.available).toBe(false);
     expect(results[2]?.detect.available).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 3 — selectStrategy exhaustion → ConnectivityUnavailableError (task 3.4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('selectStrategy() exhaustion → ConnectivityUnavailableError (Batch 3)', () => {
+  let logger: ReturnType<typeof makeLogger>;
+
+  beforeEach(() => {
+    logger = makeLogger();
+  });
+
+  it('throws ConnectivityUnavailableError (not StrategyExhaustionError) when all strategies fail', async () => {
+    const s1 = makeStrategy('native-tedious', { available: false }, false);
+    const s2 = makeStrategy('sqlcmd', { available: true }, false);
+    await expect(selectStrategy([s1, s2], logger)).rejects.toBeInstanceOf(ConnectivityUnavailableError);
+  });
+
+  it('does NOT throw StrategyExhaustionError (replaced by ConnectivityUnavailableError)', async () => {
+    const s1 = makeStrategy('native-tedious', { available: false }, false);
+    await expect(selectStrategy([s1], logger)).rejects.not.toBeInstanceOf(StrategyExhaustionError);
+  });
+
+  it('ConnectivityUnavailableError code is E_CONNECTIVITY_UNAVAILABLE', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).code).toBe('E_CONNECTIVITY_UNAVAILABLE');
+  });
+
+  it('outcome.engine is "mssql"', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).outcome.engine).toBe('mssql');
+  });
+
+  it('outcome.attempts lists each strategy attempt with its reason', async () => {
+    const s1 = makeStrategy('native-tedious', { available: false, detail: 'integrated auth skipped' }, false);
+    const s2 = makeStrategy('sqlcmd', { available: true }, false);
+    const err = await selectStrategy([s1, s2], logger).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const ids = outcome.attempts.map((a) => a.id);
+    expect(ids).toContain('native-tedious');
+    expect(ids).toContain('sqlcmd');
+  });
+
+  it('outcome has exactly 3 options', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    expect((err as ConnectivityUnavailableError).outcome.options.length).toBe(3);
+  });
+
+  it('option kinds are exactly ["run-it-yourself","consented-install","manual-dump"]', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    expect(outcome.options.map((o) => o.kind)).toEqual([
+      'run-it-yourself',
+      'consented-install',
+      'manual-dump',
+    ]);
+  });
+
+  it('run-it-yourself queries contain the shipped mssql catalog SELECTs', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const riyo = outcome.options[0];
+    if (riyo?.kind !== 'run-it-yourself') throw new Error('wrong kind');
+    expect(riyo.queries).toContain(SQL_MSSQL_TABLES);
+    expect(riyo.queries).toContain(SQL_MSSQL_COLUMNS);
+  });
+
+  it('run-it-yourself queries are write-verb-free', async () => {
+    const writeVerbPattern = /\b(INSERT|UPDATE|DELETE|MERGE|CREATE|ALTER|DROP|TRUNCATE)\b/i;
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const riyo = outcome.options[0];
+    if (riyo?.kind !== 'run-it-yourself') throw new Error('wrong kind');
+    for (const query of riyo.queries) {
+      expect(query).not.toMatch(writeVerbPattern);
+    }
+  });
+
+  it('consented-install option names "sqlcmd" as the tool', async () => {
+    const s1 = makeStrategy('sqlcmd', { available: false }, false);
+    const err = await selectStrategy([s1], logger).catch((e: unknown) => e);
+    const outcome = (err as ConnectivityUnavailableError).outcome;
+    const install = outcome.options[1];
+    if (install?.kind !== 'consented-install') throw new Error('wrong kind');
+    expect(install.tool).toBe('sqlcmd');
+  });
+
+  it('empty strategy list throws ConnectivityUnavailableError', async () => {
+    await expect(selectStrategy([], logger)).rejects.toBeInstanceOf(ConnectivityUnavailableError);
   });
 });

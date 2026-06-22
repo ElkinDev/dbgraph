@@ -3,6 +3,8 @@
  * extract a SQL Server catalog via Windows Integrated Security (-E flag).
  *
  * Design §"sqlcmd strategy — FOR JSON PATH, line reassembly, validation boundary".
+ * Resilient-connectivity Batch 4 (task 4.3): profile-driven flags; reassembly
+ * delegated to `reassembleForJson`/`reassembleSingleForJson` from json-rows.ts.
  *
  * Security:
  *   - ALL config values are passed as ARGV array elements (never a shell string).
@@ -15,7 +17,13 @@
  *   child_process calls without patching the module globally. In production,
  *   the default is spawnSync from node:child_process.
  *
+ * Profile:
+ *   `resolveProfile(probe)` selects the correct flag/format/encoding entry from
+ *   the SQLCMD_PROFILES registry. The default profile (used when no probe result
+ *   is available) reproduces the SHIPPED flags exactly (-y 0 -f o:65001, no -h/-W).
+ *
  * connectivity-strategies Batch B, tasks B2.3–B2.5.
+ * Resilient-connectivity Batch 4, task 4.3.
  */
 
 import { spawnSync as defaultSpawnSync } from 'node:child_process';
@@ -40,7 +48,10 @@ import {
   SQL_MSSQL_DEPENDENCIES,
   SQL_MSSQL_FINGERPRINT,
 } from '../queries.js';
-import { parseJsonRows } from './json-rows.js';
+import { parseJsonRows, reassembleForJson, reassembleSingleForJson } from './json-rows.js';
+import { TransportError } from '../../../../core/errors.js';
+import { resolveProfile } from './profiles.js';
+import type { SqlcmdProfile } from './profiles.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SpawnSyncFn type — the injectable seam for child_process.spawnSync
@@ -106,126 +117,6 @@ function catalogSql(sql: string): string {
   return `${sql}\nFOR JSON PATH, INCLUDE_NULL_VALUES`;
 }
 
-/**
- * Extracts the JSON data lines from legacy sqlcmd 15.x stdout.
- *
- * REAL FORMAT (measured on sqlcmd 15.0.1300 with `-E -S -d -Q ... -y 0` and
- * `SET NOCOUNT ON`):
- *   - NO column header line, NO dashes-separator line.
- *   - Line 0 starts directly with `[` (array) or `{` (single object).
- *   - Large results are split into 2033-char chunks, one chunk per line.
- *   - NO trailing-space padding on any chunk line.
- *
- * The previous assumption (header + dashes separator before JSON) was WRONG
- * for this flag combination and has been removed.
- *
- * Algorithm:
- *   1. Split stdout into lines, stripping trailing \r per line.
- *   2. Skip leading non-JSON lines DEFENSIVELY: discard lines until the first
- *      one whose trimStart begins with `[` or `{`. In reality this is line 0.
- *   3. From the remaining lines, drop truly-empty lines and a
- *      "(N rows affected)" trailer (SET NOCOUNT ON suppresses it, but
- *      kept as a safety net).
- *   4. Concatenate survivors VERBATIM (NO .trim() — FOR JSON chunks split
- *      mid-token; any whitespace at a chunk boundary is content, not padding).
- *   5. If nothing remains, return "" (caller decides how to handle empty).
- */
-function extractJsonContent(stdout: Buffer): string {
-  const lines = stdout.toString('utf8').split('\n');
-
-  // Skip leading non-JSON lines (defensive fallback — in reality line 0 is JSON)
-  let dataStartIdx = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const stripped = (lines[i] ?? '').replace(/\r$/, '');
-    const trimStart = stripped.trimStart();
-    if (trimStart.startsWith('[') || trimStart.startsWith('{')) {
-      dataStartIdx = i;
-      break;
-    }
-  }
-
-  const cleanLines: string[] = [];
-  for (let i = dataStartIdx; i < lines.length; i++) {
-    // Strip ONLY the trailing \r — do NOT trim content (chunk boundaries carry content)
-    const line = (lines[i] ?? '').replace(/\r$/, '');
-    // Skip truly-empty lines (blank separators at end of output)
-    if (line === '') continue;
-    // Skip the row-count trailer that SET NOCOUNT ON suppresses (safety net)
-    if (/^\(\d+ rows? affected\)$/.test(line.trim())) continue;
-    cleanLines.push(line); // preserve exact content — no .trim()
-  }
-
-  return cleanLines.join(''); // no spaces — FOR JSON chunks split mid-token
-}
-
-/**
- * Reassembles FOR JSON PATH output from sqlcmd stdout into a parsed array.
- *
- * Handles the REAL legacy sqlcmd 15.x output shape: with `-y 0`, `SET NOCOUNT ON`,
- * and `-f o:65001`, the JSON starts at line 0 (NO header, NO dashes separator).
- * Large results are split into 2033-char chunks across lines with NO padding.
- *
- * @throws Error if the concatenated string is not valid JSON.
- */
-function reassembleJsonOutput(stdout: Buffer): unknown[] {
-  const concatenated = extractJsonContent(stdout);
-  if (concatenated === '') return [];
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(concatenated);
-  } catch (e) {
-    throw new Error(
-      `sqlcmd: failed to parse FOR JSON output. ` +
-      `Stdout (first 200 chars): ${concatenated.slice(0, 200)}. ` +
-      `Parse error: ${(e as Error).message}`,
-      { cause: e },
-    );
-  }
-
-  if (!Array.isArray(parsed)) {
-    throw new Error(
-      `sqlcmd: expected a JSON array from FOR JSON PATH output but got ${typeof parsed}`,
-    );
-  }
-
-  return parsed;
-}
-
-/**
- * Reassembles FOR JSON PATH, WITHOUT_ARRAY_WRAPPER output from sqlcmd stdout.
- * Returns the parsed JSON object directly (not wrapped in an array).
- * Used by fingerprint() which returns a single aggregate row, not an array.
- *
- * Uses the same extractJsonContent logic — see that function for output format details.
- *
- * @throws Error if the concatenated string is not valid JSON or is empty.
- */
-function reassembleSingleObjectOutput(stdout: Buffer): Record<string, unknown> {
-  const concatenated = extractJsonContent(stdout);
-  if (concatenated === '') return {};
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(concatenated);
-  } catch (e) {
-    throw new Error(
-      `sqlcmd: failed to parse WITHOUT_ARRAY_WRAPPER output. ` +
-      `Stdout (first 200 chars): ${concatenated.slice(0, 200)}. ` +
-      `Parse error: ${(e as Error).message}`,
-      { cause: e },
-    );
-  }
-
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(
-      `sqlcmd: expected a JSON object from WITHOUT_ARRAY_WRAPPER output but got ${typeof parsed}`,
-    );
-  }
-
-  return parsed as Record<string, unknown>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // SqlcmdStrategy
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,17 +126,29 @@ function reassembleSingleObjectOutput(stdout: Buffer): Record<string, unknown> {
  * with Windows Integrated Security (-E flag, no credentials in argv).
  *
  * Inject a custom spawnSync for testing; defaults to node:child_process.spawnSync.
+ *
+ * Batch 4 (task 4.3): the profile is resolved once at construction (or via the
+ * optional `profile` parameter for testing). In production the DEFAULT profile
+ * (reproducing the SHIPPED flags) is used until `probe()` is available end-to-end.
+ * This preserves BYTE-IDENTICAL behavior: the default profile flags are the same
+ * as the previously hard-coded flags (['-y','0','-f','o:65001']).
  */
 export class SqlcmdStrategy implements ConnectivityStrategy {
   readonly id = 'sqlcmd';
 
   private readonly _spawnSync: SpawnSyncFn;
+  private readonly _profile: SqlcmdProfile;
 
   constructor(
     private readonly _config: MssqlAdapterConfig,
     spawnSync?: SpawnSyncFn,
+    profile?: SqlcmdProfile,
   ) {
     this._spawnSync = spawnSync ?? (defaultSpawnSync as SpawnSyncFn);
+    // Use the provided profile (for testing / probe-driven selection) or
+    // resolve from an empty probe result (yields the conservative default,
+    // which has the SAME flags as the previously hard-coded set).
+    this._profile = profile ?? resolveProfile({ nativeDriver: false, cliTools: [], odbc: false });
   }
 
   // ─── detect() ──────────────────────────────────────────────────────────────
@@ -323,9 +226,10 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
    *
    * For each catalog family:
    *   1. Wrap the queries.ts constant in FOR JSON PATH, INCLUDE_NULL_VALUES at top level.
-   *   2. Spawn sqlcmd -E -S <server> -d <db> -Q <wrapped> -y 0 -f o:65001.
-   *      (-y 0: unlimited nvarchar width; -f o:65001: force UTF-8 stdout; no -h, no -W)
-   *   3. Reassemble chunked stdout into one JSON document (concat-then-parse).
+   *   2. Spawn sqlcmd -E -S <server> -d <db> -Q <wrapped> [profile flags].
+   *      Profile flags come from this._profile.flags (e.g. ['-y','0','-f','o:65001']
+   *      for legacy-15.x — no -h, no -W per F-3 mutual-exclusivities).
+   *   3. Reassemble chunked stdout via reassembleForJson(stdout, profile) (json-rows.ts).
    *   4. Validate + coerce through parseJsonRows (json-rows.ts).
    *
    * The fingerprint is computed separately (SHA-256 over MAX(modify_date)|COUNT(*)).
@@ -339,14 +243,12 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     for (const family of CATALOG_FAMILIES) {
       // SET NOCOUNT ON suppresses the "(N rows affected)" row-count trailer that legacy
       // sqlcmd 15.x emits. This is a session setting (read-only, not a write).
-      // -h is NOT used here: legacy sqlcmd 15.x treats -h and -y 0 as mutually exclusive.
-      // -W is also NOT used: mutually exclusive with -y 0 in legacy sqlcmd 15.x.
-      // -f o:65001 forces UTF-8 output codepage so that stdout.toString('utf8') is
-      // correct for non-ASCII content in proc definitions and other nvarchar columns.
+      // Profile flags (this._profile.flags) encode the variant/version quirks:
+      //   legacy-15.x: ['-y','0','-f','o:65001'] — -y 0 alone (F-3), UTF-8 output (F-5).
       const wrappedSql = `SET NOCOUNT ON;\n${catalogSql(family.sql)}`;
       const result = this._spawnSync(
         'sqlcmd',
-        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, '-y', '0', '-f', 'o:65001'],
+        ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', wrappedSql, ...this._profile.flags],
         {
           encoding: 'buffer',
           timeout: CATALOG_TIMEOUT_MS,
@@ -356,16 +258,19 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       );
 
       if (result.error !== undefined || result.status !== 0) {
-        const stderr = result.stderr.toString('utf8').slice(0, 200);
-        throw new Error(
-          `sqlcmd: query for family "${family.key}" failed. ` +
-          `Exit: ${result.status ?? 'null'}. ` +
-          `Error: ${result.error?.message ?? 'none'}. ` +
-          `Stderr: ${stderr}`,
+        // REDACTED: stderr may contain host/user/db/password identifiers.
+        // The raw stderr is preserved as cause for debugging; message is content-free.
+        const rawCause = result.error ?? new Error(
+          `sqlcmd exited with status ${result.status ?? 'null'} for family "${family.key}"`,
+        );
+        throw new TransportError(
+          `sqlcmd: catalog query for family "${family.key}" failed. ` +
+          'Check server availability, authentication, and sqlcmd installation.',
+          rawCause,
         );
       }
 
-      rawFamilies[family.key] = reassembleJsonOutput(result.stdout);
+      rawFamilies[family.key] = reassembleForJson(result.stdout, this._profile);
     }
 
     const input = parseJsonRows({
@@ -398,12 +303,11 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
    */
   async fingerprint(): Promise<string> {
     // SET NOCOUNT ON suppresses the "(N rows affected)" trailer.
-    // -h is NOT used: mutually exclusive with -y 0 in legacy sqlcmd 15.x.
-    // -f o:65001 forces UTF-8 output codepage (consistent with runCatalog).
+    // Profile flags encode the variant/version quirks (e.g. -y 0 -f o:65001 for legacy-15.x).
     const fingerprintSql = `SET NOCOUNT ON;\n${SQL_MSSQL_FINGERPRINT}\nFOR JSON PATH, WITHOUT_ARRAY_WRAPPER`;
     const result = this._spawnSync(
       'sqlcmd',
-      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, '-y', '0', '-f', 'o:65001'],
+      ['-E', '-S', this._config.server, '-d', this._config.database, '-Q', fingerprintSql, ...this._profile.flags],
       {
         encoding: 'buffer',
         timeout: CATALOG_TIMEOUT_MS,
@@ -412,16 +316,18 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     );
 
     if (result.error !== undefined || result.status !== 0) {
-      const stderr = result.stderr.toString('utf8').slice(0, 200);
-      throw new Error(
-        `sqlcmd: fingerprint query failed. ` +
-        `Exit: ${result.status ?? 'null'}. ` +
-        `Error: ${result.error?.message ?? 'none'}. ` +
-        `Stderr: ${stderr}`,
+      // REDACTED: stderr may contain host/user/db/password identifiers.
+      const rawCause = result.error ?? new Error(
+        `sqlcmd fingerprint exited with status ${result.status ?? 'null'}`,
+      );
+      throw new TransportError(
+        'sqlcmd: fingerprint query failed. ' +
+        'Check server availability, authentication, and sqlcmd installation.',
+        rawCause,
       );
     }
 
-    const row = reassembleSingleObjectOutput(result.stdout);
+    const row = reassembleSingleForJson(result.stdout, this._profile);
     const m = String(row['m'] ?? 'null');
     const c = String(row['c'] ?? '0');
 

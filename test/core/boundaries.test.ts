@@ -361,47 +361,30 @@ describe('hexagonal boundary: connectivity-strategy port is driver-free (F6.2)',
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// F6.2 — exhaustion.ts CLI formatter imports only the public barrel (ADR-004)
+// W1 (R1 remediation) — exhaustion.ts DELETED
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// src/cli/format/exhaustion.ts is a CLI-layer pure formatter.
-// It MUST NOT import from src/adapters/** (would pull adapter logic into CLI).
-// Its only permitted import is the project's public barrel (src/index.ts or
-// relative paths resolving to src/core/**).
+// src/cli/format/exhaustion.ts was a dead shim: no live path in src/ ever called
+// it (the registry throws ConnectivityUnavailableError, caught and rendered by
+// formatOutcome; the shim was never invoked). It also inline-duplicated 3 stale
+// mssql query strings (DRY/drift hazard). It has been deleted in R1 (W1 fix).
 //
-// This guards the deviation documented in the Batch E apply-progress:
-// DUMP_DIR / DUMP_FILE are inlined as constants instead of importing from
-// dump-emitter.ts (which lives in adapters) — the comment in the source
-// file explains the coupling; this test pins it so the duplication is
-// a conscious, enforced choice.
+// This describe block now pins that the file is GONE — prevents accidental
+// re-introduction of the dead shim.
 
-describe('hexagonal boundary: exhaustion.ts imports only the public barrel (F6.2)', () => {
+describe('hexagonal boundary: exhaustion.ts DELETED (W1 — R1 remediation)', () => {
   const exhaustionPath = join(projectRoot, 'src', 'cli', 'format', 'exhaustion.ts');
 
-  it('exhaustion.ts file exists in src/cli/format/', () => {
-    const source = readFileSync(exhaustionPath, 'utf-8');
-    expect(source.length).toBeGreaterThan(0);
-  });
-
-  it('exhaustion.ts does not import from src/adapters/**', () => {
-    const source = readFileSync(exhaustionPath, 'utf-8');
-    const specifiers = extractImportSpecifiers(source);
-
-    const violations: string[] = [];
-    for (const spec of specifiers) {
-      if (spec.includes('/adapters/')) {
-        violations.push(`exhaustion.ts imports "${spec}" — CLI layer must not import adapters (ADR-004)`);
-      }
+  it('exhaustion.ts does NOT exist in src/cli/format/ (dead shim deleted, W1)', () => {
+    // The file was a dead shim with stale inline queries. It has been removed.
+    // This test pins the deletion — failing means someone re-introduced the shim.
+    let fileExists = false;
+    try {
+      readFileSync(exhaustionPath, 'utf-8');
+      fileExists = true; // file read succeeded → shim was re-introduced
+    } catch {
+      // ENOENT → correctly absent; fileExists stays false
     }
-
-    if (violations.length > 0) {
-      expect.fail(
-        `exhaustion.ts boundary violations:\n${violations.join('\n')}\n\n` +
-          'Fix: the CLI formatter must not import from src/adapters/**. ' +
-          'Duplicate any needed constants inline and add a comment explaining the coupling.',
-      );
-    }
-
-    expect(violations).toHaveLength(0);
+    expect(fileExists).toBe(false);
   });
 });

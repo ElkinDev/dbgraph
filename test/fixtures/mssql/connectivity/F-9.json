@@ -1,0 +1,34 @@
+{
+  "_fixture": "F-9",
+  "_description": "sql_variant column coercion: sql_variant values arrive as JSON strings and must be coerced to JSON-native types",
+  "environment": {
+    "variantId": "legacy-odbc",
+    "detectedVersion": "15.0.1300",
+    "flags": ["-y", "0", "-f", "o:65001"]
+  },
+  "coercionBehavior": {
+    "inputType": "sql_variant",
+    "wireRepresentation": "JSON string (decimal digits)",
+    "coercedTo": "JSON number",
+    "coercerFunction": "parseJsonRows / coerceStringy (UNCHANGED)",
+    "example": {
+      "_note": "Content-free synthetic: column name and value are generic",
+      "columnName": "col_variant",
+      "wireValue": "42",
+      "coercedValue": 42
+    }
+  },
+  "syntheticStdout": {
+    "_note": "Content-free: sql_variant numeric arrives as quoted string in the FOR JSON output",
+    "rawLine": "[{\"col_variant\":\"42\"}]",
+    "afterCoercion": [{ "col_variant": 42 }]
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "15.0.1300", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "sql-variant-coerced-to-json-number-by-parseJsonRows"
+}
