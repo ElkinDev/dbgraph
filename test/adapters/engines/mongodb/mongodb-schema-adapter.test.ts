@@ -270,9 +270,9 @@ describe('MongodbSchemaAdapter.fingerprint() — fake driver', () => {
     await adapter2.close();
   });
 
-  it('fingerprint formula: sha256(collections|indexes|objects) — 64-char hex', async () => {
+  it('fingerprint formula: sha256(collections|indexes) — DDL-only, objects excluded', async () => {
     // Cross-verify against a known sha256
-    // collections=2, indexes=3, objects=10 → input = "2|3|10"
+    // collections=2, indexes=3 → input = "2|3" (objects excluded — DML-stable contract)
     const driver = makeFakeDriver({
       commandResults: {
         '{"dbStats":1}': { collections: 2, indexes: 3, objects: 10 },
@@ -281,8 +281,32 @@ describe('MongodbSchemaAdapter.fingerprint() — fake driver', () => {
     const adapter = new MongodbSchemaAdapter(driver, TEST_CONFIG);
     const fp = await adapter.fingerprint();
 
-    // We just verify it's 64-char hex and non-empty — exact hash verified by formula test
+    // Verify it's 64-char hex
     expect(fp).toMatch(/^[0-9a-f]{64}$/);
     await adapter.close();
+  });
+
+  it('fingerprint is STABLE when only objects count changes (DML-stable contract)', async () => {
+    // Same collections+indexes but different objects count → SAME fingerprint
+    // This verifies the "objects excluded" fix is effective.
+    const driver1 = makeFakeDriver({
+      commandResults: {
+        '{"dbStats":1}': { collections: 2, indexes: 3, objects: 10 },
+      },
+    });
+    const driver2 = makeFakeDriver({
+      commandResults: {
+        '{"dbStats":1}': { collections: 2, indexes: 3, objects: 99 }, // DML-only change
+      },
+    });
+    const adapter1 = new MongodbSchemaAdapter(driver1, TEST_CONFIG);
+    const adapter2 = new MongodbSchemaAdapter(driver2, TEST_CONFIG);
+
+    const fp1 = await adapter1.fingerprint();
+    const fp2 = await adapter2.fingerprint();
+
+    expect(fp1).toBe(fp2); // DML only → STABLE
+    await adapter1.close();
+    await adapter2.close();
   });
 });
