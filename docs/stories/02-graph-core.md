@@ -28,13 +28,17 @@ _Note (mssql Batch D, 2026-06-16): The previously recorded "sys.sql_expression_d
 
 ### US-008 — Inferred relationships with confidence
 **As** a user of a legacy database or NoSQL without declared FKs, **I want** relationships inferred from naming conventions and types, **so that** the graph is not empty of edges.
-**Phase:** 9 (engine shared by SQL+Mongo) · **Depends on:** US-006 · **Status:** ☐ pending
+**Phase:** 9a (shared pure-core inference engine; consumed by 9b MongoDB) · **Depends on:** US-006 · **Status:** ◐ in-progress (phase-9a-inference-engine — pure-core scorer, opt-in gate, determinism; MongoDB sampling + turning inference ON deferred to phase-9b-mongodb)
 
 **Acceptance criteria:**
-- Given `orders.customer_id` (int) and `customers.id` (int, PK) WITHOUT a declared FK, then an `inferred_reference` exists with score ≥ 0.8 (convention + compatible type + PK target).
-- Given `orders.status_id` with no existing `status*` table, then NO edge is invented.
-- Every inferred edge carries `confidence: inferred` and its score; MCP tools ALWAYS render them distinguished from declared ones (`?` suffix).
-- Covers conventions: `<entity>_id`, `<entity>Id`, `id_<entity>`, singular/plural.
+- Given `orders.customer_id` (int) and `customers.id` (int, PK) WITHOUT a declared FK, then an `inferred_reference` exists with score ≥ 0.8 (convention + compatible type + PK target). Asserted with EXACT src+dst qnames + score (L-009 exact-set, never existence-only).
+- Given `orders.status_id` with no existing `status*` table, then NO edge is invented (negative golden; thresholded).
+- Type compatibility gates edges: int↔bigint compatible, `ObjectId`↔`_id` compatible, string↔string; an incompatible type family yields NO edge.
+- Every inferred edge carries `confidence: inferred` and a numeric `score ∈ [0,1]`; emitted ONLY when score ≥ threshold; MCP tools ALWAYS render them distinguished from declared ones (`?` suffix).
+- Covers conventions: `<entity>_id`, `<entity>Id`, `id_<entity>`, singular/plural — each asserted with exact src+dst qnames.
+- Inference is OPT-IN via `ExtractionScope.inferRelationships` (default OFF): with the gate OFF (and no `collection`/`field` nodes) re-normalizing an existing SQL fixture yields an edge array BYTE-IDENTICAL to its golden (the four shipped engines untouched).
+- Determinism: the same input `NodeMap` yields a byte-identical inferred-edge array across runs (ordered by `src`, `dst`, `score`, `srcColumn`, `id`); golden-pinned (ADR-008).
+- The inference engine (`src/core/infer/`) imports nothing outside the core model types and reads only node names/types — never raw data values (ADR-004, dbgraph-security).
 
 ### US-009 — Snapshots and drift fingerprint
 **As** a user, **I want** dbgraph to detect whether the real schema changed since the last sync, **so that** I never work with a stale graph unknowingly.
