@@ -1,0 +1,1 @@
+{"collectionCount":4,"edgeCount":33,"edgeKinds":["has_column","has_index","inferred_reference"],"fieldCount":25,"inferredEdgeCount":1,"inferredEdges":[{"confidence":"inferred","dst":"dbgraph_test.customers._id","kind":"inferred_reference","src":"dbgraph_test.orders.customer_id"}],"nodeCount":36,"stubCount":0}

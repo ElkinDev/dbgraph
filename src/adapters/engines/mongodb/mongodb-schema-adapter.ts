@@ -139,7 +139,18 @@ export class MongodbSchemaAdapter implements SchemaAdapter {
 
   /**
    * Computes a DDL-sensitive fingerprint via dbStats.
-   * Formula: sha256(`${collections}|${indexes}|${objects}`) → 64-char hex.
+   *
+   * FORMULA: sha256(`${collections}|${indexes}`) → 64-char hex.
+   *
+   * WHY `objects` IS EXCLUDED (reality-driven fix, task 7.4):
+   *   dbStats.objects is the total document count across all collections.
+   *   It changes on EVERY insert/update/delete, making the fingerprint
+   *   data-sensitive — violating the "stable across data-only changes" contract
+   *   (ADR-008, US-009). The contract requires: DDL changes (collection/index
+   *   create/drop) → fingerprint MOVES; DML only → fingerprint STABLE.
+   *   FIX: use only `collections` (collection count) and `indexes` (total index
+   *   count), both of which are DDL-stable across DML-only operations.
+   *
    * MUST NOT walk documents — only accesses aggregate counters.
    *
    * @throws ConnectionError if close() was already called.
@@ -156,11 +167,14 @@ export class MongodbSchemaAdapter implements SchemaAdapter {
 
     const collections = stats['collections'] ?? 0;
     const indexes = stats['indexes'] ?? 0;
-    const objects = stats['objects'] ?? 0;
+    // NOTE: 'objects' (document count) is intentionally EXCLUDED from the hash.
+    // Including it would make the fingerprint data-sensitive (changes on DML),
+    // violating the "stable across data-only changes" contract (ADR-008, US-009).
+    // See the JSDoc above for the full justification.
 
-    // sha256(`${collections}|${indexes}|${objects}`) → 64-char hex
+    // sha256(`${collections}|${indexes}`) → 64-char hex
     return createHash('sha256')
-      .update(`${collections}|${indexes}|${objects}`)
+      .update(`${collections}|${indexes}`)
       .digest('hex');
   }
 
