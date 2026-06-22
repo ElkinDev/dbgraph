@@ -102,10 +102,36 @@ _Note: original US-029 stated "MySQL 8 AND MariaDB LTS (CI matrix)" + "events". 
 
 ### US-030 — MongoDB adapter + structural sampling
 **As** a NoSQL user, **I want** an inferred schema of my collections WITHOUT persisting values, **so that** the AI knows the structure with zero data risk.
-**Phase:** 9 · **Depends on:** US-008 · **Status:** ☐ pending
+**Phase:** 9b · **Depends on:** US-008 (shipped `inferReferences`, phase-9a) · **Status:** ☐ pending
+
+> **Refined for `phase-9b-mongodb`.** MongoDB is the FIFTH and final Núcleo-5 engine, and the first
+> schemaLESS one: structure is INFERRED by SAMPLING documents, never read from a catalog. This is the
+> CONSUMER that turns the shipped `inferReferences` engine (phase-9a) ON; Mongo relationships exist
+> ONLY as `inferred_reference` edges (no declared foreign keys).
+>
+> **Locked decisions (phase-9b-mongodb):**
+> - **Field modeling (PINNED):** typed `RawField` + optional `RawObject.fields?` → `'field'` nodes. The
+>   `'field'` `NodeKind`, `levels.fields` and `getLevelForKind('field')` already exist; this completes the
+>   normalizer's `field` branch. ADDITIVE + OPTIONAL: SQL engines leave `fields` unset → goldens stay
+>   byte-identical. Inference treats `'field'` == `'column'` (reads `payload.dataType`).
+> - Sampling via `$sample` (size from config, default `100`); recursive key walk → dotted paths
+>   (`address.city`) + array element-type encoding (`items[].sku`); per-path type MERGE (union) +
+>   presence frequency; document VALUES DISCARDED in memory after merge.
+> - Indexes via `listIndexes` (unique, compound). Top-level `$jsonSchema` (`required` + `properties`)
+>   carried in `extra`; deep nesting OUT OF SCOPE.
+> - `MONGODB_CAPABILITIES`: `collection`/`field`/`index` supported; table/column/constraint/view/
+>   procedure/function/trigger/sequence UNSUPPORTED; `supportsBodies:false`; `supportsDependencyHints:false`.
+> - Connectivity is URI-based: a `${env:VAR}` URI + `database` + optional `sampleSize?` + optional `tls?`;
+>   NO `schema?` and NO host/port/user/password (folded into the URI). `fingerprint()` from `dbStats`
+>   (`collections`|`indexes`|`objects`, SHA-256), stable on data-only, moves on collection/index DDL.
+> - `mongodb` is the only new `optionalDependency`, lazy `import('mongodb')`.
+> - `docs/permissions/mongodb.md` ships the minimal read-only role (`read` on the target database); a
+>   missing privilege raises an actionable `PermissionError` naming the privilege + doc.
+> - Determinism via a FIXED torture dataset + `$sample(size ≥ doc_count)`; gated `mongo:7` Testcontainers
+>   (`DBGRAPH_INTEGRATION=1`, never blocks the unit matrix); EXACT-set / both-endpoint edge assertions (L-009).
 
 **Acceptance criteria:**
-- Extracts collections, indexes (`getIndexes`), `$jsonSchema` validation rules when present.
-- Sampling via `$sample` (default 100 docs, configurable): infers fields with observed types and frequency (`email: string 100%, age: int 87%`); VALUES are never written to the index (a test verifies no fixture values appear in the resulting .db).
-- Nested fields and arrays represented as paths (`address.city`, `items[].sku`).
-- Relationships ONLY via `inferred_reference` (US-008) over field names like `customer_id`/Mongo refs.
+- Extracts collections (`listCollections`), indexes (`listIndexes`), top-level `$jsonSchema` (carried in `extra`).
+- Sampling via `$sample` (default 100 docs, configurable): infers fields with observed UNION types and frequency (`email: string 100%, age: int 87%`); VALUES are never written to the index (a test verifies no fixture values appear in the resulting .db).
+- Nested fields and arrays represented as paths (`address.city`, `items[].sku`) via `RawField` + `RawObject.fields` → `'field'` nodes.
+- Relationships ONLY via `inferred_reference` (US-008) over field names like `customer_id` → `<collection>._id`, with EXACT endpoint + count assertions.
