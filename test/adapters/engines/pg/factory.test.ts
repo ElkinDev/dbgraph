@@ -321,6 +321,103 @@ describe('createPgSchemaAdapter() — connect errors → ConnectivityUnavailable
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// C1 — content-free leak test (R1 remediation)
+// The connect-FAILURE path must NOT leak host/user/db/password into the
+// rendered formatOutcome output. The raw driver error carries sensitive
+// identifiers; only the content-free canned summary may appear in stderr.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { formatOutcome } from '../../../../src/core/present/connectivity.js';
+
+const PLANTED_HOST = 'prod-pg.internal.company.com';
+const PLANTED_USER = 'svc_dbgraph_prod';
+const PLANTED_DB   = 'payroll_prod';
+const PLANTED_PASS = 's3cr3tP@ssw0rd!';
+
+/** A custom fake that throws a raw driver error embedding planted identifiers. */
+function makePlantedLeakCtor(): {
+  new(config: Record<string, unknown>): {
+    connect(): Promise<void>;
+    query(sql: string): Promise<{ rows: Record<string, unknown>[] }>;
+    end(): Promise<void>;
+    _capturedConfig: Record<string, unknown>;
+  };
+} {
+  class LeakClient {
+    readonly _capturedConfig: Record<string, unknown>;
+    constructor(config: Record<string, unknown>) { this._capturedConfig = config; }
+
+    async connect(): Promise<void> {
+      // Simulates a real pg error: "password authentication failed for user "svc_dbgraph_prod""
+      // and "getaddrinfo ENOTFOUND prod-pg.internal.company.com"
+      const msg =
+        `password authentication failed for user "${PLANTED_USER}" ` +
+        `on host ${PLANTED_HOST} database "${PLANTED_DB}" ` +
+        `password "${PLANTED_PASS}"`;
+      throw Object.assign(new Error(msg), { code: '28P01' });
+    }
+
+    async query(sql: string): Promise<{ rows: Record<string, unknown>[] }> { void sql; return { rows: [] }; }
+    async end(): Promise<void> {}
+  }
+  return LeakClient as ReturnType<typeof makePlantedLeakCtor>;
+}
+
+describe('createPgSchemaAdapter() — C1: connect-failure must NOT leak planted identifiers', () => {
+  it('formatted outcome does NOT contain the planted host when connect fails', async () => {
+    const err = await createPgSchemaAdapter(
+      { host: PLANTED_HOST, database: PLANTED_DB, user: PLANTED_USER, password: PLANTED_PASS },
+      { Client: makePlantedLeakCtor() },
+    ).catch((e: unknown) => e) as ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_HOST);
+  });
+
+  it('formatted outcome does NOT contain the planted user when connect fails', async () => {
+    const err = await createPgSchemaAdapter(
+      { host: PLANTED_HOST, database: PLANTED_DB, user: PLANTED_USER, password: PLANTED_PASS },
+      { Client: makePlantedLeakCtor() },
+    ).catch((e: unknown) => e) as ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_USER);
+  });
+
+  it('formatted outcome does NOT contain the planted db when connect fails', async () => {
+    const err = await createPgSchemaAdapter(
+      { host: PLANTED_HOST, database: PLANTED_DB, user: PLANTED_USER, password: PLANTED_PASS },
+      { Client: makePlantedLeakCtor() },
+    ).catch((e: unknown) => e) as ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_DB);
+  });
+
+  it('formatted outcome does NOT contain the planted password when connect fails', async () => {
+    const err = await createPgSchemaAdapter(
+      { host: PLANTED_HOST, database: PLANTED_DB, user: PLANTED_USER, password: PLANTED_PASS },
+      { Client: makePlantedLeakCtor() },
+    ).catch((e: unknown) => e) as ConnectivityUnavailableError;
+
+    const rendered = formatOutcome(err.outcome);
+    expect(rendered).not.toContain(PLANTED_PASS);
+  });
+
+  it('raw cause IS preserved on the error (debug info not thrown away)', async () => {
+    const err = await createPgSchemaAdapter(
+      { host: PLANTED_HOST, database: PLANTED_DB, user: PLANTED_USER, password: PLANTED_PASS },
+      { Client: makePlantedLeakCtor() },
+    ).catch((e: unknown) => e) as ConnectivityUnavailableError;
+
+    // The error message (outcome.summary) must be content-free — NOT the raw driver msg.
+    // But cause must be preserved for debug (not surfaced to users).
+    expect(err.outcome.summary).not.toContain(PLANTED_HOST);
+    expect(err.outcome.summary).not.toContain(PLANTED_USER);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Adapter skeleton — close() is idempotent; extract/fingerprint after close → error
 // ─────────────────────────────────────────────────────────────────────────────
 

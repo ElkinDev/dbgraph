@@ -157,9 +157,14 @@ describe('formatDoctor — capability report (US-043 scenario 1)', () => {
     expect(output).toContain('15.0.1300');
   });
 
-  it('contains the CLI tool path when present', () => {
+  it('contains the CLI tool path basename when present (S1: no full path)', () => {
+    // S1 fix: formatDoctor renders the BASENAME of the path only, not the full path.
+    // MSSQL_VIEW.cliTools[0].path = '/usr/bin/sqlcmd' → basename = 'sqlcmd'
     const output = formatDoctor(MSSQL_VIEW);
-    expect(output).toContain('/usr/bin/sqlcmd');
+    // The basename 'sqlcmd' must appear
+    expect(output).toContain('sqlcmd');
+    // The full path must NOT appear (it would embed directory structure)
+    expect(output).not.toContain('/usr/bin/sqlcmd');
   });
 
   it('contains the ODBC availability', () => {
@@ -178,11 +183,14 @@ describe('formatDoctor — capability report (US-043 scenario 1)', () => {
     expect(output).toContain('sqlcmd');
   });
 
-  it('renders pg engine with psql tool and version', () => {
+  it('renders pg engine with psql tool and version (S1: basename only)', () => {
+    // PG_VIEW.cliTools[0].path = '/usr/bin/psql' → basename = 'psql'
     const output = formatDoctor(PG_VIEW);
     expect(output).toContain('pg');
     expect(output).toContain('psql');
     expect(output).toContain('14.5');
+    // Full path must not appear
+    expect(output).not.toContain('/usr/bin/psql');
   });
 });
 
@@ -261,6 +269,67 @@ describe('formatDoctor — unrecognized environment (US-043 scenario 3)', () => 
 // Feeds a DoctorView with planted schema/secret in ADJACENT CONTEXT
 // (not in the view itself) and verifies none appear in the output.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// S1 — path leak test (R1 remediation)
+// The CLI tool `path` field can embed a username (e.g. C:\Users\ecardoso\…).
+// formatDoctor must render ONLY the basename — never the full path.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatDoctor — S1: CLI tool path must be basename-only (no full path)', () => {
+  const PLANTED_USERNAME = 'ecardoso';
+  const WINDOWS_FULL_PATH = `C:\\Users\\${PLANTED_USERNAME}\\AppData\\Local\\Microsoft\\SqlCmd\\sqlcmd.exe`;
+  const POSIX_FULL_PATH = `/home/${PLANTED_USERNAME}/.local/bin/sqlcmd`;
+
+  const WINDOWS_VIEW: DoctorView = {
+    engine: 'mssql',
+    nativeDriver: false,
+    cliTools: [{ tool: 'sqlcmd', version: '15.0.1300', path: WINDOWS_FULL_PATH }],
+    odbc: false,
+    resolvedProfile: 'legacy-15.x',
+    chosenStrategy: 'sqlcmd',
+  };
+
+  const POSIX_VIEW: DoctorView = {
+    engine: 'mssql',
+    nativeDriver: false,
+    cliTools: [{ tool: 'sqlcmd', version: '15.0.1300', path: POSIX_FULL_PATH }],
+    odbc: false,
+    resolvedProfile: 'legacy-15.x',
+    chosenStrategy: 'sqlcmd',
+  };
+
+  it('does NOT render the full Windows path (contains username)', () => {
+    const output = formatDoctor(WINDOWS_VIEW);
+    expect(output).not.toContain(WINDOWS_FULL_PATH);
+  });
+
+  it('does NOT render the planted Windows username in the path', () => {
+    const output = formatDoctor(WINDOWS_VIEW);
+    expect(output).not.toContain(PLANTED_USERNAME);
+  });
+
+  it('renders the Windows basename only (sqlcmd.exe)', () => {
+    const output = formatDoctor(WINDOWS_VIEW);
+    expect(output).toContain('sqlcmd.exe');
+  });
+
+  it('does NOT render the full POSIX path (contains username)', () => {
+    const output = formatDoctor(POSIX_VIEW);
+    expect(output).not.toContain(POSIX_FULL_PATH);
+  });
+
+  it('does NOT render the planted POSIX username in the path', () => {
+    const output = formatDoctor(POSIX_VIEW);
+    expect(output).not.toContain(PLANTED_USERNAME);
+  });
+
+  it('renders the POSIX basename only (sqlcmd)', () => {
+    const output = formatDoctor(POSIX_VIEW);
+    // basename of /home/ecardoso/.local/bin/sqlcmd is "sqlcmd"
+    expect(output).toContain('sqlcmd');
+  });
+});
 
 describe('formatDoctor — leak assertion (the content-free guarantee)', () => {
   it('rendered output does not contain the planted schema name', () => {

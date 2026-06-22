@@ -182,6 +182,7 @@ export {
   SchemaVersionError,
   QueryError,
   NotFoundError,
+  TransportError,
   ConnectionError,
   PermissionError,
   ConfigError,

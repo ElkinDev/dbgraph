@@ -49,6 +49,7 @@ import {
   SQL_MSSQL_FINGERPRINT,
 } from '../queries.js';
 import { parseJsonRows, reassembleForJson, reassembleSingleForJson } from './json-rows.js';
+import { TransportError } from '../../../../core/errors.js';
 import { resolveProfile } from './profiles.js';
 import type { SqlcmdProfile } from './profiles.js';
 
@@ -257,12 +258,15 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
       );
 
       if (result.error !== undefined || result.status !== 0) {
-        const stderr = result.stderr.toString('utf8').slice(0, 200);
-        throw new Error(
-          `sqlcmd: query for family "${family.key}" failed. ` +
-          `Exit: ${result.status ?? 'null'}. ` +
-          `Error: ${result.error?.message ?? 'none'}. ` +
-          `Stderr: ${stderr}`,
+        // REDACTED: stderr may contain host/user/db/password identifiers.
+        // The raw stderr is preserved as cause for debugging; message is content-free.
+        const rawCause = result.error ?? new Error(
+          `sqlcmd exited with status ${result.status ?? 'null'} for family "${family.key}"`,
+        );
+        throw new TransportError(
+          `sqlcmd: catalog query for family "${family.key}" failed. ` +
+          'Check server availability, authentication, and sqlcmd installation.',
+          rawCause,
         );
       }
 
@@ -312,12 +316,14 @@ export class SqlcmdStrategy implements ConnectivityStrategy {
     );
 
     if (result.error !== undefined || result.status !== 0) {
-      const stderr = result.stderr.toString('utf8').slice(0, 200);
-      throw new Error(
-        `sqlcmd: fingerprint query failed. ` +
-        `Exit: ${result.status ?? 'null'}. ` +
-        `Error: ${result.error?.message ?? 'none'}. ` +
-        `Stderr: ${stderr}`,
+      // REDACTED: stderr may contain host/user/db/password identifiers.
+      const rawCause = result.error ?? new Error(
+        `sqlcmd fingerprint exited with status ${result.status ?? 'null'}`,
+      );
+      throw new TransportError(
+        'sqlcmd: fingerprint query failed. ' +
+        'Check server availability, authentication, and sqlcmd installation.',
+        rawCause,
       );
     }
 
