@@ -25,6 +25,7 @@ export { createSqliteSchemaAdapter } from './adapters/engines/sqlite/factory.js'
 export { createMssqlSchemaAdapter } from './adapters/engines/mssql/factory.js';
 export { createPgSchemaAdapter } from './adapters/engines/pg/factory.js';
 export { createMysqlSchemaAdapter } from './adapters/engines/mysql/factory.js';
+export { createMongodbSchemaAdapter } from './adapters/engines/mongodb/factory.js';
 
 // ── Capability probe factories (resilient-connectivity Batch 5) ──────────────
 // The CLI (and future MCP) must NOT import adapter modules directly (ADR-004).
@@ -34,6 +35,7 @@ export { MssqlCapabilityProbe } from './adapters/engines/mssql/probe.js';
 export { PgCapabilityProbe } from './adapters/engines/pg/probe.js';
 export { MysqlCapabilityProbe } from './adapters/engines/mysql/probe.js';
 export { SqliteCapabilityProbe } from './adapters/engines/sqlite/probe.js';
+export { MongodbCapabilityProbe } from './adapters/engines/mongodb/probe.js';
 // SqlcmdProfile registry — resolveProfile exposed so doctor can derive profile name
 // without importing the adapter module directly (ADR-004 boundary).
 export { resolveProfile } from './adapters/engines/mssql/strategies/profiles.js';
@@ -46,12 +48,13 @@ import { SQLITE_CAPABILITIES } from './adapters/engines/sqlite/capabilities.js';
 import { MSSQL_CAPABILITIES } from './adapters/engines/mssql/capabilities.js';
 import { PG_CAPABILITIES } from './adapters/engines/pg/capabilities.js';
 import { MYSQL_CAPABILITIES } from './adapters/engines/mysql/capabilities.js';
+import { MONGODB_CAPABILITIES } from './adapters/engines/mongodb/capabilities.js';
 import type { CapabilityMatrix } from './core/model/capability.js';
 import { UnsupportedDialectError } from './core/errors.js';
 
 // Re-export the capability constants so CLI/MCP modules can consume them
 // without importing adapter internals directly (ADR-004 boundary).
-export { SQLITE_CAPABILITIES, MSSQL_CAPABILITIES, PG_CAPABILITIES, MYSQL_CAPABILITIES };
+export { SQLITE_CAPABILITIES, MSSQL_CAPABILITIES, PG_CAPABILITIES, MYSQL_CAPABILITIES, MONGODB_CAPABILITIES };
 
 /**
  * Returns the static CapabilityMatrix for the given dialect WITHOUT opening
@@ -68,6 +71,8 @@ export function capabilitiesFor(dialect: string): CapabilityMatrix {
       return PG_CAPABILITIES;
     case 'mysql':
       return MYSQL_CAPABILITIES;
+    case 'mongodb':
+      return MONGODB_CAPABILITIES;
     default:
       throw new UnsupportedDialectError(dialect);
   }
