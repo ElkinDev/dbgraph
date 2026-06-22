@@ -17,7 +17,18 @@
  */
 
 import type { CliToolInfo } from '../ports/capability-probe.js';
-import { basename } from 'node:path';
+
+/**
+ * Host-independent basename: the last segment after EITHER a forward slash or a
+ * backslash. node:path.basename only recognizes the host OS separator, so on
+ * Linux it would leave a Windows path (and its embedded username) fully intact —
+ * the exact cross-platform leak this guards against. Splitting on both separators
+ * yields byte-identical results on every OS.
+ */
+function lastPathSegment(p: string): string {
+  const segments = p.split(/[\\/]/).filter((s) => s.length > 0);
+  return segments.length > 0 ? (segments[segments.length - 1] as string) : 'unknown';
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -94,9 +105,9 @@ export function formatDoctor(view: DoctorView): string {
     for (const tool of view.cliTools) {
       const versionPart = tool.version !== null ? tool.version : 'not detected';
       // S1 (R1 remediation): render BASENAME only — never the full path, which
-      // can embed a username (e.g. C:\Users\ecardoso\...). basename() handles
-      // both Windows (backslash) and POSIX (forward slash) paths.
-      const pathPart = tool.path !== null ? basename(tool.path) : 'not found';
+      // can embed a username (e.g. C:\Users\ecardoso\...). lastPathSegment is
+      // host-independent (handles BOTH separators) — node:path.basename is not.
+      const pathPart = tool.path !== null ? lastPathSegment(tool.path) : 'not found';
       lines.push(`    ${tool.tool.padEnd(12)}  version: ${versionPart}  path: ${pathPart}`);
     }
   }
