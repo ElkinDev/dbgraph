@@ -1,0 +1,32 @@
+{
+  "engine": "mssql",
+  "engineVersion": "15.0",
+  "schemas": ["dbo"],
+  "objects": [
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "orders",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 },
+        { "name": "customer_id", "dataType": "int", "nullable": false, "ordinal": 2 }
+      ],
+      "constraints": [
+        { "name": "PK_orders", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    },
+    {
+      "kind": "table",
+      "schema": "dbo",
+      "name": "customers",
+      "columns": [
+        { "name": "id", "dataType": "int", "nullable": false, "ordinal": 1 }
+      ],
+      "constraints": [
+        { "name": "PK_customers", "type": "PK", "columns": ["id"] }
+      ],
+      "indexes": []
+    }
+  ]
+}
