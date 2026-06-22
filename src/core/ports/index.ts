@@ -36,3 +36,9 @@ export type {
   DetectResult,
   StrategyAttempt,
 } from './connectivity-strategy.js';
+
+export type {
+  CapabilityProbe,
+  ProbeResult,
+  CliToolInfo,
+} from './capability-probe.js';

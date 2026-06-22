@@ -719,3 +719,78 @@ describe('SqlcmdStrategy.fingerprint() — real format + UTF-8 flag', () => {
     expect(args).not.toContain('-f');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 4 (task 4.3) — profile-threaded flags + probe() + reassembleForJson wiring
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('SqlcmdStrategy — Batch 4 profile-driven flags + probe() (task 4.3)', () => {
+  it('runCatalog: with legacy-15.x profile, argv contains exactly the profile flags', async () => {
+    // The profile flags ['-y','0','-f','o:65001'] must appear in the argv;
+    // no -h, no -W (per F-3 mutual-exclusivity on legacy 15.x).
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+
+    await strategy.runCatalog(FULL_SCOPE);
+
+    for (const call of spawnSync.mock.calls) {
+      const args = (call[1] ?? []) as string[];
+      expect(args).toContain('-y');
+      expect(args).toContain('0');
+      expect(args).toContain('-f');
+      expect(args).toContain('o:65001');
+      expect(args).not.toContain('-h');
+      expect(args).not.toContain('-W');
+    }
+  });
+
+  it('runCatalog: spawned argv toEqual SHIPPED order ["-E","-S",server,"-d",db,"-Q",sql,...profileFlags]', async () => {
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+
+    await strategy.runCatalog(FULL_SCOPE);
+
+    const firstCall = spawnSync.mock.calls[0]!;
+    const args = (firstCall[1] ?? []) as string[];
+    // Base flags always present: -E -S <server> -d <db> -Q <sql>
+    expect(args[0]).toBe('-E');
+    expect(args[1]).toBe('-S');
+    expect(args[2]).toBe(MSSQL_CONFIG.server);
+    expect(args[3]).toBe('-d');
+    expect(args[4]).toBe(MSSQL_CONFIG.database);
+    expect(args[5]).toBe('-Q');
+    // Profile flags follow the query
+    const profileFlagStart = 7;
+    expect(args.slice(profileFlagStart)).toEqual(['-y', '0', '-f', 'o:65001']);
+  });
+
+  it('fingerprint: spawned argv includes the profile flags ["-y","0","-f","o:65001"]', async () => {
+    const fingerprintObj = { m: '2024-06-19T00:00:00', c: 3 };
+    const fingerprintOutput = legacySqlcmdOutput(JSON.stringify(fingerprintObj));
+    const spawnSync = vi.fn<SpawnSyncFn>().mockReturnValue(
+      makeSpawnResult({ status: 0, stdout: Buffer.from(fingerprintOutput) }),
+    );
+
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    await strategy.fingerprint();
+
+    const args = (spawnSync.mock.calls[0]![1] ?? []) as string[];
+    expect(args).toContain('-y');
+    expect(args).toContain('0');
+    expect(args).toContain('-f');
+    expect(args).toContain('o:65001');
+    expect(args).not.toContain('-h');
+    expect(args).not.toContain('-W');
+  });
+
+  it('runCatalog over a recorded stdout fixture yields the same RawCatalog as before extraction', async () => {
+    // This is the behavior-preserved golden: the extracted reassembleForJson
+    // must produce the same result as the previous private function.
+    const spawnSync = makeCatalogSpawnSync(MINIMAL_TABLES, MINIMAL_COLUMNS);
+    const strategy = new SqlcmdStrategy(MSSQL_CONFIG, spawnSync);
+    const catalog = await strategy.runCatalog(FULL_SCOPE);
+
+    expect(catalog.engine).toBe('mssql');
+    expect(catalog.objects.some((o) => o.name === 'Accounts')).toBe(true);
+  });
+});

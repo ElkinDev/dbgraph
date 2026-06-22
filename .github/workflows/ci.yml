@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # workflow_dispatch allows the sqlcmd-transport job to be triggered manually.
+  # The job's `if:` condition gates it — on push/pull_request it will be skipped.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -86,3 +89,78 @@ jobs:
         env:
           DBGRAPH_INTEGRATION: '1'
         run: npm run test:integration
+
+  # OPT-IN sqlcmd transport lane (US-044, Batch 6).
+  # PURPOSE: exercises the sqlcmd flag combinations, chunked FOR JSON output, and
+  #          encoding path (F-3/F-4/F-5/F-6 coverage gap F-7) that are NOT exercised
+  #          by the tedious/Testcontainers unit matrix.
+  #
+  # GATE RULES (MUST hold invariant):
+  #   - This job is NEVER listed in `needs:` by the unit matrix `test` job.
+  #   - It is ONLY triggered via workflow_dispatch (explicit opt-in) OR when the
+  #     DBGRAPH_SQLCMD_LANE secret/variable is set to '1'.
+  #   - On ANY sqlcmd install failure the step emits a notice and exits 0
+  #     (skip-with-notice) — the job NEVER turns the matrix red.
+  #   - The unit `test` job has no dependency on this job; PR status checks
+  #     MUST NOT require this job.
+  #
+  # How to trigger:
+  #   Actions → CI → Run workflow → (choose branch) → Trigger
+  #   OR set repository variable DBGRAPH_SQLCMD_LANE=1 in repo settings.
+  sqlcmd-transport:
+    runs-on: ubuntu-latest
+    # OPT-IN: only runs on explicit workflow_dispatch trigger.
+    # The `test` job does NOT list this in needs: — unit matrix is independent.
+    if: github.event_name == 'workflow_dispatch' || vars.DBGRAPH_SQLCMD_LANE == '1'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+
+      # Install a pinned sqlcmd version.
+      # On install failure: emit a notice and exit 0 (skip-with-notice — mirrors L-003).
+      # This step MUST NOT exit non-zero on install failure.
+      - name: Install sqlcmd (pinned; skip-with-notice on failure)
+        id: install_sqlcmd
+        run: |
+          set +e
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/microsoft-prod.gpg > /dev/null
+          curl -fsSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list > /dev/null
+          sudo apt-get update -qq
+          ACCEPT_EULA=Y sudo apt-get install -y mssql-tools18 unixodbc-dev 2>/dev/null
+          INSTALL_EXIT=$?
+          set -e
+          if [ $INSTALL_EXIT -ne 0 ]; then
+            echo "::notice::sqlcmd install failed (exit $INSTALL_EXIT) — skipping sqlcmd transport lane (F-7). This does NOT block the unit matrix."
+            echo "sqlcmd_available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "sqlcmd_available=true" >> "$GITHUB_OUTPUT"
+            echo "sqlcmd installed:"
+            /opt/mssql-tools18/bin/sqlcmd -? 2>&1 | head -3 || true
+          fi
+
+      # Run only the sqlcmd-transport subset of tests.
+      # These are the flag-combo / chunking / encoding tests (US-042/044) that
+      # require sqlcmd to be present. Guard: skip if install failed.
+      - name: Run sqlcmd transport tests (flag combos, chunking, encoding)
+        if: steps.install_sqlcmd.outputs.sqlcmd_available == 'true'
+        env:
+          DBGRAPH_SQLCMD_LANE: '1'
+          SQLCMD_PATH: '/opt/mssql-tools18/bin/sqlcmd'
+        run: |
+          npm test -- --reporter=verbose \
+            "test/adapters/engines/mssql/strategies/json-rows-reassembly" \
+            "test/adapters/engines/mssql/strategies/profiles" \
+            "test/adapters/engines/mssql/probe" \
+            "test/fixtures/mssql/connectivity"
+
+      - name: Skip notice (sqlcmd unavailable)
+        if: steps.install_sqlcmd.outputs.sqlcmd_available != 'true'
+        run: |
+          echo "::notice::sqlcmd transport lane skipped — sqlcmd not available. Unit matrix unaffected."

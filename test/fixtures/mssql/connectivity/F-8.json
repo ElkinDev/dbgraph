@@ -1,0 +1,26 @@
+{
+  "_fixture": "F-8",
+  "_description": "Conservative default profile: unrecognized sqlcmd version yields default profile, no crash",
+  "environment": {
+    "variantId": "unknown",
+    "detectedVersion": "99.0.0000",
+    "flags": []
+  },
+  "profileResolution": {
+    "inputVersion": "99.0.0000",
+    "matchedProfile": null,
+    "fallbackProfile": "conservative-default",
+    "fallbackFlags": ["-y", "0", "-f", "o:65001"],
+    "fallbackOutputShape": { "chunkSize": 2033, "hasHeader": false },
+    "fallbackEncoding": "utf8",
+    "crashOnMiss": false
+  },
+  "probeResult": {
+    "nativeDriver": false,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": "99.0.0000", "path": "C:\\synthetic\\path\\sqlcmd.exe" }
+    ],
+    "odbc": false
+  },
+  "conclusion": "unrecognized-version-conservative-default-no-crash"
+}

@@ -1,0 +1,31 @@
+{
+  "_fixture": "F-7",
+  "_description": "CI coverage gap: gated integration tests use tedious/Testcontainers, NOT the sqlcmd transport; flag combos, chunking, encoding only surface on a real sqlcmd run",
+  "environment": {
+    "ciContext": "gated-testcontainers",
+    "sqlcmdAvailable": false
+  },
+  "gapDescription": {
+    "whatIsCovered": "SQL validity via tedious wire protocol against Testcontainers SQL Server",
+    "whatIsNotCovered": [
+      "sqlcmd flag combinations (F-3)",
+      "FOR JSON output format and chunking (F-4/F-6)",
+      "Output encoding (F-5)",
+      "Variant detection (F-2)"
+    ],
+    "remedy": "opt-in CI lane installing a pinned sqlcmd version, exercising the transport path"
+  },
+  "optInLane": {
+    "trigger": "workflow_dispatch or DBGRAPH_SQLCMD_LANE=1",
+    "neverBlocksUnitMatrix": true,
+    "installFailureAction": "skip-with-notice"
+  },
+  "probeResult": {
+    "nativeDriver": true,
+    "cliTools": [
+      { "tool": "sqlcmd", "version": null, "path": null }
+    ],
+    "odbc": false
+  },
+  "conclusion": "opt-in-sqlcmd-lane-required-to-close-f7-gap"
+}
