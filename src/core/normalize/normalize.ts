@@ -5,7 +5,7 @@
  * ADR-008: deterministic output (sorted by kind/qname/id; stableStringify for JSON).
  */
 
-import type { RawCatalog, RawObject, RawColumn, RawConstraint, RawIndex } from '../model/catalog.js';
+import type { RawCatalog, RawObject, RawColumn, RawConstraint, RawIndex, RawField } from '../model/catalog.js';
 import type { ExtractionScope } from '../model/capability.js';
 import type { GraphNode, NodeKind, NodePayload, IndexLevel } from '../model/node.js';
 import type { GraphEdge, EdgeKind } from '../model/edge.js';
@@ -314,6 +314,15 @@ function buildChildNodes(
       buildIndexNode(idx, parentNode, indexLevel, nodeMap, edges, warnings);
     }
   }
+
+  // Fields (MongoDB / schemaless engines only — mirrors the columns branch).
+  // SQL engines NEVER set RawObject.fields, so this branch is provably inert for them.
+  if (obj.fields !== undefined && scope.levels.fields !== 'off') {
+    const fieldLevel: IndexLevel = scope.levels.fields;
+    for (const field of obj.fields) {
+      buildFieldNode(field, parentNode, fieldLevel, nodeMap, edges, warnings);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -377,6 +386,40 @@ function buildChildNode(
   });
 
   return childNode;
+}
+
+/**
+ * Builds a 'field' child node from a RawField (MongoDB sampled field).
+ * Mirrors buildColumnNode exactly: one 'has_column' edge (re-used edge kind for containment).
+ * payload carries dataType (union string), frequency, and optionally nullable.
+ * dataType is a STRING like 'int|string' — consumable by inferReferences as-is (Design D1).
+ */
+function buildFieldNode(
+  field: RawField,
+  parentNode: GraphNode,
+  level: IndexLevel,
+  nodeMap: NodeMap,
+  edges: GraphEdge[],
+  warnings: string[],
+): void {
+  const payload: NodePayload = {
+    dataType: field.dataType,
+    frequency: field.frequency,
+    ...(field.nullable !== undefined ? { nullable: field.nullable } : {}),
+  };
+
+  buildChildNode(
+    'field',
+    field.name,
+    parentNode,
+    level,
+    payload,
+    'has_column',
+    {},
+    nodeMap,
+    edges,
+    warnings,
+  );
 }
 
 function buildColumnNode(

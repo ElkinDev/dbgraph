@@ -13,6 +13,13 @@ export interface RawCatalog {
   readonly objects: readonly RawObject[];        // every extracted object, any kind
 }
 
+export interface RawField {
+  readonly name: string;
+  readonly dataType: string;     // union form like 'int|string' (sorted) — NOT a types[] array
+  readonly frequency: number;    // presence ratio 0.0–1.0 across sampled documents
+  readonly nullable?: boolean;
+}
+
 export interface RawObject {
   readonly kind: NodeKind;
   readonly schema: string | null;
@@ -21,6 +28,9 @@ export interface RawObject {
   readonly columns?: readonly RawColumn[];
   readonly constraints?: readonly RawConstraint[];
   readonly indexes?: readonly RawIndex[];
+  // Schemaless field structure (MongoDB / schemaless engines only).
+  // SQL engines MUST leave this unset — the normalizer branch is provably inert.
+  readonly fields?: readonly RawField[];
   // Routines/triggers: body (level-gated) + dependency hints + dynamic-sql blindness flag.
   readonly signature?: string;
   readonly returns?: string;

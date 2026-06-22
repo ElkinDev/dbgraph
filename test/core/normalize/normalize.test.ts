@@ -563,3 +563,132 @@ describe('normalizeCatalog — gate OFF byte-identical golden (task 3.4, US-008)
     assertMatchesGolden('catalog-rw-edges', result);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 1 (phase-9b) — task 1.3: buildFieldNode + fields branch
+// Spec: "A RawObject with fields normalizes into field nodes".
+// The fields branch mirrors columns: each RawField → one 'field' node.
+// Gate: scope.levels.fields controls inclusion (off → skip).
+// Byte-identical invariant: SQL engines never set RawObject.fields → ZERO field nodes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — fields branch (task 1.3, phase-9b-mongodb)', () => {
+  // A RawObject of kind 'collection' with fields
+  const collectionWithFields: RawCatalog = {
+    engine: 'mongodb',
+    schemas: ['mydb'],
+    objects: [
+      {
+        kind: 'collection',
+        schema: 'mydb',
+        name: 'orders',
+        fields: [
+          { name: 'customer_id', dataType: 'objectId', frequency: 1.0 },
+          { name: 'amount', dataType: 'numeric', frequency: 1.0 },
+          { name: 'notes', dataType: 'string', frequency: 0.5, nullable: true },
+        ],
+      },
+    ],
+  };
+
+  const FIELDS_ON_SCOPE: ExtractionScope = {
+    levels: {
+      tables: 'full',
+      columns: 'full',
+      constraints: 'full',
+      indexes: 'full',
+      views: 'full',
+      procedures: 'metadata',
+      functions: 'metadata',
+      triggers: 'full',
+      sequences: 'metadata',
+      collections: 'full',
+      fields: 'metadata',   // ON — fields branch must fire
+      statistics: 'off',
+      sampling: 'off',
+    },
+  };
+
+  const FIELDS_OFF_SCOPE: ExtractionScope = {
+    levels: {
+      ...FIELDS_ON_SCOPE.levels,
+      fields: 'off',        // OFF — fields branch must NOT fire
+    },
+  };
+
+  it('a RawObject with fields produces one field node per RawField', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // EXACT-set: 3 RawField entries → 3 field nodes (L-009)
+    expect(fieldNodes).toHaveLength(3);
+  });
+
+  it('field nodes carry the correct qname (parent.fieldName)', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const qnames = result.graph.nodes
+      .filter((n) => n.kind === 'field')
+      .map((n) => n.qname);
+    // EXACT-set assertions (L-009)
+    expect(qnames).toContain('mydb.orders.customer_id');
+    expect(qnames).toContain('mydb.orders.amount');
+    expect(qnames).toContain('mydb.orders.notes');
+    expect(qnames).toHaveLength(3);
+  });
+
+  it('field nodes carry dataType in payload', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const customerIdNode = result.graph.nodes.find(
+      (n) => n.kind === 'field' && n.name === 'customer_id',
+    );
+    expect(customerIdNode?.payload['dataType']).toBe('objectId');
+  });
+
+  it('field nodes carry frequency in payload', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const notesNode = result.graph.nodes.find(
+      (n) => n.kind === 'field' && n.name === 'notes',
+    );
+    expect(notesNode?.payload['frequency']).toBe(0.5);
+  });
+
+  it('absent fields → ZERO field nodes (the no-op path for SQL engines)', () => {
+    const sqlCatalog: RawCatalog = {
+      engine: 'mssql',
+      schemas: ['dbo'],
+      objects: [
+        {
+          kind: 'table',
+          schema: 'dbo',
+          name: 'orders',
+          columns: [
+            { name: 'id', dataType: 'int', nullable: false, ordinal: 1 },
+          ],
+        },
+      ],
+    };
+    const result = normalizeCatalog(sqlCatalog, FIELDS_ON_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // EXACT-set: SQL sets no fields → ZERO field nodes (L-009)
+    expect(fieldNodes).toHaveLength(0);
+  });
+
+  it('fields level off → branch skipped → ZERO field nodes', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_OFF_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // Level 'off' gates the branch — no field nodes produced
+    expect(fieldNodes).toHaveLength(0);
+  });
+
+  it('collection node is still produced when fields level is off', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_OFF_SCOPE);
+    const collectionNode = result.graph.nodes.find((n) => n.kind === 'collection');
+    expect(collectionNode).toBeDefined();
+    expect(collectionNode?.qname).toBe('mydb.orders');
+  });
+
+  it('normalizes deterministically (byte-identical on second run)', () => {
+    const r1 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const r2 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    expect(serializeResult(r2)).toBe(serializeResult(r1));
+  });
+});
