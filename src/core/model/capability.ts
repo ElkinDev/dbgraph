@@ -18,6 +18,14 @@ export interface ExtractionScope {
   readonly levels: ObjectTypeLevels;        // effective (config-resolved) levels
   readonly include?: readonly string[];     // glob patterns (Phase 4 applies; model honors stubs)
   readonly exclude?: readonly string[];
+  /**
+   * Opt-in gate for structural inference (US-008).
+   * When `true`, the normalizer calls `inferReferences` after step 4c.
+   * When absent or `false` (the default), inference is skipped and the normalizer
+   * output is byte-identical to pre-Phase-9a behavior (the four shipped SQL engines
+   * stay unaffected). Design D3.
+   */
+  readonly inferRelationships?: boolean;
 }
 
 /**
