@@ -90,6 +90,31 @@ export interface MysqlSource {
 }
 
 /**
+ * Source block for a MongoDB database.
+ * Uses a URI-based connection string — NO host/port/user/password/schema
+ * decomposition. The full URI (including any embedded credentials) MUST be
+ * supplied as a `${env:VAR}` reference; literals are REJECTED by the parser.
+ *
+ * `database` names the extraction scope (also the schema name in the
+ * normalized catalog — schema == database for MongoDB).
+ * `sampleSize` controls per-collection document sampling; parse-config
+ * defaults to 100 when absent.
+ * `tls` enables TLS/SSL when true; optional.
+ *
+ * NO `schema?` field: the connected database IS the extraction scope.
+ * NO host/port/user/password fields: all live inside the URI.
+ *
+ * US-030 (MongoDB adapter, Phase 9b), mongodb-extraction spec
+ * "Connectivity via a URI reference".
+ */
+export interface MongodbSource {
+  readonly uri: string;        // MUST be ${env:VAR}; literal rejected by parser
+  readonly database: string;   // extraction scope; schema == database for MongoDB
+  readonly sampleSize?: number; // default 100; per-collection sampling depth
+  readonly tls?: boolean;      // enables TLS/SSL when true
+}
+
+/**
  * The committeable dbgraph.config.json schema.
  * dialect discriminant determines the source shape.
  */
@@ -114,6 +139,11 @@ export type DbgraphConfig =
       readonly dialect: 'mysql';
       readonly source: MysqlSource;
       readonly levels?: Partial<ObjectTypeLevels>;
+    }
+  | {
+      readonly dialect: 'mongodb';
+      readonly source: MongodbSource;
+      readonly levels?: Partial<ObjectTypeLevels>;
     };
 
 /** Valid index level values. */
@@ -121,5 +151,5 @@ export const VALID_LEVELS = ['off', 'metadata', 'full'] as const;
 export type ValidLevel = (typeof VALID_LEVELS)[number];
 
 /** Supported dialects. */
-export const SUPPORTED_DIALECTS = ['sqlite', 'mssql', 'pg', 'mysql'] as const;
+export const SUPPORTED_DIALECTS = ['sqlite', 'mssql', 'pg', 'mysql', 'mongodb'] as const;
 export type SupportedDialect = (typeof SUPPORTED_DIALECTS)[number];

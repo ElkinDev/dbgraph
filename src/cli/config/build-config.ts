@@ -163,6 +163,18 @@ function buildOrderedSource(cfg: DbgraphConfig): unknown {
     if (src.ssl !== undefined) ordered['ssl'] = src.ssl;
     return ordered;
   }
+  if (cfg.dialect === 'mongodb') {
+    // mongodb: URI-based; fixed key order; NO host/port/user/password decomposition.
+    // Batch 2 stub — real wiring in Batch 5.
+    const src = cfg.source;
+    const ordered: Record<string, unknown> = {
+      uri: src.uri,
+      database: src.database,
+    };
+    if (src.sampleSize !== undefined) ordered['sampleSize'] = src.sampleSize;
+    if (src.tls !== undefined) ordered['tls'] = src.tls;
+    return ordered;
+  }
   // mssql: fixed key order
   const src = cfg.source;
   const ordered: Record<string, unknown> = {
