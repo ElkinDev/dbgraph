@@ -51,10 +51,12 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-038 — Multi-agent install
 **As** a user of any popular MCP agent, **I want** `dbgraph install` to detect and configure my agent automatically, **so that** I never edit JSON by hand — parity with codegraph's auto-detection.
-**Phase:** 9.5 · **Depends on:** US-024 · **Status:** ☐ pending
+**Phase:** 9.5a · **Depends on:** US-024 · **Change:** `phase-9.5a-multi-agent-install` · **Status:** ☐ in progress
 
 **Acceptance criteria:**
-- Table-driven detection (agent → known config path → format); initial set ≥ 6: Claude Code, Cursor, Codex CLI, Gemini CLI, opencode, VS Code/JetBrains via MCP.
-- Idempotent (re-running does not duplicate entries); `--remove` deletes exactly what was added; one pass configures all detected agents and summarizes what it did.
+- Table-driven detection via a typed `AGENT_TABLE` (agent → config path → format); initial set ≥ 6: Claude Code, Cursor, Gemini CLI (mcpServers-JSON), VS Code (`servers` key, `type:'stdio'`), opencode (`mcp` key, `type:'local'`, array command), Codex CLI (TOML `[mcp_servers.dbgraph-mcp]`).
+- Three writer families, all PURE: reuse the shipped `mergeMcpConfig`/`removeMcpConfig` for mcpServers-JSON; new `mergeVsCodeConfig`/`mergeOpenCodeConfig` (+ removers); an in-house Codex TOML micro-writer/merger/remover (ADR-007 — NO `toml` library).
+- An agent is configured ONLY if its config file already exists; a missing env var or file skips it (never created).
+- Idempotent (re-running does not duplicate entries, incl. the TOML block); `--remove` deletes exactly the `dbgraph-mcp` entry per agent (other entries intact); one pass configures all detected agents and summarizes what it did.
 - If none is detected, it prints the manual config (US-024 behavior) — it never fails dry.
 - Adding support for a new agent = one table row + one test (documented in CONTRIBUTING as an easy contribution).
