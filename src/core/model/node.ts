@@ -109,6 +109,18 @@ export interface TriggerPayload {
   comment?: string;
 }
 
+/**
+ * Accessor view for a 'field' node (MongoDB sampled field).
+ * Mirrors ColumnPayload structurally so inferReferences (which reads payload.dataType
+ * as a string) consumes a 'field' node identically to a 'column' node (Design §D1).
+ * dataType is a union string like 'int|string' (sorted) — NOT a types[] array.
+ */
+export interface FieldPayload {
+  dataType: string;      // union form 'int|string' (sorted) — readable by inferReferences
+  frequency: number;     // presence ratio 0.0–1.0 across sampled documents
+  nullable?: boolean;
+}
+
 export interface GraphNode {
   readonly id: string;            // deterministic (design §3.4)
   readonly kind: NodeKind;
