@@ -154,11 +154,11 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 > block; NEVER a general TOML parser; ZERO new deps. Detect via header scan; block runs until the next line
 > matching `/^\s*\[/` or EOF.
 
-- [ ] D.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add the deterministic
+- [x] D.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add the deterministic
   `CODEX_RENDER` constant = the fixed 3 lines `[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y",
   "dbgraph-mcp"]` (args serialized with a SINGLE space after the comma; stable order `command` then `args`).
   Assert the exact rendered string byte-for-byte. Done: `npm test install`.
-- [ ] D.2 RED→GREEN `mergeCodexToml(content)` in `src/cli/commands/install.ts` (PURE, line-oriented): block
+- [x] D.2 RED→GREEN `mergeCodexToml(content)` in `src/cli/commands/install.ts` (PURE, line-oriented): block
   ABSENT ⇒ append `CODEX_RENDER` (ensure exactly ONE blank line before it when the file is non-empty; single
   trailing `\n`); block PRESENT and byte-equal to `CODEX_RENDER` ⇒ return `content` UNCHANGED (idempotent);
   block PRESENT and differing ⇒ replace ONLY the block region (header → terminator `/^\s*\[/` or EOF) with
@@ -167,19 +167,19 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   output returns it UNCHANGED (exactly one `[mcp_servers.dbgraph-mcp]` header — count via regex). Spec: Codex
   CLI gets the TOML mcp_servers block (other TOML content preserved); Re-running is idempotent for every
   format including TOML (exactly one block). Done: `npm test install`.
-- [ ] D.3 RED→GREEN `removeCodexToml(content)` in `src/cli/commands/install.ts` (PURE): block ABSENT ⇒ return
+- [x] D.3 RED→GREEN `removeCodexToml(content)` in `src/cli/commands/install.ts` (PURE): block ABSENT ⇒ return
   `content` unchanged; block PRESENT ⇒ delete the header→block-end region, collapse a resulting DOUBLE blank
   line, keep a single trailing `\n`. Other `[mcp_servers.*]` and `[other]` blocks UNTOUCHED. Assert on EXACT
   text: removing from a file with `[mcp_servers.dbgraph-mcp]` + `[other]` yields the file with ONLY `[other]`
   remaining and no orphan blank lines; removing when the block is absent returns the input unchanged. Spec:
   --remove deletes only the dbgraph-mcp entry per agent (the Codex block is gone; other blocks untouched).
   Done: `npm test install`.
-- [ ] D.4 RED→GREEN add the codex row to `AGENT_TABLE` (`id:'codex'`, `format:'codex-toml'`, `homeRoot`-rooted
+- [x] D.4 RED→GREEN add the codex row to `AGENT_TABLE` (`id:'codex'`, `format:'codex-toml'`, `homeRoot`-rooted
   `'.codex','config.toml'`; `merge` = `(text) => mergeCodexToml(text)` ignoring the JSON entry — the render
   is fixed; `remove` = `removeCodexToml`). Assert EXACT win32 path `C:\\Users\\u\\.codex\\config.toml` and
   posix `/home/u/.codex/config.toml`, and `undefined` when the env var is absent. Spec: Config paths resolve
   per OS (codex row). Done: `npm test install`.
-- [ ] D.5 RED→GREEN codex integration via `runInstall`: given an existing `config.toml` on win32 AND posix,
+- [x] D.5 RED→GREEN codex integration via `runInstall`: given an existing `config.toml` on win32 AND posix,
   the written bytes contain a `[mcp_servers.dbgraph-mcp]` block with `command = "npx"` and `args = ["-y",
   "dbgraph-mcp"]` and any pre-existing `[other]` block is preserved; idempotent re-run writes nothing
   (`next === raw`); `--remove` deletes exactly the block. NOTE: for `format:'codex-toml'` the loop's
@@ -187,7 +187,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   still produces a valid single-block render. Spec: Codex CLI gets the TOML mcp_servers block; Re-running is
   idempotent for every format including TOML; --remove deletes only the dbgraph-mcp entry per agent. Done:
   `npm test install`.
-- [ ] D.6 GATE — Batch D: `tsc` clean; lint 0/0; `npm test` green incl. all prior batches + Claude Code
+- [x] D.6 GATE — Batch D: `tsc` clean; lint 0/0; `npm test` green incl. all prior batches + Claude Code
   suites. Done: all gates green.
 
 ## Batch E: full 6-agent matrix reconcile + manual-snippet wording + summary polish + US-038 docs
@@ -197,26 +197,26 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 > design's one OPEN QUESTION) and reconciles US-038. No NEW writer logic — this is the closing
 > matrix + polish + docs batch.
 
-- [ ] E.1 RED→GREEN the FULL cross-platform path matrix in `test/cli/commands/install.test.ts`: a single
+- [x] E.1 RED→GREEN the FULL cross-platform path matrix in `test/cli/commands/install.test.ts`: a single
   data-driven suite asserting ALL 6 rows × {win32, posix} resolve to their EXACT pinned strings (Claude Code
   `%APPDATA%`-rooted; the other five `homeRoot`-rooted), AND that EACH row's `resolvePath` returns
   `undefined` when its env var is missing/empty. Pin Claude Code win32
   `C:\\Users\\u\\AppData\\Roaming\\Claude\\claude_desktop_config.json` and posix
   `/home/u/.config/Claude/claude_desktop_config.json`. Spec: Config paths resolve correctly on win32; Config
   paths resolve correctly on posix (all rows). Done: `npm test install`.
-- [ ] E.2 RED→GREEN the FULL multi-agent integration matrix via `runInstall`: given existing config files for
+- [x] E.2 RED→GREEN the FULL multi-agent integration matrix via `runInstall`: given existing config files for
   ALL 6 agents simultaneously on win32 (then again on posix), ONE pass writes each file's format-correct
   entry (mcpServers ×3, servers ×1, mcp-array ×1, codex-toml ×1); a SECOND pass writes NOTHING to ANY file
   (idempotent across every format including TOML); `--remove` over all 6 deletes EXACTLY the `dbgraph-mcp`
   entry/block from each and leaves a planted "other" entry/block in each file intact. Spec: Re-running is
   idempotent for every format including TOML; --remove deletes only the dbgraph-mcp entry per agent. Done:
   `npm test install`.
-- [ ] E.3 RED→GREEN no-secrets assertion: for every configured agent, the written entry contains ONLY
+- [x] E.3 RED→GREEN no-secrets assertion: for every configured agent, the written entry contains ONLY
   `command` + `args` (mcpServers/vscode rows), `type` + `command` array (opencode), or `command`/`args` TOML
   keys (codex) — and NO credential/token field anywhere in the written bytes (assert the serialized output
   matches the exact expected entry shape and contains no extra keys). Spec: Written entries carry no secrets.
   Done: `npm test install`.
-- [ ] E.4 RED→GREEN `MANUAL_SNIPPET` + summary wording in `src/cli/commands/install.ts`: extend
+- [x] E.4 RED→GREEN `MANUAL_SNIPPET` + summary wording in `src/cli/commands/install.ts`: extend
   `MANUAL_SNIPPET` to NAME the supported agents (Claude Code, Cursor, Gemini CLI, VS Code, opencode, Codex
   CLI) while KEEPING the existing structure (the shipped exact-equality test in `runInstall — no agent
   detected` must be updated in the SAME commit to match — they are one contract). Finalize the per-agent
@@ -224,12 +224,12 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   summary lists each acted-on agent and its action, and that the zero-agent path still prints the (updated)
   `MANUAL_SNIPPET` exactly. Spec: No detected agent prints the manual snippet and exits 0; a detected run
   prints a per-agent operation summary. Done: `npm test install`.
-- [ ] E.5 GREEN docs: refine `docs/stories/07-quality-publication.md` US-038 notes to the LOCKED decisions —
+- [x] E.5 GREEN docs: refine `docs/stories/07-quality-publication.md` US-038 notes to the LOCKED decisions —
   the 6 concrete agents + their exact paths/formats, the three-writer split (`mcpServers` reuse, VS Code
   `servers`/`{type:stdio}`, opencode `mcp`/array-command, in-house Codex TOML per ADR-007), and the
   "adding a 7th agent = one `AGENT_TABLE` row + one test" contract. Spec: US-038 refined with the locked
   decisions encoded. Done: story updated and reviewable.
-- [ ] E.6 Final GATE + closeout: `npx tsc --noEmit` clean (no `any`); `npm run lint` 0 errors / 0 warnings;
+- [x] E.6 Final GATE + closeout: `npx tsc --noEmit` clean (no `any`); `npm run lint` 0 errors / 0 warnings;
   `npm test` green INCLUDING every pre-existing Claude Code install suite (unchanged) and the full 6-agent ×
   2-OS matrix; confirm ZERO new dependency was added to `package.json` and `src/cli/dispatch.ts` is
   UNTOUCHED. Done: all gates green.
@@ -279,28 +279,28 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 
 ## Definition of Done (tied to the proposal's Success Criteria)
 
-- [ ] `AGENT_TABLE` drives detection + configuration for the 6 agents (Claude Code, Cursor, Gemini CLI, VS
+- [x] `AGENT_TABLE` drives detection + configuration for the 6 agents (Claude Code, Cursor, Gemini CLI, VS
   Code, opencode, Codex CLI) via the multi-pass `runInstall` loop; adding a 7th is one `AGENT_TABLE` row +
   one test. — Batches A–E
-- [ ] Each agent installs AND removes idempotently across `win32` and `posix` in unit tests (re-run writes
+- [x] Each agent installs AND removes idempotently across `win32` and `posix` in unit tests (re-run writes
   nothing — incl. TOML; `--remove` deletes EXACTLY the `dbgraph-mcp` entry/block it added; other
   entries/blocks untouched). — Batches A–E (matrix in E.2)
-- [ ] Every agent × {win32, posix} config-path permutation is asserted EXACTLY (L-009) via the existing fake
+- [x] Every agent × {win32, posix} config-path permutation is asserted EXACTLY (L-009) via the existing fake
   `FsSeam` + injected `platform`/`env` — NO real filesystem, green on Windows, NO CI. — Batches A–D
   (consolidated in E.1)
-- [ ] The four entry SHAPES are honored: `mcpServers`-JSON `{command,args}` (Claude Code/Cursor/Gemini), VS
+- [x] The four entry SHAPES are honored: `mcpServers`-JSON `{command,args}` (Claude Code/Cursor/Gemini), VS
   Code `servers` with `{type:'stdio',…}` (and NO `mcpServers` key), opencode `mcp` with
   `{type:'local',command:[…]}` ARRAY command, Codex `[mcp_servers.dbgraph-mcp]` TOML — the VS Code
   `servers`-vs-`mcpServers` distinction explicitly tested. — Batches A (mcpServers), B (vscode), C (opencode),
   D (codex)
-- [ ] When ZERO agents are detected the (updated) manual snippet is printed and the command exits 0 (US-024
+- [x] When ZERO agents are detected the (updated) manual snippet is printed and the command exits 0 (US-024
   behavior preserved); a detected run prints a per-agent operation summary. — Batches A.6, E.4
-- [ ] Written entries carry NO secrets (only `command`/`args` or `type`+array `command`); `--remove` is clean
+- [x] Written entries carry NO secrets (only `command`/`args` or `type`+array `command`); `--remove` is clean
   and exact; absent file ⇒ skipped, never created. — Batches A.5/A.6, E.3
-- [ ] ZERO new runtime dependencies — the Codex TOML writer is an in-house micro-writer (ADR-007); `src/cli`
+- [x] ZERO new runtime dependencies — the Codex TOML writer is an in-house micro-writer (ADR-007); `src/cli`
   imports node builtins ONLY (ADR-004); `src/cli/dispatch.ts` and the `InstallOptions`/`InstallOutcome`
   contract are UNCHANGED. — Batches D, E.6
-- [ ] `npx tsc --noEmit` (no `any`, typed errors), `npm run lint` (0/0), and `npm test` are ALL green,
+- [x] `npx tsc --noEmit` (no `any`, typed errors), `npm run lint` (0/0), and `npm test` are ALL green,
   INCLUDING every pre-existing Claude Code install suite unchanged. — every batch GATE; final in E.6
-- [ ] US-038 reconciled in `docs/stories/07-quality-publication.md` with the 6 agents, their paths/formats,
+- [x] US-038 reconciled in `docs/stories/07-quality-publication.md` with the 6 agents, their paths/formats,
   the three-writer split (incl. in-house Codex TOML), and the one-row-per-agent contract. — Batch E.5

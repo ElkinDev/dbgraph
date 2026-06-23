@@ -470,6 +470,157 @@ function removeOpenCodeText(content: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Codex TOML micro-writer (in-house, ADR-007 — bounded to the fixed block)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The fixed, byte-deterministic render of the Codex TOML block.
+ * Stable key order: command then args.
+ * args serialized with a single space after the comma.
+ * No trailing newline (the merge/remove functions add it as needed).
+ */
+export const CODEX_RENDER =
+  '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+
+/** The header line that marks the start of our block. */
+const CODEX_HEADER = '[mcp_servers.dbgraph-mcp]';
+
+/**
+ * Returns the line index of the CODEX_HEADER in the given lines array,
+ * or -1 if not found.
+ */
+function findCodexHeaderLine(lines: string[]): number {
+  return lines.findIndex((l) => l === CODEX_HEADER);
+}
+
+/**
+ * Given the lines array and the index of the CODEX_HEADER line,
+ * returns the exclusive end index of the block (the index of the next
+ * top-level table header line, or lines.length if we reach EOF).
+ */
+function findCodexBlockEnd(lines: string[], headerIdx: number): number {
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (/^\s*\[/.test(line)) {
+      return i;
+    }
+  }
+  return lines.length;
+}
+
+/**
+ * Idempotently inserts or replaces the CODEX_RENDER block in the given
+ * TOML content (line-oriented — NOT a general TOML parser).
+ *
+ * - Block absent  → append with exactly one blank separator line (when
+ *                   file is non-empty) and a single trailing \n.
+ * - Block present and byte-equal to CODEX_RENDER → return content unchanged.
+ * - Block present and differing → replace the block region only.
+ */
+export function mergeCodexToml(content: string): string {
+  // Split preserving trailing newline: if content ends with \n the last element
+  // of split is an empty string — we handle that carefully.
+  const lines = content.split('\n');
+
+  // If the last element is '' it is the artifact of a trailing newline — track
+  // whether the original content had one so we can preserve it.
+  const hadTrailingNewline = content.endsWith('\n') || content === '';
+
+  // Working copy without the trailing '' sentinel
+  const workLines = hadTrailingNewline && lines[lines.length - 1] === ''
+    ? lines.slice(0, -1)
+    : [...lines];
+
+  const headerIdx = findCodexHeaderLine(workLines);
+
+  if (headerIdx === -1) {
+    // Block absent — append
+    const renderLines = CODEX_RENDER.split('\n');
+    if (workLines.length === 0 || (workLines.length === 1 && workLines[0] === '')) {
+      // Empty file (or just whitespace)
+      return CODEX_RENDER + '\n';
+    }
+    // Non-empty — ensure exactly one blank separator line
+    const result = [...workLines, '', ...renderLines, ''];
+    return result.join('\n');
+  }
+
+  // Block present — check if it is already byte-equal to CODEX_RENDER
+  const blockEndIdx = findCodexBlockEnd(workLines, headerIdx);
+  const blockLines = workLines.slice(headerIdx, blockEndIdx);
+  const currentBlock = blockLines.join('\n');
+
+  if (currentBlock === CODEX_RENDER) {
+    // Already byte-equal — return unchanged (idempotent)
+    return content;
+  }
+
+  // Block differs — replace only the block region
+  const renderLines = CODEX_RENDER.split('\n');
+  const before = workLines.slice(0, headerIdx);
+  const after = workLines.slice(blockEndIdx);
+
+  const result = [...before, ...renderLines, ...after, ''];
+  return result.join('\n');
+}
+
+/**
+ * Removes the CODEX_RENDER block (header → block-end) from content.
+ * Collapses a resulting double blank line. Keeps a single trailing \n.
+ * Other [mcp_servers.*] blocks and all other content are preserved verbatim.
+ */
+export function removeCodexToml(content: string): string {
+  if (content === '') return '';
+
+  const lines = content.split('\n');
+  const hadTrailingNewline = content.endsWith('\n');
+  const workLines = hadTrailingNewline && lines[lines.length - 1] === ''
+    ? lines.slice(0, -1)
+    : [...lines];
+
+  const headerIdx = findCodexHeaderLine(workLines);
+  if (headerIdx === -1) {
+    // Block absent — no-op
+    return content;
+  }
+
+  const blockEndIdx = findCodexBlockEnd(workLines, headerIdx);
+
+  // Remove the block lines
+  const before = workLines.slice(0, headerIdx);
+  const after = workLines.slice(blockEndIdx);
+
+  // Collapse consecutive blank lines into one (handles the separator blank)
+  const combined = [...before, ...after];
+
+  const collapsed: string[] = [];
+  let prevBlank = false;
+  for (const line of combined) {
+    const isBlank = line.trim() === '';
+    if (isBlank && prevBlank) continue;
+    collapsed.push(line);
+    prevBlank = isBlank;
+  }
+
+  // Strip leading blank lines
+  while (collapsed.length > 0 && (collapsed[0] ?? '').trim() === '') {
+    collapsed.shift();
+  }
+
+  // Ensure single trailing newline
+  if (collapsed.length === 0) {
+    return '\n';
+  }
+
+  // Remove trailing blank lines before adding the single trailing newline
+  while (collapsed.length > 0 && (collapsed[collapsed.length - 1] ?? '').trim() === '') {
+    collapsed.pop();
+  }
+
+  return collapsed.join('\n') + '\n';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AGENT_TABLE — single source of truth for all supported agents
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -567,29 +718,88 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
       return removeOpenCodeText(content);
     },
   },
+  {
+    id: 'codex',
+    displayName: 'Codex CLI',
+    format: 'codex-toml',
+    resolvePath(platform: string, env: Env): string | undefined {
+      const root = homeRoot(platform, env);
+      if (root === undefined) return undefined;
+      return platform === 'win32'
+        ? pathWin32.join(root, '.codex', 'config.toml')
+        : pathPosix.join(root, '.codex', 'config.toml');
+    },
+    merge(content: string, entry: McpServerEntry): string {
+      // The render is fixed — the JSON entry param is intentionally ignored
+      // (ADR-007: Codex TOML is a bounded micro-writer with a fixed block shape).
+      void entry;
+      return mergeCodexToml(content);
+    },
+    remove(content: string): string {
+      return removeCodexToml(content);
+    },
+  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Manual snippet (printed when no MCP agent config is detected)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The documented manual snippet for manual installation. */
+/**
+ * The documented manual snippet printed when no MCP agent config is detected.
+ * Supported agents: Claude Code, Cursor, Gemini CLI, VS Code, opencode, Codex CLI.
+ * Kept in sync with the E.4 test exact-equality assertion.
+ */
 export const MANUAL_SNIPPET = `No supported MCP agent config was detected.
 
-To install dbgraph manually, add the following to your MCP configuration:
+Supported agents: Claude Code, Cursor, Gemini CLI, VS Code, opencode, Codex CLI.
 
-{
-  "mcpServers": {
-    "dbgraph-mcp": {
-      "command": "npx",
-      "args": ["-y", "dbgraph-mcp"]
+To install dbgraph manually, add the following to your agent's MCP configuration:
+
+  For Claude Code, Cursor, and Gemini CLI (mcpServers JSON):
+  {
+    "mcpServers": {
+      "dbgraph-mcp": {
+        "command": "npx",
+        "args": ["-y", "dbgraph-mcp"]
+      }
     }
   }
-}
 
-For Claude Code (claude.ai), the config file is typically located at:
-  Windows: %APPDATA%\\Claude\\claude_desktop_config.json
-  Linux/macOS: ~/.config/Claude/claude_desktop_config.json
+  For VS Code (servers JSON):
+  {
+    "servers": {
+      "dbgraph-mcp": {
+        "type": "stdio",
+        "command": "npx",
+        "args": ["-y", "dbgraph-mcp"]
+      }
+    }
+  }
+
+  For opencode (mcp JSON):
+  {
+    "mcp": {
+      "dbgraph-mcp": {
+        "type": "local",
+        "command": ["npx", "-y", "dbgraph-mcp"]
+      }
+    }
+  }
+
+  For Codex CLI (TOML, ~/.codex/config.toml):
+  [mcp_servers.dbgraph-mcp]
+  command = "npx"
+  args = ["-y", "dbgraph-mcp"]
+
+Config file locations:
+  Claude Code  — Windows: %APPDATA%\\Claude\\claude_desktop_config.json
+                 Linux/macOS: ~/.config/Claude/claude_desktop_config.json
+  Cursor       — ~/.cursor/mcp.json
+  Gemini CLI   — ~/.gemini/settings.json
+  VS Code      — ~/.vscode/mcp.json
+  opencode     — ~/.config/opencode/opencode.json
+  Codex CLI    — ~/.codex/config.toml
 `;
 
 // ─────────────────────────────────────────────────────────────────────────────
