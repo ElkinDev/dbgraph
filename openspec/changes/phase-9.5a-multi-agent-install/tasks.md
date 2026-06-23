@@ -100,7 +100,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 > Satisfies `mcp-server` scenario "VS Code gets a servers entry with type stdio, not mcpServers". DIFFERENT
 > entry SHAPE (not just a different key) ⇒ explicit new functions, NOT an overload of `mergeMcpConfig`.
 
-- [ ] B.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add PURE
+- [x] B.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add PURE
   `mergeVsCodeConfig(config, entry)` / `removeVsCodeConfig(config)` operating on the `servers` key with the
   entry shape `{ type:'stdio', command, args }`. Mirror the shipped reference-stability contract (same-value
   ⇒ return the input ref; remover deletes the `servers` key when it empties). Assert: fresh add yields
@@ -108,17 +108,17 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   SAME ref (idempotent); a planted `servers['other']` is preserved EXACT-set; remove deletes ONLY
   `dbgraph-mcp`; and — CRITICAL — NO `mcpServers` key is ever produced. Spec: VS Code gets a servers entry
   with type stdio, not mcpServers (servers-vs-mcpServers explicitly asserted). Done: `npm test install`.
-- [ ] B.2 RED→GREEN add the VS Code row to `AGENT_TABLE` (`id:'vscode'`, `format:'vscode'`, `homeRoot`-rooted
+- [x] B.2 RED→GREEN add the VS Code row to `AGENT_TABLE` (`id:'vscode'`, `format:'vscode'`, `homeRoot`-rooted
   `'.vscode','mcp.json'`; `merge`/`remove` wrap `mergeVsCodeConfig`/`removeVsCodeConfig` over RAW TEXT with
   the `JSON.stringify(...,null,2)+'\n'` render). Assert EXACT win32 path
   `C:\\Users\\u\\.vscode\\mcp.json` and posix `/home/u/.vscode/mcp.json`, and `undefined` when the env var is
   absent. Spec: Config paths resolve correctly on win32 / posix (VS Code row). Done: `npm test install`.
-- [ ] B.3 RED→GREEN VS Code integration via `runInstall`: given an existing VS Code `mcp.json` on win32 AND
+- [x] B.3 RED→GREEN VS Code integration via `runInstall`: given an existing VS Code `mcp.json` on win32 AND
   posix, the written bytes contain `servers.dbgraph-mcp = { type:'stdio', command:'npx',
   args:['-y','dbgraph-mcp'] }` and NO `mcpServers` key; idempotent re-run writes nothing; `--remove` deletes
   only `dbgraph-mcp` (planted `servers.other` preserved). Spec: VS Code gets a servers entry with type
   stdio, not mcpServers; --remove deletes only the dbgraph-mcp entry per agent. Done: `npm test install`.
-- [ ] B.4 GATE — Batch B: `tsc` clean; lint 0/0; `npm test` green incl. all Batch A + Claude Code suites.
+- [x] B.4 GATE — Batch B: `tsc` clean; lint 0/0; `npm test` green incl. all Batch A + Claude Code suites.
   Done: all gates green.
 
 ## Batch C: opencode writer (`mcp` key, `{type:'local',command:[…]}` ARRAY command) + opencode row
@@ -126,7 +126,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 > Satisfies `mcp-server` scenario "opencode gets a local entry with an array command". DIFFERENT shape again:
 > `command` is an ARRAY, no `args` — pin the shape so it is never modeled as a string + args.
 
-- [ ] C.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add PURE
+- [x] C.1 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add PURE
   `mergeOpenCodeConfig(config, entry)` / `removeOpenCodeConfig(config)` operating on the `mcp` key with the
   entry shape `{ type:'local', command:['npx','-y','dbgraph-mcp'] }` (command DERIVED from `[entry.command,
   ...entry.args]`; NO `args` field on the written entry). Same reference-stability + empty-key-cleanup
@@ -134,17 +134,17 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   'dbgraph-mcp'] }` and that `command` is an ARRAY (`Array.isArray` true) and there is NO `args` key on the
   entry; re-add returns the SAME ref; planted `mcp.other` preserved EXACT-set; remove deletes ONLY
   `dbgraph-mcp`. Spec: opencode gets a local entry with an array command. Done: `npm test install`.
-- [ ] C.2 RED→GREEN add the opencode row to `AGENT_TABLE` (`id:'opencode'`, `format:'opencode'`,
+- [x] C.2 RED→GREEN add the opencode row to `AGENT_TABLE` (`id:'opencode'`, `format:'opencode'`,
   `homeRoot`-rooted `'.config','opencode','opencode.json'`; `merge`/`remove` wrap the new functions over RAW
   TEXT). Assert EXACT win32 path `C:\\Users\\u\\.config\\opencode\\opencode.json` and posix
   `/home/u/.config/opencode/opencode.json`, and `undefined` when the env var is absent. Spec: Config paths
   resolve correctly on win32 / posix (opencode `.config`-rooted row). Done: `npm test install`.
-- [ ] C.3 RED→GREEN opencode integration via `runInstall`: given an existing `opencode.json` on win32 AND
+- [x] C.3 RED→GREEN opencode integration via `runInstall`: given an existing `opencode.json` on win32 AND
   posix, the written bytes contain `mcp.dbgraph-mcp = { type:'local', command:['npx','-y','dbgraph-mcp'] }`
   (array command); idempotent re-run writes nothing; `--remove` deletes only `dbgraph-mcp` (planted
   `mcp.other` preserved). Spec: opencode gets a local entry with an array command; --remove deletes only the
   dbgraph-mcp entry per agent. Done: `npm test install`.
-- [ ] C.4 GATE — Batch C: `tsc` clean; lint 0/0; `npm test` green incl. all prior batches + Claude Code
+- [x] C.4 GATE — Batch C: `tsc` clean; lint 0/0; `npm test` green incl. all prior batches + Claude Code
   suites. Done: all gates green.
 
 ## Batch D: in-house Codex TOML micro-writer (merge/remove, block-boundary, idempotent, byte-deterministic) + codex row

@@ -21,6 +21,10 @@ import {
   MANUAL_SNIPPET,
   AGENT_TABLE,
   homeRoot,
+  mergeVsCodeConfig,
+  removeVsCodeConfig,
+  mergeOpenCodeConfig,
+  removeOpenCodeConfig,
   type FsSeam,
   type McpServerEntry,
   type AgentFormat,
@@ -737,5 +741,381 @@ describe('A.6 regression: Claude Code install via AGENT_TABLE loop', () => {
 
     const saved = JSON.parse(written[claudePath]!) as { mcpServers: Record<string, McpServerEntry> };
     expect(saved.mcpServers[MCP_ENTRY_NAME]).toEqual(DEFAULT_ENTRY);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.1: mergeVsCodeConfig / removeVsCodeConfig — servers key, {type:'stdio',…}
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('B.1: mergeVsCodeConfig / removeVsCodeConfig', () => {
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+
+  it('fresh add yields servers[dbgraph-mcp] === { type:stdio, command, args }', () => {
+    const result = mergeVsCodeConfig({}, DEFAULT_ENTRY);
+    const servers = (result as { servers: Record<string, unknown> }).servers;
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+  });
+
+  it('fresh add does NOT produce a mcpServers key (servers-vs-mcpServers)', () => {
+    const result = mergeVsCodeConfig({}, DEFAULT_ENTRY);
+    expect((result as Record<string, unknown>)['mcpServers']).toBeUndefined();
+  });
+
+  it('re-add returns the SAME reference (idempotent)', () => {
+    const existing: Record<string, unknown> = {
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+    };
+    const result = mergeVsCodeConfig(existing, DEFAULT_ENTRY);
+    expect(result).toBe(existing);
+  });
+
+  it('planted servers.other is preserved EXACT-set after merge', () => {
+    const config: Record<string, unknown> = {
+      servers: { other: { type: 'stdio', command: 'other', args: [] } },
+    };
+    const result = mergeVsCodeConfig(config, DEFAULT_ENTRY);
+    const servers = (result as { servers: Record<string, unknown> }).servers;
+    expect(servers['dbgraph-mcp']).toBeDefined();
+    expect(servers['other']).toEqual({ type: 'stdio', command: 'other', args: [] });
+    expect(Object.keys(servers)).toHaveLength(2);
+  });
+
+  it('remove deletes ONLY dbgraph-mcp (planted other preserved)', () => {
+    const config: Record<string, unknown> = {
+      servers: {
+        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        other: { type: 'stdio', command: 'other', args: [] },
+      },
+    };
+    const result = removeVsCodeConfig(config);
+    const servers = (result as { servers: Record<string, unknown> }).servers;
+    expect(servers['dbgraph-mcp']).toBeUndefined();
+    expect(servers['other']).toEqual({ type: 'stdio', command: 'other', args: [] });
+  });
+
+  it('remove drops servers key when dbgraph-mcp was the only entry', () => {
+    const config: Record<string, unknown> = {
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+    };
+    const result = removeVsCodeConfig(config);
+    expect((result as Record<string, unknown>)['servers']).toBeUndefined();
+  });
+
+  it('remove on empty config returns same ref (no-op)', () => {
+    const config: Record<string, unknown> = {};
+    expect(removeVsCodeConfig(config)).toBe(config);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.2: AGENT_TABLE — vscode row paths
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('B.2: AGENT_TABLE vscode row', () => {
+  const vsRow = AGENT_TABLE.find((r) => r.id === 'vscode');
+
+  it('vscode row exists', () => {
+    expect(vsRow).toBeDefined();
+  });
+
+  it('vscode format is vscode', () => {
+    expect(vsRow?.format).toBe('vscode');
+  });
+
+  it('vscode win32 path: USERPROFILE\\.vscode\\mcp.json', () => {
+    const p = vsRow?.resolvePath('win32', { USERPROFILE: 'C:\\Users\\u' });
+    expect(p).toBe('C:\\Users\\u\\.vscode\\mcp.json');
+  });
+
+  it('vscode posix path: HOME/.vscode/mcp.json', () => {
+    const p = vsRow?.resolvePath('linux', { HOME: '/home/u' });
+    expect(p).toBe('/home/u/.vscode/mcp.json');
+  });
+
+  it('vscode win32 returns undefined when USERPROFILE absent', () => {
+    expect(vsRow?.resolvePath('win32', {})).toBeUndefined();
+  });
+
+  it('vscode posix returns undefined when HOME absent', () => {
+    expect(vsRow?.resolvePath('linux', {})).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.3: VS Code integration via runInstall
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('B.3: runInstall — VS Code integration', () => {
+  it('win32: written bytes contain servers.dbgraph-mcp with type:stdio and NO mcpServers key', async () => {
+    const vsPath = 'C:\\Users\\u\\.vscode\\mcp.json';
+    const { seam, written } = makeFakeFs({ [vsPath]: JSON.stringify({}) });
+
+    await runInstall({
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[vsPath]!) as Record<string, unknown>;
+    const servers = saved['servers'] as Record<string, unknown>;
+    expect(servers).toBeDefined();
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(saved['mcpServers']).toBeUndefined();
+  });
+
+  it('posix: written bytes contain servers.dbgraph-mcp with type:stdio and NO mcpServers key', async () => {
+    const vsPath = '/home/u/.vscode/mcp.json';
+    const { seam, written } = makeFakeFs({ [vsPath]: JSON.stringify({}) });
+
+    await runInstall({
+      platform: 'linux',
+      env: { HOME: '/home/u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[vsPath]!) as Record<string, unknown>;
+    const servers = saved['servers'] as Record<string, unknown>;
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(saved['mcpServers']).toBeUndefined();
+  });
+
+  it('idempotent re-run writes nothing', async () => {
+    const vsPath = 'C:\\Users\\u\\.vscode\\mcp.json';
+    const existingContent = JSON.stringify({
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+    }, null, 2) + '\n';
+    const { seam, written } = makeFakeFs({ [vsPath]: existingContent });
+    const writeSpy = vi.fn(seam.writeFile.bind(seam));
+    seam.writeFile = writeSpy;
+
+    await runInstall({
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(written[vsPath]).toBeUndefined();
+  });
+
+  it('--remove deletes only dbgraph-mcp, planted servers.other preserved', async () => {
+    const vsPath = 'C:\\Users\\u\\.vscode\\mcp.json';
+    const existingContent = JSON.stringify({
+      servers: {
+        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        other: { type: 'stdio', command: 'other', args: [] },
+      },
+    }, null, 2) + '\n';
+    const { seam, written } = makeFakeFs({ [vsPath]: existingContent });
+
+    await runInstall({
+      remove: true,
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[vsPath]!) as { servers: Record<string, unknown> };
+    expect(saved.servers['dbgraph-mcp']).toBeUndefined();
+    expect(saved.servers['other']).toEqual({ type: 'stdio', command: 'other', args: [] });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C.1: mergeOpenCodeConfig / removeOpenCodeConfig — mcp key, array command
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('C.1: mergeOpenCodeConfig / removeOpenCodeConfig', () => {
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+
+  it('fresh add yields mcp[dbgraph-mcp] with type:local and array command', () => {
+    const result = mergeOpenCodeConfig({}, DEFAULT_ENTRY);
+    const mcp = (result as { mcp: Record<string, unknown> }).mcp;
+    expect(mcp['dbgraph-mcp']).toEqual({ type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] });
+  });
+
+  it('command is an ARRAY (Array.isArray is true)', () => {
+    const result = mergeOpenCodeConfig({}, DEFAULT_ENTRY);
+    const mcp = (result as { mcp: Record<string, unknown> }).mcp;
+    const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
+    expect(Array.isArray(entry['command'])).toBe(true);
+  });
+
+  it('written entry has NO args field', () => {
+    const result = mergeOpenCodeConfig({}, DEFAULT_ENTRY);
+    const mcp = (result as { mcp: Record<string, unknown> }).mcp;
+    const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
+    expect(entry['args']).toBeUndefined();
+  });
+
+  it('re-add returns the SAME reference (idempotent)', () => {
+    const existing: Record<string, unknown> = {
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+    };
+    const result = mergeOpenCodeConfig(existing, DEFAULT_ENTRY);
+    expect(result).toBe(existing);
+  });
+
+  it('planted mcp.other is preserved EXACT-set after merge', () => {
+    const config: Record<string, unknown> = {
+      mcp: { other: { type: 'local', command: ['other'] } },
+    };
+    const result = mergeOpenCodeConfig(config, DEFAULT_ENTRY);
+    const mcp = (result as { mcp: Record<string, unknown> }).mcp;
+    expect(mcp['dbgraph-mcp']).toBeDefined();
+    expect(mcp['other']).toEqual({ type: 'local', command: ['other'] });
+    expect(Object.keys(mcp)).toHaveLength(2);
+  });
+
+  it('remove deletes ONLY dbgraph-mcp (planted mcp.other preserved)', () => {
+    const config: Record<string, unknown> = {
+      mcp: {
+        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] },
+        other: { type: 'local', command: ['other'] },
+      },
+    };
+    const result = removeOpenCodeConfig(config);
+    const mcp = (result as { mcp: Record<string, unknown> }).mcp;
+    expect(mcp['dbgraph-mcp']).toBeUndefined();
+    expect(mcp['other']).toEqual({ type: 'local', command: ['other'] });
+  });
+
+  it('remove drops mcp key when dbgraph-mcp was the only entry', () => {
+    const config: Record<string, unknown> = {
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+    };
+    const result = removeOpenCodeConfig(config);
+    expect((result as Record<string, unknown>)['mcp']).toBeUndefined();
+  });
+
+  it('remove on empty config returns same ref (no-op)', () => {
+    const config: Record<string, unknown> = {};
+    expect(removeOpenCodeConfig(config)).toBe(config);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C.2: AGENT_TABLE — opencode row paths
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('C.2: AGENT_TABLE opencode row', () => {
+  const ocRow = AGENT_TABLE.find((r) => r.id === 'opencode');
+
+  it('opencode row exists', () => {
+    expect(ocRow).toBeDefined();
+  });
+
+  it('opencode format is opencode', () => {
+    expect(ocRow?.format).toBe('opencode');
+  });
+
+  it('opencode win32 path: USERPROFILE\\.config\\opencode\\opencode.json', () => {
+    const p = ocRow?.resolvePath('win32', { USERPROFILE: 'C:\\Users\\u' });
+    expect(p).toBe('C:\\Users\\u\\.config\\opencode\\opencode.json');
+  });
+
+  it('opencode posix path: HOME/.config/opencode/opencode.json', () => {
+    const p = ocRow?.resolvePath('linux', { HOME: '/home/u' });
+    expect(p).toBe('/home/u/.config/opencode/opencode.json');
+  });
+
+  it('opencode win32 returns undefined when USERPROFILE absent', () => {
+    expect(ocRow?.resolvePath('win32', {})).toBeUndefined();
+  });
+
+  it('opencode posix returns undefined when HOME absent', () => {
+    expect(ocRow?.resolvePath('linux', {})).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C.3: opencode integration via runInstall
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('C.3: runInstall — opencode integration', () => {
+  it('win32: written bytes contain mcp.dbgraph-mcp with type:local and array command', async () => {
+    const ocPath = 'C:\\Users\\u\\.config\\opencode\\opencode.json';
+    const { seam, written } = makeFakeFs({ [ocPath]: JSON.stringify({}) });
+
+    await runInstall({
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[ocPath]!) as Record<string, unknown>;
+    const mcp = saved['mcp'] as Record<string, unknown>;
+    expect(mcp).toBeDefined();
+    const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
+    expect(entry['type']).toBe('local');
+    expect(Array.isArray(entry['command'])).toBe(true);
+    expect(entry['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+    expect(entry['args']).toBeUndefined();
+  });
+
+  it('posix: written bytes contain mcp.dbgraph-mcp with array command', async () => {
+    const ocPath = '/home/u/.config/opencode/opencode.json';
+    const { seam, written } = makeFakeFs({ [ocPath]: JSON.stringify({}) });
+
+    await runInstall({
+      platform: 'linux',
+      env: { HOME: '/home/u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[ocPath]!) as Record<string, unknown>;
+    const mcp = saved['mcp'] as Record<string, unknown>;
+    const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
+    expect(entry['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+  });
+
+  it('idempotent re-run writes nothing', async () => {
+    const ocPath = 'C:\\Users\\u\\.config\\opencode\\opencode.json';
+    const existingContent = JSON.stringify({
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+    }, null, 2) + '\n';
+    const { seam, written } = makeFakeFs({ [ocPath]: existingContent });
+    const writeSpy = vi.fn(seam.writeFile.bind(seam));
+    seam.writeFile = writeSpy;
+
+    await runInstall({
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(written[ocPath]).toBeUndefined();
+  });
+
+  it('--remove deletes only dbgraph-mcp, planted mcp.other preserved', async () => {
+    const ocPath = 'C:\\Users\\u\\.config\\opencode\\opencode.json';
+    const existingContent = JSON.stringify({
+      mcp: {
+        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] },
+        other: { type: 'local', command: ['other'] },
+      },
+    }, null, 2) + '\n';
+    const { seam, written } = makeFakeFs({ [ocPath]: existingContent });
+
+    await runInstall({
+      remove: true,
+      platform: 'win32',
+      env: { USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: () => {},
+    });
+
+    const saved = JSON.parse(written[ocPath]!) as { mcp: Record<string, unknown> };
+    expect(saved.mcp['dbgraph-mcp']).toBeUndefined();
+    expect(saved.mcp['other']).toEqual({ type: 'local', command: ['other'] });
   });
 });
