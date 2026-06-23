@@ -37,7 +37,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
 > configured", "No detected agent prints the manual snippet and exits 0", "Config paths resolve correctly on
 > win32 / posix" (Claude Code + Cursor rows). Claude Code = the EXISTING behavior, preserved.
 
-- [ ] A.1 RED→GREEN `test/cli/commands/install.test.ts` (extend) + `src/cli/commands/install.ts`: add the
+- [x] A.1 RED→GREEN `test/cli/commands/install.test.ts` (extend) + `src/cli/commands/install.ts`: add the
   exported types `AgentFormat = 'mcpServers' | 'vscode' | 'opencode' | 'codex-toml'`, `AgentDescriptor`
   (`{ readonly id; readonly displayName; resolvePath(platform, env): string | undefined; readonly format;
   merge(content: string, entry: McpServerEntry): string; remove(content: string): string }`), `Env`
@@ -45,13 +45,13 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   'installed'|'already'|'removed'|'absent'|'skipped'`, and `AgentResult`
   (`{ readonly agent: string; readonly action: AgentAction; readonly path?: string }`). RED: a typed
   construction of an `AgentDescriptor` literal compiles. Done: `npx tsc --noEmit`.
-- [ ] A.2 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add the
+- [x] A.2 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add the
   `homeRoot(platform: string, env: Env): string | undefined` helper centralizing the `USERPROFILE` (win32) /
   `HOME` (posix) choice (returns `undefined` when the var is missing/empty). Assert EXACTLY:
   `homeRoot('win32', { USERPROFILE: 'C:\\Users\\u' }) === 'C:\\Users\\u'`;
   `homeRoot('linux', { HOME: '/home/u' }) === '/home/u'`; `homeRoot('win32', {}) === undefined`;
   `homeRoot('linux', {}) === undefined`. Done: `npm test install`.
-- [ ] A.3 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: define the exported
+- [x] A.3 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: define the exported
   `readonly AGENT_TABLE: readonly AgentDescriptor[]` with the Claude Code row (`id:'claude-code'`,
   `format:'mcpServers'`, `resolvePath` = the existing `resolveConfigPath` logic — `APPDATA`-rooted on win32,
   `HOME, '.config','Claude'` on posix; `merge`/`remove` wrap the EXISTING object `mergeMcpConfig`/
@@ -62,7 +62,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   `C:\\Users\\u\\.gemini\\settings.json`, posix `/home/u/.gemini/settings.json`) AND that each
   `resolvePath` returns `undefined` when its env var is absent. Spec: Config paths resolve correctly on
   win32 / posix (Claude Code + Cursor rows). Done: `npm test install`.
-- [ ] A.4 RED→GREEN add a RAW-TEXT-level suite for the `mcpServers` family rows in
+- [x] A.4 RED→GREEN add a RAW-TEXT-level suite for the `mcpServers` family rows in
   `test/cli/commands/install.test.ts`: calling `AGENT_TABLE[claude].merge('{}\n', DEFAULT_ENTRY)` (and the
   Cursor/Gemini rows) returns the EXACT serialized text `JSON.stringify({ mcpServers: { 'dbgraph-mcp':
   { command:'npx', args:['-y','dbgraph-mcp'] } } }, null, 2) + '\n'`; merging text that ALREADY contains the
@@ -71,7 +71,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   `{ mcpServers: { 'other-mcp': … } }`; removing when the only entry was `dbgraph-mcp` drops the `mcpServers`
   key (mirrors the shipped `→ undefined`). Spec: mcpServers-JSON agents get the {command,args} entry; any
   pre-existing mcpServers entries are preserved. Done: `npm test install`.
-- [ ] A.5 RED→GREEN refactor `runInstall` in `src/cli/commands/install.ts` into the multi-pass loop over
+- [x] A.5 RED→GREEN refactor `runInstall` in `src/cli/commands/install.ts` into the multi-pass loop over
   `AGENT_TABLE` (keep `InstallOptions` and the `{ type: 'success' }` `InstallOutcome` VERBATIM so
   `dispatch.ts`/`handleInstall` need NO edit): for each row → `resolvePath(platform, env)`
   (`undefined` ⇒ push `skipped`, continue) → `fsSeam.exists(path)`? (`false` ⇒ push `absent`, continue) →
@@ -83,7 +83,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   files' written bytes carry `mcpServers.dbgraph-mcp = { command:'npx', args:['-y','dbgraph-mcp'] }`. Spec:
   Only agents with an existing config file are configured (absent ⇒ skipped, NO file created). Done:
   `npm test install`.
-- [ ] A.6 RED→GREEN regression + manual-fallback assertions in `test/cli/commands/install.test.ts`: (a) the
+- [x] A.6 RED→GREEN regression + manual-fallback assertions in `test/cli/commands/install.test.ts`: (a) the
   EXISTING Claude Code suites still pass UNCHANGED (idempotent re-install writes nothing; `--remove` removes
   only `dbgraph-mcp` and preserves `other-mcp`; malformed JSON starts fresh) now that Claude Code is a TABLE
   ROW; (b) when NO row resolves to an existing file (all env vars unset OR no files), output is EXACTLY
@@ -91,7 +91,7 @@ and the object-writer reuse). Plus the batch-specific proof noted in each sectio
   absent ones still configures the detected one and reports the rest skipped/absent (NO file created for the
   absent ones). Spec: No detected agent prints the manual snippet and exits 0; the US-024 manual-snippet
   fallback is preserved. Done: `npm test install`.
-- [ ] A.7 GATE — Batch A: `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green INCLUDING all
+- [x] A.7 GATE — Batch A: `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green INCLUDING all
   pre-existing Claude Code install suites unchanged. Confirm `src/cli/dispatch.ts` is UNTOUCHED. Done: all
   gates green.
 
