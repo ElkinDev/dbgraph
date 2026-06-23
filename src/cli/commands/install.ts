@@ -263,6 +263,213 @@ function removeMcpText(content: string): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// VS Code writers — servers key, {type:'stdio', command, args}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The shape of VS Code's servers entry. */
+interface VsCodeServerEntry {
+  type: 'stdio';
+  command: string;
+  args: string[];
+}
+
+/** The shape of the VS Code mcp.json config file (partial). */
+interface VsCodeMcpConfig {
+  servers?: Record<string, VsCodeServerEntry>;
+  [key: string]: unknown;
+}
+
+/**
+ * Produces the updated VS Code config object with the dbgraph-mcp entry merged in.
+ * Uses the `servers` key (NOT `mcpServers`) with entry shape `{type:'stdio', command, args}`.
+ * If the entry already exists with identical values, returns the input unchanged (idempotent).
+ */
+export function mergeVsCodeConfig(
+  config: Record<string, unknown>,
+  entry: McpServerEntry,
+): Record<string, unknown> {
+  const existing = config as VsCodeMcpConfig;
+  const servers = existing.servers ?? {};
+
+  const current = servers[MCP_ENTRY_NAME];
+  if (
+    current !== undefined &&
+    current.type === 'stdio' &&
+    current.command === entry.command &&
+    JSON.stringify(current.args) === JSON.stringify(entry.args)
+  ) {
+    return config;
+  }
+
+  return {
+    ...existing,
+    servers: {
+      ...servers,
+      [MCP_ENTRY_NAME]: { type: 'stdio', command: entry.command, args: entry.args },
+    },
+  };
+}
+
+/**
+ * Produces the updated VS Code config object with the dbgraph-mcp entry removed.
+ * Drops the `servers` key when it empties (mirrors removeMcpConfig → undefined pattern).
+ * Other servers entries are preserved.
+ */
+export function removeVsCodeConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const existing = config as VsCodeMcpConfig;
+  const servers = existing.servers;
+  if (servers === undefined || servers[MCP_ENTRY_NAME] === undefined) {
+    return config;
+  }
+
+  const { [MCP_ENTRY_NAME]: _removed, ...remaining } = servers;
+  void _removed;
+
+  return {
+    ...existing,
+    servers:
+      Object.keys(remaining).length === 0
+        ? undefined
+        : remaining,
+  };
+}
+
+/**
+ * Raw-text wrapper for VS Code config.
+ * Parses JSON, applies mergeVsCodeConfig, serializes back.
+ * Returns input unchanged when already in desired state.
+ */
+function mergeVsCodeText(content: string, entry: McpServerEntry): string {
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
+  const updated = mergeVsCodeConfig(config, entry);
+  if (updated === config) return content;
+  return JSON.stringify(updated, null, 2) + '\n';
+}
+
+/**
+ * Raw-text wrapper for VS Code config — remove path.
+ */
+function removeVsCodeText(content: string): string {
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
+  const updated = removeVsCodeConfig(config);
+  if (updated === config) return content;
+  return JSON.stringify(updated, null, 2) + '\n';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// opencode writers — mcp key, {type:'local', command:[cmd,...args]} (ARRAY command)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The shape of an opencode mcp entry — command is a combined array, NO args field. */
+interface OpenCodeServerEntry {
+  type: 'local';
+  command: string[];
+}
+
+/** The shape of the opencode config file (partial). */
+interface OpenCodeConfig {
+  mcp?: Record<string, OpenCodeServerEntry>;
+  [key: string]: unknown;
+}
+
+/**
+ * Produces the updated opencode config object with the dbgraph-mcp entry merged in.
+ * Uses the `mcp` key with entry shape `{type:'local', command:[cmd,...args]}`.
+ * command is DERIVED from [entry.command, ...entry.args] — NO `args` field written.
+ * If the entry already exists with identical values, returns the input unchanged (idempotent).
+ */
+export function mergeOpenCodeConfig(
+  config: Record<string, unknown>,
+  entry: McpServerEntry,
+): Record<string, unknown> {
+  const existing = config as OpenCodeConfig;
+  const mcp = existing.mcp ?? {};
+  const derivedCommand = [entry.command, ...entry.args];
+
+  const current = mcp[MCP_ENTRY_NAME];
+  if (
+    current !== undefined &&
+    current.type === 'local' &&
+    JSON.stringify(current.command) === JSON.stringify(derivedCommand)
+  ) {
+    return config;
+  }
+
+  return {
+    ...existing,
+    mcp: {
+      ...mcp,
+      [MCP_ENTRY_NAME]: { type: 'local', command: derivedCommand },
+    },
+  };
+}
+
+/**
+ * Produces the updated opencode config object with the dbgraph-mcp entry removed.
+ * Drops the `mcp` key when it empties.
+ * Other mcp entries are preserved.
+ */
+export function removeOpenCodeConfig(config: Record<string, unknown>): Record<string, unknown> {
+  const existing = config as OpenCodeConfig;
+  const mcp = existing.mcp;
+  if (mcp === undefined || mcp[MCP_ENTRY_NAME] === undefined) {
+    return config;
+  }
+
+  const { [MCP_ENTRY_NAME]: _removed, ...remaining } = mcp;
+  void _removed;
+
+  return {
+    ...existing,
+    mcp:
+      Object.keys(remaining).length === 0
+        ? undefined
+        : remaining,
+  };
+}
+
+/**
+ * Raw-text wrapper for opencode config.
+ * Parses JSON, applies mergeOpenCodeConfig, serializes back.
+ */
+function mergeOpenCodeText(content: string, entry: McpServerEntry): string {
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
+  const updated = mergeOpenCodeConfig(config, entry);
+  if (updated === config) return content;
+  return JSON.stringify(updated, null, 2) + '\n';
+}
+
+/**
+ * Raw-text wrapper for opencode config — remove path.
+ */
+function removeOpenCodeText(content: string): string {
+  let config: Record<string, unknown>;
+  try {
+    config = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    config = {};
+  }
+  const updated = removeOpenCodeConfig(config);
+  if (updated === config) return content;
+  return JSON.stringify(updated, null, 2) + '\n';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AGENT_TABLE — single source of truth for all supported agents
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -322,6 +529,42 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     },
     remove(content: string): string {
       return removeMcpText(content);
+    },
+  },
+  {
+    id: 'vscode',
+    displayName: 'VS Code',
+    format: 'vscode',
+    resolvePath(platform: string, env: Env): string | undefined {
+      const root = homeRoot(platform, env);
+      if (root === undefined) return undefined;
+      return platform === 'win32'
+        ? pathWin32.join(root, '.vscode', 'mcp.json')
+        : pathPosix.join(root, '.vscode', 'mcp.json');
+    },
+    merge(content: string, entry: McpServerEntry): string {
+      return mergeVsCodeText(content, entry);
+    },
+    remove(content: string): string {
+      return removeVsCodeText(content);
+    },
+  },
+  {
+    id: 'opencode',
+    displayName: 'opencode',
+    format: 'opencode',
+    resolvePath(platform: string, env: Env): string | undefined {
+      const root = homeRoot(platform, env);
+      if (root === undefined) return undefined;
+      return platform === 'win32'
+        ? pathWin32.join(root, '.config', 'opencode', 'opencode.json')
+        : pathPosix.join(root, '.config', 'opencode', 'opencode.json');
+    },
+    merge(content: string, entry: McpServerEntry): string {
+      return mergeOpenCodeText(content, entry);
+    },
+    remove(content: string): string {
+      return removeOpenCodeText(content);
     },
   },
 ];
