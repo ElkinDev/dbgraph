@@ -6,11 +6,12 @@
  * ADR-005: meta.schema_version tracks the integer schema version.
  * ADR-008: determinism — migration is inside a single transaction.
  *
- * Imports: better-sqlite3 types only (no core model imports needed here).
+ * Phase 9.5b: `import type { Database as Db }` REMOVED.
+ * All call sites now use `WritableSqliteHandle` — no concrete driver types here.
  * This file is only ever imported from the adapters subtree (ADR-004).
  */
 
-import type { Database as Db } from 'better-sqlite3';
+import type { WritableSqliteHandle } from './handle.js';
 import { SchemaVersionError } from '../../../core/errors.js';
 import { SCHEMA_V1_DDL, SNAPSHOT_OBJECTS_DDL } from './schema.js';
 
@@ -27,7 +28,7 @@ export const CURRENT_SCHEMA_VERSION = 2;
 
 interface Migration {
   readonly version: number;
-  readonly up: (db: Db) => void;
+  readonly up: (h: WritableSqliteHandle) => void;
 }
 
 /**
@@ -38,23 +39,23 @@ interface Migration {
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
-    up(db: Db): void {
+    up(h: WritableSqliteHandle): void {
       // Create all tables and indexes from scratch (fresh database at v0 → v1).
       for (const stmt of SCHEMA_V1_DDL) {
-        db.exec(stmt);
+        h.exec(stmt);
       }
     },
   },
   {
     version: 2,
-    up(db: Db): void {
+    up(h: WritableSqliteHandle): void {
       // Add snapshot_objects manifest table + index (phase-4-cli-config Batch F).
       // SNAPSHOT_OBJECTS_DDL is a single string with two statements separated by ';\n'.
       // We exec each statement individually to avoid multi-statement issues.
       for (const stmt of SNAPSHOT_OBJECTS_DDL.split(';\n')) {
         const trimmed = stmt.trim();
         if (trimmed.length > 0) {
-          db.exec(trimmed);
+          h.exec(trimmed);
         }
       }
     },
@@ -74,23 +75,23 @@ export const MIGRATIONS: readonly Migration[] = [
  *
  * Safe to call on an already-current DB — no migrations run, no-op.
  *
- * @param db - An open better-sqlite3 Database instance with foreign_keys + WAL enabled.
+ * @param h - A `WritableSqliteHandle` with foreign_keys + WAL enabled.
  */
-export function runMigrations(db: Db): void {
+export function runMigrations(h: WritableSqliteHandle): void {
   // Read current version. The meta table may not exist yet (v0 database).
   // We detect this by catching the "no such table" error and treating it as version 0.
   let current = 0;
 
   try {
     // If meta table exists, read schema_version.
-    const metaExists = db
+    const metaExists = h
       .prepare(
         `SELECT name FROM sqlite_master WHERE type='table' AND name='meta'`,
       )
       .get();
 
     if (metaExists) {
-      const row = db
+      const row = h
         .prepare(`SELECT value FROM meta WHERE key = 'schema_version'`)
         .get() as { value: string } | undefined;
       if (row !== undefined) {
@@ -116,12 +117,12 @@ export function runMigrations(db: Db): void {
   }
 
   // Run all pending migrations in a single transaction.
-  const migrate = db.transaction(() => {
+  const migrate = h.transaction(() => {
     for (const migration of pending) {
-      migration.up(db);
+      migration.up(h);
     }
     // Write the new schema version to meta.
-    db.prepare(
+    h.prepare(
       `INSERT INTO meta (key, value) VALUES ('schema_version', ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
     ).run(String(CURRENT_SCHEMA_VERSION));

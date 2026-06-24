@@ -3,9 +3,15 @@
  * Design §2 (factory join point) + §10 (sequence diagram).
  *
  * createSqliteGraphStore(opts) is the ONLY place where:
- *  1. better-sqlite3 is dynamically imported (ADR-004: driver never pulled into core).
+ *  1. The driver is selected and opened (ADR-004: driver never pulled into core).
  *  2. The raw DB is opened + migrations are run.
  *  3. A GraphStore-conforming adapter is returned.
+ *
+ * Phase 9.5b: the standalone `await import('better-sqlite3')` is REMOVED — the
+ * dynamic import now lives inside `openRawDb`'s better-sqlite3 path in schema.ts.
+ * factory.ts calls `openRawDb(path)` (now async, returns `WritableSqliteHandle`),
+ * passes the handle to `runMigrations` and `new SqliteGraphStore`. Default driver
+ * stays better-sqlite3; no `driver` option yet (added in Batch 2).
  *
  * Note: this adapter is under src/adapters/storage/sqlite/ — it is EXEMPT from
  * the write-verb security scan that targets src/adapters/engines/* (source-extraction
@@ -13,7 +19,7 @@
  * own .dbgraph database file by design (ADR-005). This exemption is documented here
  * so Batch D boundary/security tests can scope correctly.
  *
- * Imports allowed: core types/ports only + better-sqlite3 (via dynamic import).
+ * Imports allowed: core types/ports only + storage-layer modules.
  */
 
 import type { GraphStore } from '../../../core/ports/graph-store.js';
@@ -45,12 +51,9 @@ export interface SqliteGraphStoreOptions {
 export async function createSqliteGraphStore(
   opts: SqliteGraphStoreOptions,
 ): Promise<GraphStore> {
-  // Dynamic import keeps better-sqlite3 out of core-only consumers (ADR-004).
-  // The driver is already in package.json dependencies; the dynamic import is
-  // the architectural seam, not a lazy-load optimisation.
-  await import('better-sqlite3');
-
-  const db = openRawDb(opts.path);
-  runMigrations(db);
-  return new SqliteGraphStore(db);
+  // openRawDb dynamically imports better-sqlite3, opens the db, enables WAL + foreign keys,
+  // and returns a WritableSqliteHandle. This is the ADR-004 seam.
+  const handle = await openRawDb(opts.path);
+  runMigrations(handle);
+  return new SqliteGraphStore(handle);
 }

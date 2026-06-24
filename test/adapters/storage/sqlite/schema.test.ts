@@ -4,6 +4,9 @@
  * US-009: Storage schema versioning.
  *
  * Uses REAL better-sqlite3 with in-memory databases — never mock the driver (dbgraph-testing).
+ *
+ * Phase 9.5b update: openRawDb() is now async and returns WritableSqliteHandle.
+ * All direct openRawDb callers updated to await, and use handle methods (exec/prepare/close).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -53,7 +56,7 @@ describe('schema versioning and migrations (task 5.1 — updated for v2)', () =>
       const { openRawDb } = await import(
         '../../../../src/adapters/storage/sqlite/schema.js'
       );
-      const rawDb = openRawDb(':memory:');
+      const rawDb = await openRawDb(':memory:');
       // Manually create a minimal meta table with a future version
       rawDb.exec(`
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -66,7 +69,7 @@ describe('schema versioning and migrations (task 5.1 — updated for v2)', () =>
       const { runMigrations } = await import(
         '../../../../src/adapters/storage/sqlite/migrations.js'
       );
-      const db2 = openRawDb(':memory:');
+      const db2 = await openRawDb(':memory:');
       db2.exec(`
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         INSERT INTO meta (key, value) VALUES ('schema_version', '999');
@@ -82,7 +85,7 @@ describe('schema versioning and migrations (task 5.1 — updated for v2)', () =>
       const { runMigrations } = await import(
         '../../../../src/adapters/storage/sqlite/migrations.js'
       );
-      const db = openRawDb(':memory:');
+      const db = await openRawDb(':memory:');
       db.exec(`
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         INSERT INTO meta (key, value) VALUES ('schema_version', '9999');
@@ -187,7 +190,7 @@ describe('schema v1→v2 auto-migration (task 6.2)', () => {
     const { randomUUID } = await import('node:crypto');
 
     const tmpPath = join(tmpdir(), `dbgraph-test-v1-${randomUUID()}.db`);
-    const rawDb = openRawDb(tmpPath);
+    const rawDb = await openRawDb(tmpPath);
 
     // Apply v1 DDL
     for (const stmt of SCHEMA_V1_DDL) {
@@ -247,13 +250,13 @@ describe('schema v1→v2 auto-migration (task 6.2)', () => {
     const { runMigrations } = await import(
       '../../../../src/adapters/storage/sqlite/migrations.js'
     );
-    const db = openRawDb(':memory:');
-    runMigrations(db);
+    const h = await openRawDb(':memory:');
+    runMigrations(h);
 
-    const tableExists = db
+    const tableExists = h
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='snapshot_objects'`)
       .get();
-    db.close();
+    h.close();
 
     expect(tableExists).toBeDefined();
   });
