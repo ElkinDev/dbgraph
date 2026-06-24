@@ -4,14 +4,16 @@
  * ADR-005: .dbgraph/dbgraph.db schema.
  *
  * This file is intentionally side-effect-free: it exports constants and a helper
- * to open a raw Database instance. Callers (factory.ts) drive the lifecycle.
- * Imports: better-sqlite3 only (no core model imports needed at DDL level).
+ * to open a raw Database handle. Callers (factory.ts) drive the lifecycle.
+ *
+ * Phase 9.5b: static `import Database from 'better-sqlite3'` REMOVED.
+ * `openRawDb` dynamically imports better-sqlite3 inside its only path and
+ * returns a `WritableSqliteHandle` so schema.ts, migrations.ts, and
+ * sqlite-graph-store.ts never depend on a concrete driver type.
  */
 
-// Dynamic import of better-sqlite3 keeps the driver out of core (ADR-004).
-// schema.ts itself is only ever imported from the adapters subtree.
-import Database from 'better-sqlite3';
-import type { Database as Db } from 'better-sqlite3';
+import type { WritableSqliteHandle } from './handle.js';
+import { betterSqliteHandle } from './handle.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DDL statements (design §3.1)
@@ -110,15 +112,22 @@ export const SNAPSHOT_OBJECTS_DDL = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Opens a raw better-sqlite3 Database instance.
+ * Opens a better-sqlite3 Database and returns it wrapped as a `WritableSqliteHandle`.
  * Enables WAL mode and foreign keys.
- * Exported for use by migrations.ts and for testing schema manipulation.
+ * Exported for use by migrations.ts, factory.ts, and tests.
+ *
+ * No static `import Database from 'better-sqlite3'` — the import is DYNAMIC
+ * inside this function so schema.ts never pulls a concrete driver into callers
+ * that only need the type-level DDL constants (ADR-004).
  *
  * @param path - ':memory:' or an absolute filesystem path to the .db file.
  */
-export function openRawDb(path: string): Db {
+export async function openRawDb(path: string): Promise<WritableSqliteHandle> {
+  // Dynamic import keeps better-sqlite3 out of core-only consumers (ADR-004).
+  const { default: Database } = await import('better-sqlite3');
   const db = new Database(path);
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  return db;
+  const handle = betterSqliteHandle(db);
+  handle.pragma('journal_mode = WAL');
+  handle.pragma('foreign_keys = ON');
+  return handle;
 }
