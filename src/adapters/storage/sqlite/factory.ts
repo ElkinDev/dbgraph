@@ -34,6 +34,15 @@ import { SqliteGraphStore } from './sqlite-graph-store.js';
 export interface SqliteGraphStoreOptions {
   /** Filesystem path to the SQLite database file, or ':memory:' for in-memory. */
   readonly path: string;
+  /**
+   * SQLite driver to use. Default: `'better-sqlite3'` (byte-identical default path).
+   * Use `'node:sqlite'` to opt-in to the built-in Node.js SQLite driver (Node >= 22.5).
+   *
+   * Explicit selection only — NO silent fallback. Requesting `'node:sqlite'` on
+   * Node < 22.5 throws an explicit error. Existing callers that pass no `driver`
+   * continue using `'better-sqlite3'` unchanged (ADR-008, byte-identical guarantee).
+   */
+  readonly driver?: 'better-sqlite3' | 'node:sqlite';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,9 +60,11 @@ export interface SqliteGraphStoreOptions {
 export async function createSqliteGraphStore(
   opts: SqliteGraphStoreOptions,
 ): Promise<GraphStore> {
-  // openRawDb dynamically imports better-sqlite3, opens the db, enables WAL + foreign keys,
+  // openRawDb dynamically imports the chosen driver, opens the db, enables WAL + foreign keys,
   // and returns a WritableSqliteHandle. This is the ADR-004 seam.
-  const handle = await openRawDb(opts.path);
+  // Default driver is 'better-sqlite3' (byte-identical); 'node:sqlite' is explicit opt-in.
+  // exactOptionalPropertyTypes: spread opts.driver only when defined.
+  const handle = await openRawDb(opts.path, ...(opts.driver !== undefined ? [opts.driver] as const : []));
   runMigrations(handle);
   return new SqliteGraphStore(handle);
 }
