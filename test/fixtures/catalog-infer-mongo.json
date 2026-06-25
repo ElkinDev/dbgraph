@@ -1,0 +1,28 @@
+{
+  "engine": "mongodb",
+  "schemas": [],
+  "objects": [
+    {
+      "kind": "collection",
+      "schema": null,
+      "name": "orders",
+      "columns": [
+        { "name": "customer_id", "dataType": "ObjectId", "nullable": false, "ordinal": 1 }
+      ],
+      "constraints": [],
+      "indexes": []
+    },
+    {
+      "kind": "collection",
+      "schema": null,
+      "name": "customers",
+      "columns": [
+        { "name": "_id", "dataType": "ObjectId", "nullable": false, "ordinal": 1 }
+      ],
+      "constraints": [
+        { "name": "pk_customers", "type": "PK", "columns": ["_id"] }
+      ],
+      "indexes": []
+    }
+  ]
+}

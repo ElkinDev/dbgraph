@@ -1,17 +1,18 @@
 /**
  * SQLite implementation of the GraphStore port.
- * Design §2, §3, §11 — adapts better-sqlite3 synchronous API to the async GraphStore port.
+ * Design §2, §3, §11 — adapts the WritableSqliteHandle synchronous API to the async GraphStore port.
  * All synchronous calls are wrapped in already-resolved Promises (zero runtime cost per design).
  *
  * Boundary note: this adapter is under src/adapters/storage/sqlite/ and is EXEMPT from the
  * write-verb security scan that targets src/adapters/engines/* (source-extraction paths).
  * The local index MUST write to its own .dbgraph database file by design (ADR-005).
  *
- * Imports allowed: core types/ports only + better-sqlite3 types (no dynamic import needed
- * here — the DB instance is passed in from factory.ts which already did the dynamic import).
+ * Phase 9.5b: `import type { Database as Db, Statement }` REMOVED.
+ * Constructor now takes a `WritableSqliteHandle`; all statement fields are `StatementHandle`.
+ * The concrete driver never leaks into this file — only factory.ts selects it.
  */
 
-import type { Database as Db, Statement } from 'better-sqlite3';
+import type { WritableSqliteHandle, StatementHandle } from './handle.js';
 import type { GraphStore, UpsertResult, SearchHit, SnapshotRecord, SnapshotObjectRow } from '../../../core/ports/graph-store.js';
 import type { GraphNode, NodeKind, NodePayload, IndexLevel } from '../../../core/model/node.js';
 import type { GraphEdge, EdgeKind, EdgeConfidence, EdgeAttrs } from '../../../core/model/edge.js';
@@ -102,39 +103,39 @@ function rowToEdge(row: EdgeRow): GraphEdge {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export class SqliteGraphStore implements GraphStore {
-  private readonly db: Db;
+  private readonly handle: WritableSqliteHandle;
 
   // Prepared statements cached for performance.
-  private readonly stmtUpsertNode: Statement;
-  private readonly stmtUpsertEdge: Statement;
-  private readonly stmtUpsertFts: Statement;
-  private readonly stmtDeleteFts: Statement;
-  private readonly stmtGetNode: Statement;
-  private readonly stmtGetNodesByKind: Statement;
-  private readonly stmtGetNodeByQName: Statement;
-  private readonly stmtGetEdgesFrom: Statement;
-  private readonly stmtGetEdgesTo: Statement;
-  private readonly stmtDeleteNodeEdges: Statement;
-  private readonly stmtDeleteNodeFts: Statement;
-  private readonly stmtDeleteNode: Statement;
-  private readonly stmtGetMeta: Statement;
-  private readonly stmtSetMeta: Statement;
-  private readonly stmtPutSnapshot: Statement;
-  private readonly stmtListSnapshots: Statement;
-  private readonly stmtGetSchemaVersion: Statement;
-  private readonly stmtInsertSnapshotObject: Statement;
-  private readonly stmtGetSnapshotObjects: Statement;
+  private readonly stmtUpsertNode: StatementHandle;
+  private readonly stmtUpsertEdge: StatementHandle;
+  private readonly stmtUpsertFts: StatementHandle;
+  private readonly stmtDeleteFts: StatementHandle;
+  private readonly stmtGetNode: StatementHandle;
+  private readonly stmtGetNodesByKind: StatementHandle;
+  private readonly stmtGetNodeByQName: StatementHandle;
+  private readonly stmtGetEdgesFrom: StatementHandle;
+  private readonly stmtGetEdgesTo: StatementHandle;
+  private readonly stmtDeleteNodeEdges: StatementHandle;
+  private readonly stmtDeleteNodeFts: StatementHandle;
+  private readonly stmtDeleteNode: StatementHandle;
+  private readonly stmtGetMeta: StatementHandle;
+  private readonly stmtSetMeta: StatementHandle;
+  private readonly stmtPutSnapshot: StatementHandle;
+  private readonly stmtListSnapshots: StatementHandle;
+  private readonly stmtGetSchemaVersion: StatementHandle;
+  private readonly stmtInsertSnapshotObject: StatementHandle;
+  private readonly stmtGetSnapshotObjects: StatementHandle;
 
   // FTS read statements cached once per instance (F-7)
-  private readonly stmtFtsSearch: Statement;
-  private readonly stmtFtsCount: Statement;
-  private readonly stmtFtsMatchBody: Statement;
-  private readonly stmtFtsMatchComment: Statement;
+  private readonly stmtFtsSearch: StatementHandle;
+  private readonly stmtFtsCount: StatementHandle;
+  private readonly stmtFtsMatchBody: StatementHandle;
+  private readonly stmtFtsMatchComment: StatementHandle;
 
-  constructor(db: Db) {
-    this.db = db;
+  constructor(handle: WritableSqliteHandle) {
+    this.handle = handle;
 
-    this.stmtUpsertNode = db.prepare(`
+    this.stmtUpsertNode = handle.prepare(`
       INSERT INTO nodes (id, kind, schema_name, name, qname, level, missing, excluded, body_hash, payload)
       VALUES (@id, @kind, @schema_name, @name, @qname, @level, @missing, @excluded, @body_hash, @payload)
       ON CONFLICT(id) DO UPDATE SET
@@ -149,7 +150,7 @@ export class SqliteGraphStore implements GraphStore {
         payload    = excluded.payload
     `);
 
-    this.stmtUpsertEdge = db.prepare(`
+    this.stmtUpsertEdge = handle.prepare(`
       INSERT INTO edges (id, kind, src_id, dst_id, confidence, score, attrs)
       VALUES (@id, @kind, @src_id, @dst_id, @confidence, @score, @attrs)
       ON CONFLICT(id) DO UPDATE SET
@@ -162,32 +163,32 @@ export class SqliteGraphStore implements GraphStore {
     `);
 
     // FTS5 does not support ON CONFLICT — delete + reinsert pattern.
-    this.stmtUpsertFts = db.prepare(`
+    this.stmtUpsertFts = handle.prepare(`
       INSERT INTO nodes_fts (id, qname, comment, body) VALUES (@id, @qname, @comment, @body)
     `);
-    this.stmtDeleteFts = db.prepare(`DELETE FROM nodes_fts WHERE id = @id`);
+    this.stmtDeleteFts = handle.prepare(`DELETE FROM nodes_fts WHERE id = @id`);
 
-    this.stmtGetNode = db.prepare(`SELECT * FROM nodes WHERE id = ?`);
-    this.stmtGetNodesByKind = db.prepare(`SELECT * FROM nodes WHERE kind = ? ORDER BY qname, id`);
-    this.stmtGetNodeByQName = db.prepare(`SELECT * FROM nodes WHERE kind = ? AND qname = ?`);
+    this.stmtGetNode = handle.prepare(`SELECT * FROM nodes WHERE id = ?`);
+    this.stmtGetNodesByKind = handle.prepare(`SELECT * FROM nodes WHERE kind = ? ORDER BY qname, id`);
+    this.stmtGetNodeByQName = handle.prepare(`SELECT * FROM nodes WHERE kind = ? AND qname = ?`);
 
     // getEdgesFrom/To with optional kind filter handled via two statements each.
-    this.stmtGetEdgesFrom = db.prepare(`SELECT * FROM edges WHERE src_id = ? ORDER BY kind, dst_id, id`);
-    this.stmtGetEdgesTo   = db.prepare(`SELECT * FROM edges WHERE dst_id = ? ORDER BY kind, src_id, id`);
+    this.stmtGetEdgesFrom = handle.prepare(`SELECT * FROM edges WHERE src_id = ? ORDER BY kind, dst_id, id`);
+    this.stmtGetEdgesTo   = handle.prepare(`SELECT * FROM edges WHERE dst_id = ? ORDER BY kind, src_id, id`);
 
-    this.stmtDeleteNodeEdges = db.prepare(`
+    this.stmtDeleteNodeEdges = handle.prepare(`
       DELETE FROM edges WHERE src_id = ? OR dst_id = ?
     `);
-    this.stmtDeleteNodeFts = db.prepare(`DELETE FROM nodes_fts WHERE id = ?`);
-    this.stmtDeleteNode    = db.prepare(`DELETE FROM nodes WHERE id = ?`);
+    this.stmtDeleteNodeFts = handle.prepare(`DELETE FROM nodes_fts WHERE id = ?`);
+    this.stmtDeleteNode    = handle.prepare(`DELETE FROM nodes WHERE id = ?`);
 
-    this.stmtGetMeta = db.prepare(`SELECT value FROM meta WHERE key = ?`);
-    this.stmtSetMeta = db.prepare(`
+    this.stmtGetMeta = handle.prepare(`SELECT value FROM meta WHERE key = ?`);
+    this.stmtSetMeta = handle.prepare(`
       INSERT INTO meta (key, value) VALUES (?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `);
 
-    this.stmtPutSnapshot = db.prepare(`
+    this.stmtPutSnapshot = handle.prepare(`
       INSERT INTO snapshots (id, taken_at, engine, engine_version, fingerprint, counts)
       VALUES (@id, @taken_at, @engine, @engine_version, @fingerprint, @counts)
       ON CONFLICT(id) DO UPDATE SET
@@ -198,17 +199,17 @@ export class SqliteGraphStore implements GraphStore {
         counts         = excluded.counts
     `);
 
-    this.stmtListSnapshots = db.prepare(
+    this.stmtListSnapshots = handle.prepare(
       `SELECT * FROM snapshots ORDER BY rowid ASC`,
     );
 
-    this.stmtGetSchemaVersion = db.prepare(
+    this.stmtGetSchemaVersion = handle.prepare(
       `SELECT value FROM meta WHERE key = 'schema_version'`,
     );
 
     // snapshot_objects manifest — phase-4-cli-config Batch F (Decision 3)
     // INSERT INTO snapshot_objects via SELECT from nodes (same transaction as putSnapshot).
-    this.stmtInsertSnapshotObject = db.prepare(`
+    this.stmtInsertSnapshotObject = handle.prepare(`
       INSERT INTO snapshot_objects (snapshot_id, node_id, kind, qname, body_hash)
       SELECT ?, id, kind, qname, body_hash
       FROM nodes
@@ -216,7 +217,7 @@ export class SqliteGraphStore implements GraphStore {
       ORDER BY qname, id
     `);
 
-    this.stmtGetSnapshotObjects = db.prepare(`
+    this.stmtGetSnapshotObjects = handle.prepare(`
       SELECT snapshot_id, node_id, kind, qname, body_hash
       FROM snapshot_objects
       WHERE snapshot_id = ?
@@ -224,7 +225,7 @@ export class SqliteGraphStore implements GraphStore {
     `);
 
     // FTS read statements — prepared once here to match the cached-statement pattern (F-7)
-    this.stmtFtsSearch = db.prepare(`
+    this.stmtFtsSearch = handle.prepare(`
       SELECT
         n.id,
         n.kind,
@@ -237,17 +238,17 @@ export class SqliteGraphStore implements GraphStore {
       LIMIT ? OFFSET ?
     `);
 
-    this.stmtFtsCount = db.prepare(`
+    this.stmtFtsCount = handle.prepare(`
       SELECT COUNT(*) as cnt
       FROM nodes_fts
       WHERE nodes_fts MATCH ?
     `);
 
-    this.stmtFtsMatchBody = db.prepare(
+    this.stmtFtsMatchBody = handle.prepare(
       `SELECT 1 FROM nodes_fts WHERE id = ? AND nodes_fts MATCH 'body:' || ?`,
     );
 
-    this.stmtFtsMatchComment = db.prepare(
+    this.stmtFtsMatchComment = handle.prepare(
       `SELECT 1 FROM nodes_fts WHERE id = ? AND nodes_fts MATCH 'comment:' || ?`,
     );
   }
@@ -255,7 +256,7 @@ export class SqliteGraphStore implements GraphStore {
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
   async close(): Promise<void> {
-    this.db.close();
+    this.handle.close();
   }
 
   async schemaVersion(): Promise<number> {
@@ -273,7 +274,7 @@ export class SqliteGraphStore implements GraphStore {
     let nodeCount = 0;
     let edgeCount = 0;
 
-    const upsert = this.db.transaction(() => {
+    const upsert = this.handle.transaction(() => {
       for (const node of graph.nodes) {
         // Extract comment from payload for FTS population (design §3.2).
         const payloadObj = node.payload as Record<string, unknown>;
@@ -344,7 +345,7 @@ export class SqliteGraphStore implements GraphStore {
     if (ids.length === 0) return 0;
 
     let deleted = 0;
-    const del = this.db.transaction(() => {
+    const del = this.handle.transaction(() => {
       for (const id of ids) {
         this.stmtDeleteNodeEdges.run(id, id);
         this.stmtDeleteNodeFts.run(id);
@@ -493,7 +494,7 @@ export class SqliteGraphStore implements GraphStore {
   async putSnapshot(s: SnapshotRecord): Promise<void> {
     // Write the snapshot row AND the snapshot_objects manifest in ONE transaction
     // (Design Decision 3 — manifest is a faithful photograph of current nodes at snapshot time).
-    const writeSnapshotAndManifest = this.db.transaction(() => {
+    const writeSnapshotAndManifest = this.handle.transaction(() => {
       this.stmtPutSnapshot.run({
         id: s.id,
         taken_at: s.takenAt,

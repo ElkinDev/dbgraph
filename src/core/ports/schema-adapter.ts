@@ -112,13 +112,41 @@ export interface MysqlAdapterConfig {
 }
 
 /**
+ * Configuration for the MongoDB schema adapter.
+ *
+ * URI-based: the full connection string is carried in `uri` — NO host/port/user/
+ * password/schema decomposition. The password (embedded in the URI) MUST be
+ * supplied as a `${env:VAR}` reference; literals are REJECTED by the parser.
+ *
+ * IMPORTANT — union discriminability: Runtime dispatch keys on the EXPLICIT config
+ * `dialect` field in parse-config.ts / open-connections.ts, NOT on shape.
+ * No `dialect` discriminant is added to union members.
+ *
+ * `database` names the extraction scope (also used as the schema name in the
+ * normalized catalog — schema == database for MongoDB).
+ * `sampleSize` controls how many documents per collection are sampled to infer
+ * field types; defaults to 100 at runtime.
+ * `tls` enables TLS/SSL for the connection when true.
+ *
+ * US-030 (MongoDB adapter, Phase 9b), mongodb-extraction spec
+ * "Connectivity via a URI reference".
+ */
+export interface MongodbAdapterConfig {
+  readonly uri: string;              // mongodb://... ; ${env:VAR} resolved before use; literals REJECTED
+  readonly database: string;         // extraction scope; also the schema name (schema == database)
+  readonly sampleSize?: number;      // default 100; controls per-collection sampling depth
+  readonly tls?: boolean;            // enables TLS/SSL when true
+}
+
+/**
  * Union of all engine-specific config shapes.
  *
  * This is a STRUCTURAL union for typing only — it is intentionally
  * NON-discriminable by shape (pg and mysql both carry `host`; sqlite uses `file`;
- * mssql uses `server`). Runtime dispatch is by the EXPLICIT config `dialect` field
- * in parse-config.ts / open-connections.ts; each engine factory takes its own
- * concrete config type directly. No `dialect` discriminant is added to members.
+ * mssql uses `server`; mongodb uses `uri`). Runtime dispatch is by the EXPLICIT
+ * config `dialect` field in parse-config.ts / open-connections.ts; each engine
+ * factory takes its own concrete config type directly. No `dialect` discriminant
+ * is added to members.
  *
  * Future engines add their own member without touching existing members.
  */
@@ -126,7 +154,8 @@ export type SchemaAdapterConfig =
   | SqliteAdapterConfig
   | MssqlAdapterConfig
   | PgAdapterConfig
-  | MysqlAdapterConfig;
+  | MysqlAdapterConfig
+  | MongodbAdapterConfig;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SchemaAdapter port

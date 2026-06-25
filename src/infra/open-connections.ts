@@ -25,6 +25,7 @@ import {
   createMssqlSchemaAdapter,
   createPgSchemaAdapter,
   createMysqlSchemaAdapter,
+  createMongodbSchemaAdapter,
   createSqliteGraphStore,
 } from '../index.js';
 import type { Logger } from '../core/ports/logger.js';
@@ -39,7 +40,8 @@ export type AdapterAndStore = {
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
     | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
     | Awaited<ReturnType<typeof createPgSchemaAdapter>>
-    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>;
+    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>
+    | Awaited<ReturnType<typeof createMongodbSchemaAdapter>>;
   store: Awaited<ReturnType<typeof createSqliteGraphStore>>;
 };
 
@@ -85,7 +87,8 @@ export async function openConnections(
     | Awaited<ReturnType<typeof createSqliteSchemaAdapter>>
     | Awaited<ReturnType<typeof createMssqlSchemaAdapter>>
     | Awaited<ReturnType<typeof createPgSchemaAdapter>>
-    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>;
+    | Awaited<ReturnType<typeof createMysqlSchemaAdapter>>
+    | Awaited<ReturnType<typeof createMongodbSchemaAdapter>>;
 
   if (resolved.dialect === 'sqlite') {
     adapter = await createSqliteSchemaAdapter({
@@ -116,6 +119,16 @@ export async function openConnections(
       user: src.user,
       password: src.password,
       ...(src.ssl !== undefined ? { ssl: src.ssl === 'true' } : {}),
+    });
+  } else if (resolved.dialect === 'mongodb') {
+    // Wire the MongodbSchemaAdapter via its factory (Batch 5, task 5.1).
+    // resolved.source is MongodbSource (all ${env:VAR} already resolved by resolveSecrets).
+    const src = resolved.source;
+    adapter = await createMongodbSchemaAdapter({
+      uri: src.uri,
+      database: src.database,
+      ...(src.sampleSize !== undefined ? { sampleSize: src.sampleSize } : {}),
+      ...(src.tls !== undefined ? { tls: src.tls } : {}),
     });
   } else {
     // mssql

@@ -51,10 +51,32 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-038 — Multi-agent install
 **As** a user of any popular MCP agent, **I want** `dbgraph install` to detect and configure my agent automatically, **so that** I never edit JSON by hand — parity with codegraph's auto-detection.
-**Phase:** 9.5 · **Depends on:** US-024 · **Status:** ☐ pending
+**Phase:** 9.5a · **Depends on:** US-024 · **Change:** `phase-9.5a-multi-agent-install` · **Status:** ✅ done (Batches A–E, `src/cli/commands/install.ts`)
 
-**Acceptance criteria:**
-- Table-driven detection (agent → known config path → format); initial set ≥ 6: Claude Code, Cursor, Codex CLI, Gemini CLI, opencode, VS Code/JetBrains via MCP.
-- Idempotent (re-running does not duplicate entries); `--remove` deletes exactly what was added; one pass configures all detected agents and summarizes what it did.
-- If none is detected, it prints the manual config (US-024 behavior) — it never fails dry.
-- Adding support for a new agent = one table row + one test (documented in CONTRIBUTING as an easy contribution).
+**Locked decisions (phase-9.5a, all 6 agents shipped):**
+
+| Agent | Format family | Config key & entry shape | Config path (win32 / posix) |
+|-------|--------------|--------------------------|------------------------------|
+| Claude Code | mcpServers-JSON | `mcpServers.dbgraph-mcp = { command, args }` | `%APPDATA%\Claude\claude_desktop_config.json` / `~/.config/Claude/claude_desktop_config.json` |
+| Cursor | mcpServers-JSON | `mcpServers.dbgraph-mcp = { command, args }` | `%USERPROFILE%\.cursor\mcp.json` / `~/.cursor/mcp.json` |
+| Gemini CLI | mcpServers-JSON | `mcpServers.dbgraph-mcp = { command, args }` | `%USERPROFILE%\.gemini\settings.json` / `~/.gemini/settings.json` |
+| VS Code | servers-JSON | `servers.dbgraph-mcp = { type:'stdio', command, args }` (NO `mcpServers` key) | `%USERPROFILE%\.vscode\mcp.json` / `~/.vscode/mcp.json` |
+| opencode | mcp-JSON | `mcp.dbgraph-mcp = { type:'local', command:[…] }` (array command, NO `args`) | `%USERPROFILE%\.config\opencode\opencode.json` / `~/.config/opencode/opencode.json` |
+| Codex CLI | TOML | `[mcp_servers.dbgraph-mcp]` block: `command = "npx"`, `args = ["-y", "dbgraph-mcp"]` | `%USERPROFILE%\.codex\config.toml` / `~/.codex/config.toml` |
+
+**Three-writer split (all PURE, ZERO new runtime dependencies):**
+- **mcpServers-JSON** (Claude Code, Cursor, Gemini CLI): reuses the shipped `mergeMcpConfig` / `removeMcpConfig` (ADR-001 reuse principle).
+- **servers-JSON** (VS Code): `mergeVsCodeConfig` / `removeVsCodeConfig` — `servers` key with `{type:'stdio', command, args}`. The `servers`-vs-`mcpServers` distinction is explicitly asserted.
+- **mcp-JSON** (opencode): `mergeOpenCodeConfig` / `removeOpenCodeConfig` — `mcp` key with `{type:'local', command:[…]}` where command is a combined array; NO `args` field.
+- **TOML** (Codex CLI): in-house `mergeCodexToml` / `removeCodexToml` micro-writer (ADR-007) — line-oriented, bounded to the fixed `[mcp_servers.dbgraph-mcp]` block; NOT a general TOML parser; ZERO new deps.
+
+**One-row-per-agent contract:** adding a 7th agent = one `AGENT_TABLE` row + one test suite covering `resolvePath` (win32 + posix exact paths, missing-env → `undefined`), `merge`/`remove` (idempotency + other-entry preservation), and `runInstall` integration.
+
+**Acceptance criteria (all met):**
+- Table-driven detection via a typed `AGENT_TABLE`; all 6 agents implemented.
+- All writers PURE; reuse shipped writer for mcpServers-JSON; new dedicated writers for VS Code and opencode; in-house Codex TOML micro-writer (ADR-007 — NO `toml` library).
+- An agent is configured ONLY if its config file already exists; a missing env var or file skips it (never created).
+- Idempotent (re-running does not duplicate entries, incl. the TOML block); `--remove` deletes exactly the `dbgraph-mcp` entry per agent (other entries intact); one pass configures all detected agents and summarizes what it did.
+- If none is detected, it prints the updated manual config snippet (names all 6 agents) — US-024 behavior preserved.
+- Full 6 × {win32, posix} cross-platform path matrix asserted exactly (L-009) via `FsSeam` + injected `platform`/`env` — no real FS, green on Windows, no CI.
+- ZERO new runtime dependencies; `src/cli/dispatch.ts` and the `InstallOptions`/`InstallOutcome` contract unchanged.
