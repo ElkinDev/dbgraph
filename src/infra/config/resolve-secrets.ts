@@ -18,7 +18,7 @@ function missingCredential(field: string): never {
     `source (mssql): field "${field}" is required for sql/ntlm authentication.`,
   );
 }
-import type { DbgraphConfig, SqliteSource, MssqlSource, PgSource, MysqlSource } from './schema.js';
+import type { DbgraphConfig, SqliteSource, MssqlSource, PgSource, MysqlSource, MongodbSource } from './schema.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ${env:VAR} expansion
@@ -162,6 +162,14 @@ export function resolveSecrets(
           : { dialect: 'mysql', source: resolvedSource };
       return result;
     }
+    case 'mongodb': {
+      const resolvedSource = resolveMongodbSource(cfg.source, envMap);
+      const result: DbgraphConfig =
+        cfg.levels !== undefined
+          ? { dialect: 'mongodb', source: resolvedSource, levels: cfg.levels }
+          : { dialect: 'mongodb', source: resolvedSource };
+      return result;
+    }
   }
 }
 
@@ -216,5 +224,35 @@ function resolvePgSource(
   if (source.port !== undefined) resolved.port = resolveValue(source.port, envMap);
   if (source.ssl !== undefined) resolved.ssl = resolveValue(source.ssl, envMap);
   if (source.schema !== undefined) resolved.schema = resolveValue(source.schema, envMap);
+  return resolved;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MongodbSource resolver (added by phase-9b-mongodb Batch 2, task 2.6)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves the ${env:VAR} URI reference in a MongodbSource.
+ * The URI is the sole credential-bearing field (no host/port/user/password
+ * decomposition). All other fields (database, sampleSize?, tls?) are
+ * plain values that are passed through unchanged.
+ *
+ * Spec: "the URI ${env:VAR} is resolved env-only" (phase-9b-mongodb task 2.6).
+ */
+function resolveMongodbSource(
+  source: MongodbSource,
+  envMap: Record<string, string | undefined>,
+): MongodbSource {
+  const resolved: {
+    uri: string;
+    database: string;
+    sampleSize?: number;
+    tls?: boolean;
+  } = {
+    uri: resolveValue(source.uri, envMap),
+    database: source.database,
+  };
+  if (source.sampleSize !== undefined) resolved.sampleSize = source.sampleSize;
+  if (source.tls !== undefined) resolved.tls = source.tls;
   return resolved;
 }

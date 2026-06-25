@@ -5,7 +5,7 @@
  * ADR-008: deterministic output (sorted by kind/qname/id; stableStringify for JSON).
  */
 
-import type { RawCatalog, RawObject, RawColumn, RawConstraint, RawIndex } from '../model/catalog.js';
+import type { RawCatalog, RawObject, RawColumn, RawConstraint, RawIndex, RawField } from '../model/catalog.js';
 import type { ExtractionScope } from '../model/capability.js';
 import type { GraphNode, NodeKind, NodePayload, IndexLevel } from '../model/node.js';
 import type { GraphEdge, EdgeKind } from '../model/edge.js';
@@ -20,6 +20,7 @@ import {
   buildFiresOnEdges,
   buildDependencyEdges,
 } from './reference-resolver.js';
+import { inferReferences } from '../infer/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main entry point
@@ -85,6 +86,16 @@ export function normalizeCatalog(
     }
   }
 
+  // ── Step 4d: Structural inference (opt-in gate, US-008, Design D3) ───────
+  // Gate: fire when scope.inferRelationships === true OR the node set contains
+  // any 'collection' or 'field' node (secondary auto-trigger for Phase 9b Mongo).
+  // When NEITHER condition holds (the default for every shipped SQL scope),
+  // this block is SKIPPED ENTIRELY — output is byte-identical to pre-Phase-9a.
+  if (scope.inferRelationships === true || hasCollectionOrFieldNode(nodeMap)) {
+    const inferred = inferReferences(nodeMap, edges, {});
+    edges.push(...inferred);
+  }
+
   // ── Step 6: Deterministic ordering ───────────────────────────────────────
   const nodes = sortNodes([...nodeMap.values()]);
   const sortedEdges = sortEdges(edges);
@@ -95,6 +106,24 @@ export function normalizeCatalog(
 
   const graph: NormalizedGraph = { nodes, edges: sortedEdges };
   return { graph, stubs: sortedStubs, warnings, omitted };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Inference gate helpers (US-008 / Design D3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the node map contains at least one 'collection' or 'field' node.
+ * This is the secondary auto-trigger for the structural inference hook (Design D3):
+ * when a Mongo-like catalog produces collection/field nodes, inference fires
+ * automatically even without scope.inferRelationships === true.
+ * Pure function; no I/O (ADR-004).
+ */
+function hasCollectionOrFieldNode(nodeMap: NodeMap): boolean {
+  for (const node of nodeMap.values()) {
+    if (node.kind === 'collection' || node.kind === 'field') return true;
+  }
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,6 +314,15 @@ function buildChildNodes(
       buildIndexNode(idx, parentNode, indexLevel, nodeMap, edges, warnings);
     }
   }
+
+  // Fields (MongoDB / schemaless engines only — mirrors the columns branch).
+  // SQL engines NEVER set RawObject.fields, so this branch is provably inert for them.
+  if (obj.fields !== undefined && scope.levels.fields !== 'off') {
+    const fieldLevel: IndexLevel = scope.levels.fields;
+    for (const field of obj.fields) {
+      buildFieldNode(field, parentNode, fieldLevel, nodeMap, edges, warnings);
+    }
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,6 +386,40 @@ function buildChildNode(
   });
 
   return childNode;
+}
+
+/**
+ * Builds a 'field' child node from a RawField (MongoDB sampled field).
+ * Mirrors buildColumnNode exactly: one 'has_column' edge (re-used edge kind for containment).
+ * payload carries dataType (union string), frequency, and optionally nullable.
+ * dataType is a STRING like 'int|string' — consumable by inferReferences as-is (Design D1).
+ */
+function buildFieldNode(
+  field: RawField,
+  parentNode: GraphNode,
+  level: IndexLevel,
+  nodeMap: NodeMap,
+  edges: GraphEdge[],
+  warnings: string[],
+): void {
+  const payload: NodePayload = {
+    dataType: field.dataType,
+    frequency: field.frequency,
+    ...(field.nullable !== undefined ? { nullable: field.nullable } : {}),
+  };
+
+  buildChildNode(
+    'field',
+    field.name,
+    parentNode,
+    level,
+    payload,
+    'has_column',
+    {},
+    nodeMap,
+    edges,
+    warnings,
+  );
 }
 
 function buildColumnNode(

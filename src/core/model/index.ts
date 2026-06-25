@@ -19,6 +19,7 @@ export type {
   IndexPayload,
   RoutinePayload,
   TriggerPayload,
+  FieldPayload,
   GraphNode,
 } from './node.js';
 
@@ -38,6 +39,7 @@ export type {
 export type {
   RawCatalog,
   RawObject,
+  RawField,
   RawColumn,
   RawConstraint,
   RawIndex,

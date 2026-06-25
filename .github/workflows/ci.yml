@@ -90,6 +90,25 @@ jobs:
           DBGRAPH_INTEGRATION: '1'
         run: npm run test:integration
 
+  # Gated MongoDB integration job: Linux-only (Docker available), independent
+  # of the unit matrix (`needs: []`). Uses an ephemeral mongo:7 Testcontainers
+  # instance — never connects to any persistent database. Gate: DBGRAPH_INTEGRATION=1.
+  # Does NOT block the unit matrix — failures here do not affect `test`.
+  mongodb-integration:
+    runs-on: ubuntu-latest
+    # Independent — does not need `test` to pass first
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.x'
+          cache: npm
+      - run: npm ci
+      - name: Run MongoDB integration tests
+        env:
+          DBGRAPH_INTEGRATION: '1'
+        run: npm run test:integration
+
   # OPT-IN sqlcmd transport lane (US-044, Batch 6).
   # PURPOSE: exercises the sqlcmd flag combinations, chunked FOR JSON output, and
   #          encoding path (F-3/F-4/F-5/F-6 coverage gap F-7) that are NOT exercised

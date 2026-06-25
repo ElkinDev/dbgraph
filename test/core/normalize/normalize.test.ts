@@ -1,16 +1,19 @@
 /**
- * RED+GREEN tests for the normalizeCatalog function (tasks 4.1–4.5).
+ * RED+GREEN tests for the normalizeCatalog function (tasks 4.1–4.5 + 3.2–3.4).
  * Design §5 — normalizer pipeline.
- * References: graph-normalization spec scenarios, US-006, US-007, US-003, ADR-008.
+ * References: graph-normalization spec scenarios, US-006, US-007, US-003, ADR-008, US-008.
  *
  * Golden files live at test/golden/normalize/<fixture>.json (NormalizationResult).
  * Determinism assertion: same input → byte-identical JSON output.
+ *
+ * Tasks 3.2–3.4 (Batch 3): gated hook tests (gate-ON + Mongo auto-trigger + gate-OFF byte-identical).
  */
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeCatalog } from '../../../src/core/normalize/normalize.js';
+import { nodeId } from '../../../src/core/normalize/id.js';
 import type { RawCatalog } from '../../../src/core/model/catalog.js';
 import type { ExtractionScope } from '../../../src/core/model/capability.js';
 import type { NormalizationResult } from '../../../src/core/model/graph.js';
@@ -379,5 +382,313 @@ describe('normalizeCatalog — input validation', () => {
       ],
     };
     expect(() => normalizeCatalog(raw, FULL_SCOPE)).toThrow(NormalizationError);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 3 — task 3.2: Gate ON (inferRelationships: true) surfaces inferred edges
+// Design D3: gate = scope.inferRelationships === true OR collection/field nodes present.
+// Spec: "Gate ON surfaces inferred edges".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — inference gate ON (task 3.2, US-008)', () => {
+  const raw = loadFixture('catalog-infer-gate');
+
+  const INFER_ON_SCOPE: ExtractionScope = {
+    levels: {
+      tables: 'full',
+      columns: 'full',
+      constraints: 'full',
+      indexes: 'full',
+      views: 'full',
+      procedures: 'metadata',
+      functions: 'metadata',
+      triggers: 'full',
+      sequences: 'metadata',
+      collections: 'full',
+      fields: 'full',
+      statistics: 'off',
+      sampling: 'off',
+    },
+    inferRelationships: true,
+  };
+
+  const INFER_OFF_SCOPE: ExtractionScope = {
+    levels: INFER_ON_SCOPE.levels,
+    // inferRelationships absent → undefined → gate OFF
+  };
+
+  it('gate ON: emits exactly one inferred_reference edge from orders.customer_id to customers.id', () => {
+    const result = normalizeCatalog(raw, INFER_ON_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    expect(inferred).toHaveLength(1);
+    const edge = inferred[0]!;
+    // Exact endpoints (EXACT-set / L-009)
+    expect(edge.src).toBe(nodeId('column', 'dbo.orders.customer_id'));
+    expect(edge.dst).toBe(nodeId('column', 'dbo.customers.id'));
+    expect(edge.attrs.srcColumn).toBe('customer_id');
+    expect(edge.attrs.dstColumn).toBe('id');
+    expect(edge.score).toBe(1.0);
+    expect(edge.confidence).toBe('inferred');
+  });
+
+  it('gate OFF (flag absent): NO inferred_reference edge emitted', () => {
+    const result = normalizeCatalog(raw, INFER_OFF_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    expect(inferred).toHaveLength(0);
+  });
+
+  it('gate ON produces an edge that was ABSENT with gate OFF', () => {
+    const offResult = normalizeCatalog(raw, INFER_OFF_SCOPE);
+    const onResult = normalizeCatalog(raw, INFER_ON_SCOPE);
+    const offInferred = offResult.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    const onInferred = onResult.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    expect(offInferred).toHaveLength(0);
+    expect(onInferred.length).toBeGreaterThan(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 3 — task 3.3: Gate ON via Mongo auto-trigger (no inferRelationships flag)
+// Design D3 secondary auto-trigger: if nodeMap contains collection/field nodes,
+// inference fires even without the flag.
+// Spec: "the documented secondary auto-trigger emits inference when collection/field nodes present".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — inference auto-trigger via Mongo collection nodes (task 3.3, US-008)', () => {
+  const raw = loadFixture('catalog-infer-mongo');
+
+  // Scope has NO inferRelationships flag — secondary auto-trigger must fire
+  const MONGO_SCOPE: ExtractionScope = {
+    levels: {
+      tables: 'full',
+      columns: 'full',
+      constraints: 'full',
+      indexes: 'full',
+      views: 'full',
+      procedures: 'metadata',
+      functions: 'metadata',
+      triggers: 'full',
+      sequences: 'metadata',
+      collections: 'full',
+      fields: 'full',
+      statistics: 'off',
+      sampling: 'off',
+    },
+    // inferRelationships NOT set → auto-trigger must fire due to collection nodes
+  };
+
+  it('normalizes successfully (no throw)', () => {
+    const result = normalizeCatalog(raw, MONGO_SCOPE);
+    expect(result).toBeDefined();
+  });
+
+  it('auto-trigger: emits at least one inferred_reference edge (collection nodes present)', () => {
+    const result = normalizeCatalog(raw, MONGO_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    expect(inferred.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('auto-trigger: the inferred edge connects orders.customer_id to customers._id (ObjectId compat)', () => {
+    const result = normalizeCatalog(raw, MONGO_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    // Exact COLUMN→COLUMN endpoints using nodeId (EXACT-set / L-009)
+    // The normalizer builds `column` nodes from collection.columns (kind:'column' always)
+    const srcId = nodeId('column', 'orders.customer_id');
+    const dstId = nodeId('column', 'customers._id');
+    const edge = inferred.find((e) => e.src === srcId && e.dst === dstId);
+    expect(edge).toBeDefined();
+    expect(edge!.attrs.srcColumn).toBe('customer_id');
+    expect(edge!.attrs.dstColumn).toBe('_id');
+    expect(edge!.confidence).toBe('inferred');
+    expect(typeof edge!.score).toBe('number');
+    expect(edge!.score).toBe(1.0); // conv=1.0 + typeCompat=1 + isPk=1 = 1.0
+  });
+
+  it('auto-trigger fires even though inferRelationships is absent (undefined !== true)', () => {
+    expect(MONGO_SCOPE.inferRelationships).toBeUndefined();
+    const result = normalizeCatalog(raw, MONGO_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    // The secondary trigger (collection nodes present) MUST have fired
+    expect(inferred.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 3 — task 3.4: Gate OFF on SQL fixture — BYTE-IDENTICAL to committed golden
+// This is the LOAD-BEARING check: proves the hook did NOT leak onto the OFF path.
+// Spec: "Gate OFF on an SQL fixture is byte-identical to its golden".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — gate OFF byte-identical golden (task 3.4, US-008)', () => {
+  it('gate OFF: catalog-minimal with inferRelationships unset produces NO inferred_reference edges', () => {
+    const raw = loadFixture('catalog-minimal');
+    // FULL_SCOPE has no inferRelationships and catalog-minimal has no collection/field nodes
+    const result = normalizeCatalog(raw, FULL_SCOPE);
+    const inferred = result.graph.edges.filter((e) => e.kind === 'inferred_reference');
+    expect(inferred).toHaveLength(0);
+  });
+
+  it('gate OFF: catalog-minimal output is BYTE-IDENTICAL to committed golden', () => {
+    const raw = loadFixture('catalog-minimal');
+    const result = normalizeCatalog(raw, FULL_SCOPE);
+    // Must match the COMMITTED golden exactly — do NOT re-seed if it exists
+    assertMatchesGolden('catalog-minimal', result);
+  });
+
+  it('gate OFF: catalog-composite-fk output is BYTE-IDENTICAL to committed golden', () => {
+    const raw = loadFixture('catalog-composite-fk');
+    const result = normalizeCatalog(raw, FULL_SCOPE);
+    assertMatchesGolden('catalog-composite-fk', result);
+  });
+
+  it('gate OFF: catalog-dangling-ref output is BYTE-IDENTICAL to committed golden', () => {
+    const raw = loadFixture('catalog-dangling-ref');
+    const result = normalizeCatalog(raw, FULL_SCOPE);
+    assertMatchesGolden('catalog-dangling-ref', result);
+  });
+
+  it('gate OFF: catalog-excluded output is BYTE-IDENTICAL to committed golden', () => {
+    const raw = loadFixture('catalog-excluded');
+    const result = normalizeCatalog(raw, {
+      ...FULL_SCOPE,
+      exclude: ['audit.*'],
+    });
+    assertMatchesGolden('catalog-excluded', result);
+  });
+
+  it('gate OFF: catalog-rw-edges output is BYTE-IDENTICAL to committed golden', () => {
+    const raw = loadFixture('catalog-rw-edges');
+    const result = normalizeCatalog(raw, FULL_SCOPE);
+    assertMatchesGolden('catalog-rw-edges', result);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch 1 (phase-9b) — task 1.3: buildFieldNode + fields branch
+// Spec: "A RawObject with fields normalizes into field nodes".
+// The fields branch mirrors columns: each RawField → one 'field' node.
+// Gate: scope.levels.fields controls inclusion (off → skip).
+// Byte-identical invariant: SQL engines never set RawObject.fields → ZERO field nodes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — fields branch (task 1.3, phase-9b-mongodb)', () => {
+  // A RawObject of kind 'collection' with fields
+  const collectionWithFields: RawCatalog = {
+    engine: 'mongodb',
+    schemas: ['mydb'],
+    objects: [
+      {
+        kind: 'collection',
+        schema: 'mydb',
+        name: 'orders',
+        fields: [
+          { name: 'customer_id', dataType: 'objectId', frequency: 1.0 },
+          { name: 'amount', dataType: 'numeric', frequency: 1.0 },
+          { name: 'notes', dataType: 'string', frequency: 0.5, nullable: true },
+        ],
+      },
+    ],
+  };
+
+  const FIELDS_ON_SCOPE: ExtractionScope = {
+    levels: {
+      tables: 'full',
+      columns: 'full',
+      constraints: 'full',
+      indexes: 'full',
+      views: 'full',
+      procedures: 'metadata',
+      functions: 'metadata',
+      triggers: 'full',
+      sequences: 'metadata',
+      collections: 'full',
+      fields: 'metadata',   // ON — fields branch must fire
+      statistics: 'off',
+      sampling: 'off',
+    },
+  };
+
+  const FIELDS_OFF_SCOPE: ExtractionScope = {
+    levels: {
+      ...FIELDS_ON_SCOPE.levels,
+      fields: 'off',        // OFF — fields branch must NOT fire
+    },
+  };
+
+  it('a RawObject with fields produces one field node per RawField', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // EXACT-set: 3 RawField entries → 3 field nodes (L-009)
+    expect(fieldNodes).toHaveLength(3);
+  });
+
+  it('field nodes carry the correct qname (parent.fieldName)', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const qnames = result.graph.nodes
+      .filter((n) => n.kind === 'field')
+      .map((n) => n.qname);
+    // EXACT-set assertions (L-009)
+    expect(qnames).toContain('mydb.orders.customer_id');
+    expect(qnames).toContain('mydb.orders.amount');
+    expect(qnames).toContain('mydb.orders.notes');
+    expect(qnames).toHaveLength(3);
+  });
+
+  it('field nodes carry dataType in payload', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const customerIdNode = result.graph.nodes.find(
+      (n) => n.kind === 'field' && n.name === 'customer_id',
+    );
+    expect(customerIdNode?.payload['dataType']).toBe('objectId');
+  });
+
+  it('field nodes carry frequency in payload', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const notesNode = result.graph.nodes.find(
+      (n) => n.kind === 'field' && n.name === 'notes',
+    );
+    expect(notesNode?.payload['frequency']).toBe(0.5);
+  });
+
+  it('absent fields → ZERO field nodes (the no-op path for SQL engines)', () => {
+    const sqlCatalog: RawCatalog = {
+      engine: 'mssql',
+      schemas: ['dbo'],
+      objects: [
+        {
+          kind: 'table',
+          schema: 'dbo',
+          name: 'orders',
+          columns: [
+            { name: 'id', dataType: 'int', nullable: false, ordinal: 1 },
+          ],
+        },
+      ],
+    };
+    const result = normalizeCatalog(sqlCatalog, FIELDS_ON_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // EXACT-set: SQL sets no fields → ZERO field nodes (L-009)
+    expect(fieldNodes).toHaveLength(0);
+  });
+
+  it('fields level off → branch skipped → ZERO field nodes', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_OFF_SCOPE);
+    const fieldNodes = result.graph.nodes.filter((n) => n.kind === 'field');
+    // Level 'off' gates the branch — no field nodes produced
+    expect(fieldNodes).toHaveLength(0);
+  });
+
+  it('collection node is still produced when fields level is off', () => {
+    const result = normalizeCatalog(collectionWithFields, FIELDS_OFF_SCOPE);
+    const collectionNode = result.graph.nodes.find((n) => n.kind === 'collection');
+    expect(collectionNode).toBeDefined();
+    expect(collectionNode?.qname).toBe('mydb.orders');
+  });
+
+  it('normalizes deterministically (byte-identical on second run)', () => {
+    const r1 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    const r2 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
+    expect(serializeResult(r2)).toBe(serializeResult(r1));
   });
 });
