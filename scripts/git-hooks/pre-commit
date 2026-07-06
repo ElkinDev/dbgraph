@@ -13,6 +13,10 @@
 # grep-flag note: this repo's Windows git ships a grep where `-i` combined with
 # `-F` aborts (SIGABRT). We lowercase both sides with `tr` and use `-Fw`
 # (fixed-string, whole-word) instead — robust everywhere, no regex, no escaping.
+#
+# underscore note: `-w` treats `_` as a word character, so `term_suffix` would
+# slip through. Both sides additionally map `_` to a space so underscore-joined
+# occurrences are caught too (escape found 2026-07-06).
 
 set -u
 
@@ -27,7 +31,7 @@ fi
 # Staged ADDED lines only (a single leading '+'), lowercased once. The '+++'
 # file-header line is excluded and removed ('-') lines are ignored, so a codename
 # can still be REMOVED. `|| true` keeps set -u happy when the pipeline matches nothing.
-added=$(git diff --cached --no-color -U0 | grep -E '^\+([^+]|$)' | tr '[:upper:]' '[:lower:]') || true
+added=$(git diff --cached --no-color -U0 | grep -E '^\+([^+]|$)' | tr '[:upper:]' '[:lower:]' | tr '_' ' ') || true
 
 if [ -z "$added" ]; then
   exit 0
@@ -40,7 +44,7 @@ while IFS= read -r pattern || [ -n "$pattern" ]; do
     '' | \#*) continue ;;
   esac
   n=$((n + 1))
-  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
+  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]' | tr '_' ' ')
   if printf '%s\n' "$added" | grep -Fw -- "$lc" >/dev/null 2>&1; then
     echo "pre-commit: staged changes contain denylist entry #$n — commit blocked." >&2
     status=1

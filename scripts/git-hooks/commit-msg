@@ -21,7 +21,9 @@ if [ ! -f "$denylist" ]; then
   exit 0
 fi
 
-msg_lc=$(tr '[:upper:]' '[:lower:]' <"$msg_file") || true
+# `_` maps to a space on both sides so underscore-joined codenames are caught
+# (grep -w treats `_` as a word character — see pre-commit).
+msg_lc=$(tr '[:upper:]' '[:lower:]' <"$msg_file" | tr '_' ' ') || true
 
 status=0
 n=0
@@ -30,7 +32,7 @@ while IFS= read -r pattern || [ -n "$pattern" ]; do
     '' | \#*) continue ;;
   esac
   n=$((n + 1))
-  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
+  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]' | tr '_' ' ')
   if printf '%s\n' "$msg_lc" | grep -Fw -- "$lc" >/dev/null 2>&1; then
     echo "commit-msg: commit message contains denylist entry #$n — commit blocked." >&2
     status=1

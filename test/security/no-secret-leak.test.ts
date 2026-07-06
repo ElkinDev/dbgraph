@@ -104,7 +104,12 @@ describe('repository leak-scanner: no secrets or sensitive identifiers committed
       expect(terms).toEqual([]);
       return;
     }
-    const patterns = terms.map((t) => new RegExp(`\\b${escapeRegExp(t)}\\b`, 'i'));
+    // Alphanumeric-adjacency guards instead of \b: underscore counts as a SEPARATOR here,
+    // so a denylisted term embedded as `term_suffix`/`prefix_term` is still caught (\b treats
+    // `_` as a word character and silently missed exactly that — real escape found 2026-07-06).
+    const patterns = terms.map(
+      (t) => new RegExp(`(?<![A-Za-z0-9])${escapeRegExp(t)}(?![A-Za-z0-9])`, 'i'),
+    );
     const hits: string[] = [];
     for (const file of files) {
       const lines = readFileSync(file, 'utf-8').split(/\r?\n/);
