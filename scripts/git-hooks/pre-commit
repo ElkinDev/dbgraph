@@ -1,0 +1,54 @@
+#!/bin/sh
+# pre-commit — local leak-scan of STAGED content against the git-ignored denylist.
+#
+# Blocks a commit when a staged ADDED line introduces a forbidden codename as a
+# whole word (case-insensitive). Codenames are read from .leakscan-denylist.local
+# at RUNTIME — this hook never embeds them. A match is reported only by its entry
+# index; the codename itself is never echoed.
+#
+# Dependency-free: POSIX sh + git + grep + tr. Contributors without the local
+# denylist file rely on the leak-scan test + CI, so a missing file is a warning,
+# not a failure.
+#
+# grep-flag note: this repo's Windows git ships a grep where `-i` combined with
+# `-F` aborts (SIGABRT). We lowercase both sides with `tr` and use `-Fw`
+# (fixed-string, whole-word) instead — robust everywhere, no regex, no escaping.
+
+set -u
+
+repo_root=$(git rev-parse --show-toplevel)
+denylist="$repo_root/.leakscan-denylist.local"
+
+if [ ! -f "$denylist" ]; then
+  echo "pre-commit: .leakscan-denylist.local not found — skipping local leak-scan (test + CI still enforce)." >&2
+  exit 0
+fi
+
+# Staged ADDED lines only (a single leading '+'), lowercased once. The '+++'
+# file-header line is excluded and removed ('-') lines are ignored, so a codename
+# can still be REMOVED. `|| true` keeps set -u happy when the pipeline matches nothing.
+added=$(git diff --cached --no-color -U0 | grep -E '^\+([^+]|$)' | tr '[:upper:]' '[:lower:]') || true
+
+if [ -z "$added" ]; then
+  exit 0
+fi
+
+status=0
+n=0
+while IFS= read -r pattern || [ -n "$pattern" ]; do
+  case "$pattern" in
+    '' | \#*) continue ;;
+  esac
+  n=$((n + 1))
+  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
+  if printf '%s\n' "$added" | grep -Fw -- "$lc" >/dev/null 2>&1; then
+    echo "pre-commit: staged changes contain denylist entry #$n — commit blocked." >&2
+    status=1
+  fi
+done <"$denylist"
+
+if [ "$status" -ne 0 ]; then
+  echo "pre-commit: remove the flagged content; denylisted codenames must never be committed." >&2
+fi
+
+exit "$status"

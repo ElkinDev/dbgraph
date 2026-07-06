@@ -1,0 +1,44 @@
+#!/bin/sh
+# commit-msg — local leak-scan of the COMMIT MESSAGE against the git-ignored denylist.
+#
+# $1 is the path to the file holding the proposed commit message. Blocks the
+# commit when the message contains a forbidden codename as a whole word
+# (case-insensitive). Codenames are read from .leakscan-denylist.local at RUNTIME
+# and never echoed — only the matched entry index is reported.
+#
+# Dependency-free: POSIX sh + git + grep + tr. See pre-commit for the -Fw/tr
+# rationale (this repo's Windows git aborts on `grep -iF`).
+
+set -u
+
+msg_file=${1:?commit-msg: missing commit-message-file argument}
+
+repo_root=$(git rev-parse --show-toplevel)
+denylist="$repo_root/.leakscan-denylist.local"
+
+if [ ! -f "$denylist" ]; then
+  echo "commit-msg: .leakscan-denylist.local not found — skipping local leak-scan (test + CI still enforce)." >&2
+  exit 0
+fi
+
+msg_lc=$(tr '[:upper:]' '[:lower:]' <"$msg_file") || true
+
+status=0
+n=0
+while IFS= read -r pattern || [ -n "$pattern" ]; do
+  case "$pattern" in
+    '' | \#*) continue ;;
+  esac
+  n=$((n + 1))
+  lc=$(printf '%s' "$pattern" | tr '[:upper:]' '[:lower:]')
+  if printf '%s\n' "$msg_lc" | grep -Fw -- "$lc" >/dev/null 2>&1; then
+    echo "commit-msg: commit message contains denylist entry #$n — commit blocked." >&2
+    status=1
+  fi
+done <"$denylist"
+
+if [ "$status" -ne 0 ]; then
+  echo "commit-msg: remove the flagged codename from the commit message." >&2
+fi
+
+exit "$status"

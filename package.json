@@ -31,7 +31,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "hooks:install": "git config core.hooksPath scripts/git-hooks"
   },
   "repository": {
     "type": "git",
