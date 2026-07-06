@@ -77,28 +77,28 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 > constants pinned," not `npm test`. BOTH outcomes are pre-designed (design §D3 fallback); if a probe fails, take the
 > designed fallback and RECORD it. NO `src/` change in this batch.
 
-- [ ] 0.1 **(spike)** On the installed Node, confirm `require('node:sqlite')` (and `import('node:sqlite')`) works with NO
+- [x] 0.1 **(spike)** On the installed Node, confirm `require('node:sqlite')` (and `import('node:sqlite')`) works with NO
   `--experimental-sqlite` flag; record `process.version` (exact patch). Q2 decision: if the machine is < 23.4 and the flag
   is still required → BUMP the pin to the current 24 LTS (strongly preferred per D3) before proceeding; the stopgap
   `NODE_OPTIONS=--experimental-sqlite` is documented-only, not shipped. Resolves **Q2** + confirms **D3**. Record the
   exact patch to pin (used by 4.4 `.nvmrc`). Done: `process.version` + no-flag result recorded in design.md.
-- [ ] 0.2 **(spike)** Build a THROWAWAY SEA (a 3-line entry that prints `JSON.stringify(process.argv)`) on the pinned Node,
+- [x] 0.2 **(spike)** Build a THROWAWAY SEA (a 3-line entry that prints `JSON.stringify(process.argv)`) on the pinned Node,
   inject via postject, run `./x a b c`, and confirm the layout is `[execPath, 'a', 'b', 'c']` (user args at index 1, NO
   script-path slot). This fixes the `planEntry` slice constant `slice(isSea ? 1 : 2)`. Resolves **Q3** + confirms **D5**.
   Done: observed argv array recorded in design.md; if the layout differs, record the corrected offset (1.2 consumes it).
-- [ ] 0.3 **(spike)** Confirm `node:sqlite` `new DatabaseSync(path, { readOnly: true })` opens an existing `.dbgraph`
+- [x] 0.3 **(spike)** Confirm `node:sqlite` `new DatabaseSync(path, { readOnly: true })` opens an existing `.dbgraph`
   file read-only on the pinned Node 24 (9.5b validated the WRITABLE store on 22, not the read-only SOURCE open on 24) —
   the smoke's `init→sync→query` read path depends on it. Resolves **Q4**. Done: option name/behavior recorded; if the
   option differs on 24, record the corrected read-open call (2.6 smoke consumes it).
-- [ ] 0.4 **(spike)** Confirm a `process.on('warning')` filter in the entry FULLY silences the node:sqlite
+- [x] 0.4 **(spike)** Confirm a `process.on('warning')` filter in the entry FULLY silences the node:sqlite
   `ExperimentalWarning` on the pinned Node (stderr stays clean; stdout is already machine-clean), OR whether
   `sea-config.json.disableExperimentalSEAWarning` + a startup flag is ALSO needed. Resolves **Q5**. Done: the confirmed
   suppression recipe recorded (1.2/`sea-entry` + 2.5 `sea-config.json` consume it).
-- [ ] 0.5 **(spike, Windows)** Confirm whether the copied `node.exe` needs `signtool remove /s` (strip signature) BEFORE
+- [x] 0.5 **(spike, Windows)** Confirm whether the copied `node.exe` needs `signtool remove /s` (strip signature) BEFORE
   postject on the pinned Node build, and that the produced exe runs on a clean Windows (SmartScreen may warn — code
   signing is explicitly OUT of scope, but the exe MUST run). Resolves **Q6**. Done: the required pre-postject steps
   recorded (2.5 `build-sea.ps1` consumes them).
-- [ ] 0.6 GATE (Batch 0): all 0.1–0.5 findings recorded into a new **"Batch 0 — empirical findings"** section appended to
+- [x] 0.6 GATE (Batch 0): all 0.1–0.5 findings recorded into a new **"Batch 0 — empirical findings"** section appended to
   `openspec/changes/phase-9.5c-binaries/design.md` (pin the exact Node patch, argv offset, readOnly recipe, warning-filter
   recipe, Windows postject steps); the Node-pin decision (Q2) is FINAL. NO `src/` changed. Then COMMIT
   `docs(9.5c): record Batch 0 empirical SEA/node:sqlite findings`. Done: design.md updated; pin decided.

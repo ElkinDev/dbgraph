@@ -291,8 +291,82 @@ unaffected. No data migration — the `.dbgraph/dbgraph.db` format is identical 
       exe runs on a clean Windows without SmartScreen blocking (code signing is explicitly out of scope).
 - [ ] **Q7 (macOS leg):** `release.yml` carries the macOS matrix leg but it is NEVER exercised here;
       confirm the leg stays present-but-dormant for 9.5d rather than being removed.
+
+## Batch 0 — empirical findings (spikes 0.1–0.5; recorded per task 0.6)
+
+**Probe environment.** All spikes were run on a standalone **Node v24.18.0** ("Krypton", the latest Node 24
+LTS as of 2026-07-06), win-x64, obtained as the official `node-v24.18.0-win-x64` zip in a throwaway scratch
+directory OUTSIDE the repo (the dev machine's default `node` is v22.19.0 and no version manager — volta /
+nvm-windows / fnm — is installed). Throwaway SEA probes were built, injected and run entirely in scratch;
+no probe artifact was committed. `postject@latest` was used for injection.
+
+### 0.1 / Q2 / D3 — node:sqlite needs NO flag on the pin (design PRIMARY branch) → **pin FINAL: 24.18.0**
+
+On v24.18.0 both `require('node:sqlite')` and `import('node:sqlite')` return a working module (`DatabaseSync`
+is a function) with **no** `--experimental-sqlite` flag and `process.execArgv === []`. This matches the design's
+primary branch (D3); the Node-22 flag-required fallback is NOT taken. **Q2 decision is FINAL: pin Node 24.18.0**
+(recorded in `.nvmrc`; consumed by `build-sea.ps1`/`build-sea.sh` and `release.yml`).
+
+### 0.2 / Q3 / D5 — SEA argv layout — **REALITY-BREAK: design fallback offset taken (slice 2, not slice 1)**
+
+A throwaway SEA (`entry.cjs` printing `JSON.stringify(process.argv)`) injected into a copied `node.exe` and run
+as `./probe.exe a b c` reports:
+
+```
+process.argv = [ <execPath>, <execPath>, "a", "b", "c" ]   // execPath appears TWICE
 ```
 
-The design.md is written at `C:\Users\ecardoso\dev\dbgraph\openspec\changes\phase-9.5c-binaries\design.md`.
-</content>
-</invoke>
+Node fills the argv[1] "script-path" slot with the **executable path** (not a gap), so **user args start at
+index 2**, IDENTICAL to a normal `node <script> a b c` launch — NOT `[execPath, ...args]`/index 1 as design
+D5/Q3 assumed. Verified across `a b c`, `--version foo`, empty argv (`[execPath, execPath]` → `[]`), and a
+second node:sqlite SEA that correctly queried term `orders` after `process.argv.slice(2)` yielded `["orders"]`.
+**Corrected constant (consumed by `planEntry`, task 1.2): the SEA branch uses `slice(2)`.** Because both the SEA
+and the non-SEA offsets are 2, `planEntry(argv, isSea)` slices at a named offset of 2 for both branches (the
+`isSea` seam is retained for the documented contract and future divergence). Task 0.2 pre-authorized this
+correction ("if the layout differs, record the corrected offset"); design D5's `slice(isSea ? 1 : 2)` is
+SUPERSEDED by `slice(2)` on the pinned Node.
+
+### 0.3 / Q4 — node:sqlite `{ readOnly: true }` opens existing file read-only (design PRIMARY branch)
+
+`new DatabaseSync(path, { readOnly: true })` on v24.18.0: the option name is camelCase **`readOnly`**; it opens
+an existing `.dbgraph` file, `prepare(...).all()` returns the expected rows, and a write is rejected with
+`attempt to write a readonly database`. Matches the design's assumed option name/behavior. The smoke read path
+(2.6 / 3.2) uses `{ readOnly: true }`.
+
+### 0.4 / Q5 — ExperimentalWarning suppression — **REALITY-BREAK: no node:sqlite warning fires (harmless)**
+
+On v24.18.0 node:sqlite emits **NO `ExperimentalWarning` at all** — not on `require`, not on `import`, not on
+`DatabaseSync` construction or use. Verified with a `process.on('warning')` listener that DID capture a control
+`SanityWarning` (proving the listener + stderr capture work) but captured no sqlite/ExperimentalWarning. Design
+D3 assumed "Node 24 still emits a one-shot ExperimentalWarning"; it does not on this patch. **Confirmed
+suppression recipe:**
+- The SEA-level *"Single executable application is an experimental feature"* warning (a DIFFERENT warning) is
+  suppressed by `sea-config.json`'s `"disableExperimentalSEAWarning": true` — verified: the injected SEA exe's
+  stderr is empty.
+- `sea-entry.ts` still installs the design-mandated defensive `process.on('warning')` filter that swallows ONLY
+  an `ExperimentalWarning` whose message matches `/sqlite/i`. On 24.18.0 this is a **no-op** (nothing to swallow)
+  but is retained per D3 so the entry stays robust if a later 24 patch reintroduces the warning.
+- **No startup flag is needed** for either warning.
+
+### 0.5 / Q6 — Windows postject viability (design PRIMARY: exe runs; signtool best-effort)
+
+`postject <exe> NODE_SEA_BLOB <blob> --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` on Windows
+injects successfully (exit 0) and prints `warning: The signature seems corrupted!`. The produced exe **runs
+correctly** — exit 0, `require('node:sea').isSea() === true`, correct argv, and node:sqlite works — from an
+arbitrary cwd with NO `node_modules`, **without** running `signtool remove /s` (signtool is not installed on
+this machine). **Recipe for `build-sea.ps1` (task 2.5):** `signtool remove /s node.exe` is NOT required for the
+exe to run and MUST be **best-effort / guarded on signtool availability**; the "signature seems corrupted"
+warning is expected and benign (code signing is explicitly out of scope). SmartScreen may warn on first run of
+the unsigned exe (out of scope); the exe executes.
+
+### Pinned constants (hard-coded by later batches)
+
+| Constant | Value | Consumed by |
+|----------|-------|-------------|
+| Build/embed Node patch (Q2) | **24.18.0** | `.nvmrc` (4.4), `build-sea.ps1`/`.sh` (2.5/3.1), `release.yml` (4.2) |
+| SEA argv user-arg offset (Q3) | **`slice(2)`** (NOT `slice(1)`) | `planEntry` in `sea-entry.ts` (1.2) |
+| node:sqlite read-open option (Q4) | `{ readOnly: true }` (camelCase) | smoke read path (2.6/3.2) |
+| node:sqlite ExperimentalWarning (Q5) | none fires on 24.18.0; defensive `process.on('warning')` /sqlite/ filter + `disableExperimentalSEAWarning:true` | `sea-entry.ts` (1.2), `sea-config.json` (2.5) |
+| postject sentinel fuse | `NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2` | `build-sea.ps1`/`.sh` (2.5/3.1) |
+| Windows signtool remove (Q6) | NOT required; best-effort if available | `build-sea.ps1` (2.5) |
+| sea-config.json shape | `{ main, output, "disableExperimentalSEAWarning": true, "useSnapshot": false, "useCodeCache": false }` | `sea-config.json` (2.5) |
