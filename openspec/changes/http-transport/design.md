@@ -102,6 +102,74 @@ SDK options USED: `sessionIdGenerator`, `onsessioninitialized`, `onsessionclosed
 NOT used (all `@deprecated` in 1.29.0, VERIFIED in `.d.ts`): `allowedHosts`, `allowedOrigins`,
 `enableDnsRebindingProtection`.
 
+## Batch 0 — empirical findings (against installed `@modelcontextprotocol/sdk@1.29.0`)
+
+Verified 2026-07-06 by inspecting the installed `dist/esm/server/streamableHttp.{d.ts,js}` +
+`webStandardStreamableHttp.{d.ts,js}` AND by running two throwaway in-process `node:http` loopback
+probes (created outside version control, run, then deleted — tree clean). This section RESOLVES the
+design Open Question "SDK `handleRequest` body handling" and pins the recipe that Batch 2 (2.4)
+hard-codes.
+
+### 0.1 — `handleRequest` body recipe: DESIGN BRANCH TAKEN = PRE-PARSE (the documented fallback), not raw-only
+
+**Import**: `import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'`.
+Signature (VERIFIED `.d.ts`): `handleRequest(req: IncomingMessage & { auth?: AuthInfo }, res: ServerResponse, parsedBody?: unknown): Promise<void>`.
+
+**Observed (raw-req works)**: passing the RAW `req`/`res` with `parsedBody` OMITTED SUCCEEDS. The Node
+wrapper feeds the raw `IncomingMessage` through `@hono/node-server`'s `getRequestListener` → Web
+`Request` → `WebStandardStreamableHTTPServerTransport.handleRequest(webRequest, { parsedBody: undefined })`,
+which at `webStandardStreamableHttp.js:392-398` does `if (options?.parsedBody !== undefined) rawMessage = options.parsedBody; else rawMessage = await req.json();`. Probe 1 confirmed: raw `initialize` POST → **200**,
+`mcp-session-id` issued, `onsessioninitialized` fired, `tools/list` on the session → 200.
+
+**Why raw-only is INSUFFICIENT for our router (the load-bearing empirical truth)**: routing an
+UNKNOWN / already-terminated `mcp-session-id` through a FRESHLY minted (uninitialized) transport does
+NOT yield the spec-mandated **404** — it yields **400 `Bad Request: Server not initialized`** (probe 1,
+steps 4 & 6). The SDK's own **404 `Session not found` (-32001)** fires ONLY inside an ALREADY-initialized
+transport's private `validateSession` when a *mismatched* id arrives — it is a per-transport check, NOT a
+registry-level one. A raw-only router therefore CANNOT produce the spec's split (missing→400 /
+unknown-or-terminated→404), and cannot gate new-session creation on `isInitializeRequest` (that needs the
+body).
+
+**DECISION (recipe Batch 2 consumes — FINAL)**: the router PRE-PARSES the POST body ONCE (read the
+`req` stream → `JSON.parse`), and:
+1. `mcp-session-id` present AND in `SessionRegistry` → route to that transport, `await transport.handleRequest(req, res, body)` (pass `parsedBody`).
+2. `mcp-session-id` ABSENT AND `isInitializeRequest(body)` → mint transport + `createServer()` + `connect`, then `handleRequest(req, res, body)`; `onsessioninitialized` registers it.
+3. `mcp-session-id` present but NOT in the registry (unknown/terminated) → router emits **404** `{jsonrpc:'2.0',error:{code:-32001,message:'Session not found'},id:null}` (byte-mirrors the SDK's `createJsonErrorResponse(404,-32001,'Session not found')`). NO body read needed for this branch.
+4. else (absent id + non-init) → router emits **400** `{jsonrpc:'2.0',error:{code:-32000,message:'Bad Request: No valid session ID provided'},id:null}`.
+5. `DELETE` with a known id → route raw to the session transport (SDK `handleDeleteRequest` → `onsessionclosed` → `close()` → **200**); unknown id → router **404**.
+
+Probe 2 drove this exact recipe end-to-end over loopback and observed: init→**200**+sid; list(known)→**200**;
+non-init/no-sid→**400** `No valid session ID provided`; unknown-sid→**404** `Session not found`;
+DELETE→**200** (`onsessionclosed` fired); terminated-sid→**404**; registry drained to size 0. This is the
+canonical multi-session pattern and is byte-deterministic. `parsedBody` is passed ONLY for POST; DELETE/GET
+carry no body. `handleRequest` returns a `Promise<void>` and writes the response itself (default
+`content-type: text/event-stream` — the SDK's SSE default; `enableJsonResponse` left at its `false`
+default, so `initialize`/tool results arrive as a single SSE `data:` frame — B3's raw-`fetch` assertions
+parse that frame; SDK `Client` handles it transparently).
+
+### 0.2 — session-lifecycle surface (VERIFIED present on 1.29.0)
+
+Constructor options (on `WebStandardStreamableHTTPServerTransportOptions`, aliased as
+`StreamableHTTPServerTransportOptions`):
+- `sessionIdGenerator?: () => string` — pass `() => randomUUID()` from `node:crypto`.
+- `onsessioninitialized?: (sessionId: string) => void | Promise<void>` — fires AFTER a successful `initialize`; our `register` hook.
+- `onsessionclosed?: (sessionId: string) => void | Promise<void>` — fires on a valid `DELETE`; our `drop + server.close()` hook.
+
+`transport.close(): Promise<void>` — VERIFIED (used by the drain path). `isInitializeRequest` —
+`import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js'`, signature
+`(value: unknown) => value is InitializeRequest` (VERIFIED). DELETE handler (`webStandardStreamableHttp.js:567`):
+`validateSession` → `onsessionclosed?()` → `this.close()` → `new Response(null, { status: 200 })`.
+
+Deprecated flags CONFIRMED `@deprecated` (do NOT set — D3): `allowedHosts` (`.d.ts:82`),
+`allowedOrigins` (`.d.ts:88`), `enableDnsRebindingProtection` (`.d.ts:94`).
+
+Exact SDK status/message strings observed (so our router mirrors them): non-init without session id on a
+fresh transport → `400` `-32000` `Bad Request: Server not initialized`; missing id (validateSession) →
+`400` `-32000` `Bad Request: Mcp-Session-Id header is required`; unknown/mismatched id → `404` `-32001`
+`Session not found`. Our router adopts `404 / -32001 / Session not found` verbatim for the registry-miss
+branch and `400 / -32000 / Bad Request: No valid session ID provided` (canonical SDK-example wording) for
+the absent-id non-init branch.
+
 ## Per-Agent HTTP Config Matrix — VERIFIED LIVE 2026-07-06
 
 Streamable-HTTP CLIENT support confirmed for **6/6** target agents against official docs (verified
@@ -156,4 +224,4 @@ installed agents) is byte-identical to today. No data migration.
 - [x] ~~**IANA cross-check of 7423**~~ — RESOLVED 2026-07-06: 7423 FREE in the live IANA registry CSV (method: grep; 7422–7425 empty). See D4.
 - [x] ~~**Per-agent HTTP matrix**~~ — RESOLVED 2026-07-06: all 6 agents CONFIRMED for Streamable-HTTP client config; exact shapes + nuances captured in the Per-Agent HTTP Config Matrix above. Feeds DOCS only (no auto-wiring).
 - [ ] **`--allowed-host`/`--allowed-origin`** opt-in flags to re-tighten validation under `--host 0.0.0.0` — v1 or later?
-- [ ] **SDK `handleRequest` body handling** — confirm on 1.29.0 whether the router must pre-parse the POST body or pass raw `req` (transport reads `req.json()` when `parsedBody` omitted) — pin in the first apply task.
+- [x] ~~**SDK `handleRequest` body handling**~~ — RESOLVED 2026-07-06 (Batch 0, empirical): raw `req` DOES work (transport reads `req.json()` when `parsedBody` omitted), BUT the router MUST pre-parse anyway — a raw-only router cannot gate new sessions on `isInitializeRequest` and cannot produce the spec's split (unknown/terminated id must be **404**, but a fresh transport returns **400 `Server not initialized`**). DESIGN BRANCH TAKEN = pre-parse the POST body once + router-emitted 400/404 + pass `parsedBody`. See §"Batch 0 — empirical findings" 0.1.

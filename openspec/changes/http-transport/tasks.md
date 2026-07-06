@@ -51,18 +51,18 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 > answer. These are INVESTIGATION spikes, NOT vitest RED→GREEN — the gate is "finding recorded + both outcomes
 > designed," not `npm test`. NO `src/` change in this batch.
 
-- [ ] 0.1 **(spike)** Against the INSTALLED `@modelcontextprotocol/sdk@1.29.0`, confirm `StreamableHTTPServerTransport.handleRequest`
+- [x] 0.1 **(spike)** Against the INSTALLED `@modelcontextprotocol/sdk@1.29.0`, confirm `StreamableHTTPServerTransport.handleRequest`
   body handling: inspect `dist/**/*.d.ts` + the impl, and run a THROWAWAY in-process `node:http` init POST to observe
   whether the transport consumes the raw `req` stream itself or requires a pre-parsed `parsedBody` arg. Record BOTH the
   observed recipe AND the fallback (pre-parse in the router) into a new **"Batch 0 — empirical findings"** section in
   `design.md`. Resolves the design Open Question "SDK `handleRequest` body handling". Design D2/D5. Done: recipe recorded;
   2.4 consumes it.
-- [ ] 0.2 **(spike)** Confirm the SDK session-lifecycle surface used by D2/D6 EXISTS on 1.29.0: the constructor options
+- [x] 0.2 **(spike)** Confirm the SDK session-lifecycle surface used by D2/D6 EXISTS on 1.29.0: the constructor options
   `sessionIdGenerator`, `onsessioninitialized`, `onsessionclosed`; the `isInitializeRequest` guard + its import path; and
   `transport.close()`. Record exact import paths + signatures alongside 0.1's finding. Confirm (VERIFIED in design) that
   `allowedHosts`/`allowedOrigins`/`enableDnsRebindingProtection` are `@deprecated` — do NOT use them (D3). Design D2/D3/D6.
   Done: signatures recorded in `design.md`.
-- [ ] 0.3 GATE (Batch 0): 0.1 + 0.2 findings recorded into `design.md` §"Batch 0 — empirical findings"; the
+- [x] 0.3 GATE (Batch 0): 0.1 + 0.2 findings recorded into `design.md` §"Batch 0 — empirical findings"; the
   `handleRequest` body recipe is FINAL. NO `src/` changed. Then COMMIT
   `docs(http-transport): record SDK 1.29.0 handleRequest + session-lifecycle empirical findings`.
 
