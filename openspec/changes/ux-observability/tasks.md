@@ -143,14 +143,14 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
 > Satisfies cli-config MODIFIED "CLI top-level help/usage banner accurately describes every command" (the `install`
 > multi-agent line). One-line `USAGE_TEXT` edit + a pinning test. Zero behavioral risk; lands the 9.5a SUGGESTION-1.
 
-- [ ] 3.1 RED→GREEN `test/cli/cli.test.ts` (extend the existing `describe('cli — USAGE_TEXT')` block) +
+- [x] 3.1 RED→GREEN `test/cli/cli.test.ts` (extend the existing `describe('cli — USAGE_TEXT')` block) +
   `src/cli/cli.ts`: edit the `install` line in `USAGE_TEXT` (L36) from "Wire dbgraph-mcp into the Claude Desktop config
   (--remove to undo)" to multi-agent phrasing consistent with `install.ts`'s `MANUAL_SNIPPET` (supported MCP agents,
   `--remove` to undo). RED first: assert `USAGE_TEXT` does NOT contain `'Claude Desktop'` AND describes the
   multi-agent `install` (e.g. contains `'agents'` / supported-agent wording) — pin so a future single-agent regression
   FAILS the build. Spec scenarios: "install banner line describes the multi-agent reality", "Banner agent wording stays
   consistent with install's source of truth". Done: `npm test cli`.
-- [ ] 3.2 GATE (Batch 3 — final): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` full suite green. Confirm the
+- [x] 3.2 GATE (Batch 3 — final): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` full suite green. Confirm the
   banner change is text-only (no command/exit-code behavior touched) and ALL prior-batch suites remain green. Done: all
   three gate commands pass.
 
@@ -201,7 +201,7 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
   token. — Batch 1 (1.2, 1.3), Batch 2 (2.5)
 - [x] All existing command tests pass (the migrated `runSync` `{type:'success'}` tests now assert `SyncSummary`); every
   `--json` output is BYTE-IDENTICAL to before, diagnostics on STDERR only; exit codes (0/1/2/3/4) unchanged. — Batch 2 (2.3, 2.7, 2.8)
-- [ ] The `cli.ts` help/usage banner describes `install` as multi-agent (NO "Claude Desktop"), consistent with
+- [x] The `cli.ts` help/usage banner describes `install` as multi-agent (NO "Claude Desktop"), consistent with
   `install.ts`'s `MANUAL_SNIPPET`; a unit test pins the banner so a single-agent regression fails the build. — Batch 3 (3.1)
-- [ ] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0 errors / 0 warnings; `npm test` green; no
+- [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0 errors / 0 warnings; `npm test` green; no
   `test/golden`/`--json` re-bless — all proven LOCALLY (no CI burn), nothing pushed past `closeout`. — Batch 1 (1.4), Batch 2 (2.8), Batch 3 (3.2)

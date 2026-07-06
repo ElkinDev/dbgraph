@@ -54,6 +54,28 @@ describe('cli — USAGE_TEXT', () => {
   it('USAGE_TEXT mentions "install"', () => {
     expect(USAGE_TEXT).toContain('install');
   });
+
+  // ── ux-observability task 3.1: banner install line describes the MULTI-AGENT reality ──
+
+  it('install line does NOT describe a single agent ("Claude Desktop")', () => {
+    // Pin: a future single-agent regression MUST fail the build (US-038 install is multi-agent).
+    expect(USAGE_TEXT).not.toContain('Claude Desktop');
+  });
+
+  it('install line describes supported MCP agents (multi-agent), with --remove to undo', () => {
+    const installLine =
+      USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('install')) ?? '';
+    expect(installLine).toContain('agents');
+    expect(installLine).toContain('--remove');
+    expect(installLine).not.toContain('Claude Desktop');
+  });
+
+  it('banner agent wording is consistent with install MANUAL_SNIPPET (single source of truth)', async () => {
+    const { MANUAL_SNIPPET } = await import('../../src/cli/commands/install.js');
+    // install.ts owns the supported-agents list; the banner must speak the same multi-agent language.
+    expect(MANUAL_SNIPPET).toContain('Supported agents');
+    expect(USAGE_TEXT.toLowerCase()).toContain('agents');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
