@@ -195,34 +195,34 @@ only — nothing pushed past `closeout`; no CI).
 > limitations + reproduce-it-yourself ship NOW so the orchestrator (Batch R) can only FILL results into a document
 > that already forbids overclaiming.
 
-- [ ] 4.1 Create `docs/benchmarks.md` with ALL required sections IN ORDER: **The claim under test**, **Methodology**,
+- [x] 4.1 Create `docs/benchmarks.md` with ALL required sections IN ORDER: **The claim under test**, **Methodology**,
   **Environment** (model family/version, date, dbgraph version, Node ≥22.6 note, substrate), **N** (=6, six families,
   `--per-family 1`), **Results** (placeholder table: per-family + Overall × WITH/WITHOUT accuracy + schema-tokens;
   per-question appendix), **Token accounting** (actual-preferred, else chars/4 LABELED approximate; one boundary both
   sides), **Limitations**, **Reproduce it yourself** (step-by-step build→generate→build-packets→run→score). Spec
   scenario "All required sections present in order". Done: all seven headings present in the spec's order.
-- [ ] 4.2 Draft the **Limitations** section NOW, ALONGSIDE the (empty) Results — enumerate AT LEAST: self-run
+- [x] 4.2 Draft the **Limitations** section NOW, ALONGSIDE the (empty) Results — enumerate AT LEAST: self-run
   (author designs/runs/scores), single model family (Claude), small N (~6), single/dual schema, not peer-reviewed,
   non-reproducible secondary run, integrated-auth read-only DOWNGRADE, shared-extraction circularity (key derived via
   dbgraph's OWN path), chars/4 approximation, free-text QUALITY not scored. Spec scenario "Limitations enumerated
   alongside results". Done: limitations present next to Results, none buried.
-- [ ] 4.3 In `docs/benchmarks.md`, PIN the anti-extrapolation contract: every result MUST be scoped "on this fixture,
+- [x] 4.3 In `docs/benchmarks.md`, PIN the anti-extrapolation contract: every result MUST be scoped "on this fixture,
   this question set, this model"; forbid "X% better in general" / unqualified "more accurate" / any generalized
   superiority claim; state the secondary section is labeled NON-reproducible with read-only BY CONSTRUCTION (not a
   grant, integrated/SSPI) + SSMS contrast = author attestation; state unfavorable results MUST be reported. Spec
   scenarios "No extrapolation beyond measured conditions" + "Secondary run labeled non-reproducible with honest
   read-only downgrade" + "Unfavorable results are reported, not suppressed" (the report's standing obligations; Batch R
   honors them at fill time). Done: the prose forbids extrapolation before any number is written.
-- [ ] 4.4 Modify `docs/stories/07-quality-publication.md`: reconcile US-035 to what shipped — REPRODUCIBLE harness +
+- [x] 4.4 Modify `docs/stories/07-quality-publication.md`: reconcile US-035 to what shipped — REPRODUCIBLE harness +
   torture-fixture-first substrate; real-DB run OPTIONAL corroboration with read-only DOWNGRADED to read-only-by-
   construction (integrated auth), SSMS contrast as author attestation; duration/index-size/peak-memory reported
   opportunistically, not as hard gates. Proposal §Stories / Approach. Done: story note matches delivered scope.
-- [ ] 4.5 Add a `test/benchmark/independence.test.ts` (vitest, PART of `npm test`) that ASSERTS the decoupling: NO
+- [x] 4.5 Add a `test/benchmark/independence.test.ts` (vitest, PART of `npm test`) that ASSERTS the decoupling: NO
   vitest suite imports `benchmark/{generate,build-packets,score,render}.ts`, spawns an agent run, or reads
   `benchmark/runs/`; the scorer suites depend ONLY on committed `test/benchmark/fixtures/*.json`. Spec scenarios
   "Suite green with no run artifacts" + "No vitest suite triggers a benchmark run". Done: `npm test` green on a clean
   checkout with `runs/` empty + Results unfilled.
-- [ ] 4.6 GATE (Batch 4 — final apply): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green with ZERO
+- [x] 4.6 GATE (Batch 4 — final apply): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green with ZERO
   benchmark artifacts (INCLUDING the new independence test); DOCS-verify — all seven sections in order, limitations
   enumerated alongside Results, no-extrapolation prose present, no private name in docs (only the synthetic fixture);
   leak-scan clean. Commit `docs(benchmark): add benchmarks.md methodology and limitations, wire tsconfig, reconcile US-035`.

@@ -20,7 +20,9 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-035 — Validation and benchmark against a real enterprise database
 **As** the author, **I want** OWN numbers measured against a real enterprise database, **so that** the README promises nothing I have not tested.
-**Phase:** 6 · **Depends on:** US-027, US-016, US-018 · **Status:** ☐ pending
+**Phase:** 6 · **Depends on:** US-027, US-016, US-018 · **Change:** `phase-benchmark` · **Status:** ☐ partial (reproducible WITH/WITHOUT harness shipped on the committed SQLite torture fixture; the real-DB run is optional corroboration filled by the orchestrator run)
+
+_Note: phase-benchmark reconciles US-035 to what actually ships. The **primary substrate is the committed SQLite torture fixture** (reproducible from source), NOT the private enterprise DB — a valid, complete benchmark is producible from the fixture alone (`docs/benchmarks.md`). The real mssql graph at `C:\temp\dbgraph-validation` is **OPTIONAL, labeled corroboration** run only if `dbgraph status` opens it. The "dedicated read-only login" AC is **DOWNGRADED to read-only BY CONSTRUCTION** of the tool (catalog `SELECT`s only): the validation config uses integrated (Windows SSPI) auth under the author's own principal, so zero-writes is a property of the tool's query surface, not of a restricted grant. The SSMS-accuracy contrast is an **author attestation**, labeled as such — never a machine-verified figure. `init + sync` duration / index size / peak memory are reported **opportunistically**, not as hard gates. The methodology, mechanically-derived question set with machine-checkable ground truth, condition-blind unit-tested scorer, and the honesty-first `docs/benchmarks.md` (limitations travel WITH the numbers; extrapolation forbidden) are the load-bearing deliverable._
 
 **Acceptance criteria:**
 - Verified prerequisites: the validation database auth mode confirmed, dedicated read-only login created (NEVER application credentials).
