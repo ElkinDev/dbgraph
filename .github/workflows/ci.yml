@@ -20,7 +20,7 @@ jobs:
         node: ['22.x', '24.x']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     # Independent — does not need `test` to pass first
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     # Independent — does not need `test` to pass first
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     # Independent — does not need `test` to pass first
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     # Independent — does not need `test` to pass first
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
@@ -132,7 +132,7 @@ jobs:
     # The `test` job does NOT list this in needs: — unit matrix is independent.
     if: github.event_name == 'workflow_dispatch' || vars.DBGRAPH_SQLCMD_LANE == '1'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
           node-version: '22.x'
