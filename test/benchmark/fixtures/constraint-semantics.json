@@ -1,0 +1,4 @@
+{
+  "columns": ["project_id", "emp_id", "dept_id"],
+  "ordered": true
+}

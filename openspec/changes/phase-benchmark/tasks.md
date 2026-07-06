@@ -65,41 +65,41 @@ only — nothing pushed past `closeout`; no CI).
 > `npm test` exercises and EVERY downstream stage imports the SAME modules (D3 — no duplicated normalization; the
 > per-family `ANSWER FORMAT` spec that `build-packets` embeds is DEFINED here), so it lands FIRST.
 
-- [ ] 1.1 RED→GREEN `test/benchmark/scorer.test.ts` (new) + `benchmark/scorer/index.ts` (new): `parseAnswer(raw)`
+- [x] 1.1 RED→GREEN `test/benchmark/scorer.test.ts` (new) + `benchmark/scorer/index.ts` (new): `parseAnswer(raw)`
   extracts the FINAL `ANSWER:` line (trim, empty on missing/malformed), `normalizeQname(s)` (strip quotes/brackets,
   lowercase, collapse whitespace), `canonicalType(s)` (uppercase, trim, INT↔INTEGER synonym table). RED first:
   `parseAnswer("…\nANSWER: x")==="x"`, empty on no line; `normalizeQname('"Foo"."Bar"')==="foo.bar"`,
   `normalizeQname('[Foo].[Bar]')==="foo.bar"`; `canonicalType("int")==="INTEGER"`. EXACT `.toBe`. Design §Scorer
   shared helpers; D12. Done: `npm test scorer`.
-- [ ] 1.2 RED→GREEN `scorer.test.ts` + `benchmark/scorer/families.ts` + committed `test/benchmark/fixtures/fk-path.json`
+- [x] 1.2 RED→GREEN `scorer.test.ts` + `benchmark/scorer/families.ts` + committed `test/benchmark/fixtures/fk-path.json`
   (D15): `fk-path` comparator — SET equality of `A.col=B.col` hop atoms, ORDER-independent. RED: exact pass,
   reordered atoms pass, missing hop fails, no fuzzy/partial credit. Spec scenario "Closed-form questions scored by
   pinned exact/set-match". Done: `npm test scorer`.
-- [ ] 1.3 RED→GREEN `scorer.test.ts` + `families.ts` + fixture `column-type.json`: `column-type` (control) comparator
+- [x] 1.3 RED→GREEN `scorer.test.ts` + `families.ts` + fixture `column-type.json`: `column-type` (control) comparator
   — EXACT match on `TYPE|NULLABLE` (type synonym-normalized via `canonicalType`). RED: exact pass, `INT` vs
   `INTEGER` pass, nullability mismatch fails, NO partial credit. Spec scenario "Closed-form questions scored by
   pinned exact/set-match". Done: `npm test scorer`.
-- [ ] 1.4 RED→GREEN `scorer.test.ts` + `families.ts` + fixtures `impact.json`, `trigger-inventory.json`: `impact`
+- [x] 1.4 RED→GREEN `scorer.test.ts` + `families.ts` + fixtures `impact.json`, `trigger-inventory.json`: `impact`
   comparator — SET equality of normalized `whatToTest` qnames; `trigger-inventory` comparator — SET equality of
   `{triggerQname,timing,events}` tuples (STRICTER, per RESOLVED). RED: set order-independence, mismatch, malformed
   tuple. Spec scenario "Closed-form questions scored by pinned exact/set-match". Done: `npm test scorer`.
-- [ ] 1.5 RED→GREEN `scorer.test.ts` + `families.ts` + fixtures `view-dependency.json`, `constraint-semantics.json`:
+- [x] 1.5 RED→GREEN `scorer.test.ts` + `families.ts` + fixtures `view-dependency.json`, `constraint-semantics.json`:
   `view-dependency` — SET equality of normalized dependency qnames; `constraint-semantics` — ORDERED column list for
   PK (order-SENSITIVE), set otherwise. RED: PK column-order mismatch FAILS, reordered set members pass. Spec scenario
   "Closed-form questions scored by pinned exact/set-match". Done: `npm test scorer`.
-- [ ] 1.6 RED→GREEN `scorer.test.ts` + `benchmark/scorer/tokens.ts`: `schemaTokens` — actual runtime usage passthrough
+- [x] 1.6 RED→GREEN `scorer.test.ts` + `benchmark/scorer/tokens.ts`: `schemaTokens` — actual runtime usage passthrough
   when present, else `ceil(len/4)` with a `mode:'approx'` LABEL; counts ONLY the schema-bearing string, identical
   formula both sides. RED: `ceil(10/4)===3` boundary, empty→0, `mode` field is `'actual'` vs `'approx'`. Spec scenario
   "One token boundary applied identically" (formula half). Done: `npm test scorer`.
-- [ ] 1.7 RED→GREEN `scorer.test.ts` + `index.ts` re-export: `scoreAnswer({ family, answerParsed, groundTruth }) →
+- [x] 1.7 RED→GREEN `scorer.test.ts` + `index.ts` re-export: `scoreAnswer({ family, answerParsed, groundTruth }) →
   { correct, expected, got, detail }` dispatcher is BLIND (D13) — RED: assert the parameter type carries NO
   `condition`/label field (compile-level), and `scoreAnswer` run TWICE on the same input yields byte-identical output
   (determinism, ADR-008). Spec scenarios "Scorer is blind to condition labels" + determinism. Done: `npm test scorer`.
-- [ ] 1.8 RED→GREEN `scorer.test.ts`: the `Family` union contains EXACTLY the six closed-form families and NO
+- [x] 1.8 RED→GREEN `scorer.test.ts`: the `Family` union contains EXACTLY the six closed-form families and NO
   `explain`/rubric member — headline accuracy is 100% closed-form (D6). RED: assert `scoreAnswer` rejects an unknown
   family; assert no rubric path exists. Spec scenario "Rubric items flagged non-deterministic and reported apart"
   (satisfied by EXCLUSION — the free-text limitation is drafted in Batch 4). Done: `npm test scorer`.
-- [ ] 1.9 GATE (Batch 1): `npx tsc --noEmit` clean — `benchmark/scorer/**` is type-checked TRANSITIVELY via
+- [x] 1.9 GATE (Batch 1): `npx tsc --noEmit` clean — `benchmark/scorer/**` is type-checked TRANSITIVELY via
   `test/benchmark/scorer.test.ts` (under the existing `"test"` include); `npm run lint` 0/0; `npm test` green
   (baseline 2958 + scorer suites) with fixtures being COMMITTED stubs — NO generated questions, NO run (D15); leak-scan
   clean. Spec scenario "Suite green with no run artifacts". Commit
