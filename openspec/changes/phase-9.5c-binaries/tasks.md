@@ -221,18 +221,18 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 > **(smoke)** — Docker-gated, opt-in, never in `npm test`. The Node-LESS smoke image is the strongest proof of "no Node,
 > no node_modules required" (design D9).
 
-- [ ] 3.1 **(smoke)** `scripts/sea/build-sea.sh` (new: bundle → sea-config → copy the pinned `node` → postject →
+- [x] 3.1 **(smoke)** `scripts/sea/build-sea.sh` (new: bundle → sea-config → copy the pinned `node` → postject →
   `dist/bin/dbgraph-linux-x64`) + `scripts/sea/build-linux-docker.(ps1|sh)` (new:
   `docker run --rm -v <repo>:/w -w /w node:24-bookworm-slim bash scripts/sea/build-sea.sh`) + `package.json` script
   `build:sea:linux`. Same steps as the ps1 (D8) on a glibc base (D9). Spec scenario R2 "linux-x64 SEA binary builds via
   Docker…" (build half), design D9. Done: `npm run build:sea:linux` emits `dist/bin/dbgraph-linux-x64`.
-- [ ] 3.2 **(smoke)** `scripts/sea/smoke-linux.sh` (new): `docker run --rm` on `debian:bookworm-slim` (NO node, NO
+- [x] 3.2 **(smoke)** `scripts/sea/smoke-linux.sh` (new): `docker run --rm` on `debian:bookworm-slim` (NO node, NO
   node_modules, ONLY the binary bind-mounted) → `--version` == `package.json.version`, `--help` prints the SAME usage as
   the win binary, and `init→sync→query <term>` returns output BYTE-IDENTICAL to the golden (ADR-008) on the in-binary
   `node:sqlite`. Spec scenarios R2 "linux-x64 SEA binary builds via Docker and passes the same smoke", R2 "query returns
   pinned output", R3 "Graph-read commands succeed with no driver present". Done: `bash scripts/sea/smoke-linux.sh` green
   in a Node-less container.
-- [ ] 3.3 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary; then LOCALLY the
+- [x] 3.3 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary; then LOCALLY the
   Docker build + Node-less smoke are green; DETERMINISM: rebuild the linux `dbgraph.cjs`/`.blob` and assert byte-identical
   (R6); CROSS-PLATFORM PARITY: the linux binary's `--version` and `--help` output are IDENTICAL to the win binary's.
   Denylist clean. Then COMMIT `feat(9.5c): linux-x64 SEA build via Docker + Node-less container smoke`. Done: gates green;
