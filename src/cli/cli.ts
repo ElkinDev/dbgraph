@@ -57,8 +57,16 @@ Run "dbgraph <command> --help" for command-specific options.
 export async function runCli(argv: readonly string[]): Promise<number> {
   const parsed = parseArgv(argv);
 
-  // --help at the top level (before or instead of a command)
-  if (parsed.flags['help'] === true || parsed.flags['h'] === true) {
+  // --help at the top level (before or instead of a command). Handles BOTH the
+  // command position (`dbgraph --help` → parseArgv makes it the command, mirroring
+  // the --version handling below) and the flag position (`dbgraph init --help`).
+  // Spec R1: top-level --help exits 0 and prints USAGE to stdout (design D6 symmetry).
+  if (
+    parsed.command === '--help' ||
+    parsed.command === '-h' ||
+    parsed.flags['help'] === true ||
+    parsed.flags['h'] === true
+  ) {
     process.stdout.write(USAGE_TEXT + '\n');
     return 0;
   }

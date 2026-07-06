@@ -1,0 +1,9 @@
+Results for "orders" (6 found):
+
+  constraint     main.orders.pk_orders
+  index          main.orders.idx_orders_customer
+  table          main.orders
+  column         main.orders.id
+  column         main.orders.total
+  column         main.orders.customer_id
+

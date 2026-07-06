@@ -430,12 +430,28 @@ export async function startMcpServer(
 // The auto-run guard is UNCHANGED so the npm `dbgraph-mcp` bin behaves identically.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Detect if we are the main module (ESM-compatible check)
-const isMain = process.argv[1] !== undefined &&
-  (import.meta.url.endsWith(process.argv[1]) ||
-   import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/')) ||
-   process.argv[1].includes('server.'));
+// Detect if we are the main module (ESM-compatible check).
+// In the esbuild CJS SEA bundle `import.meta.url` is an empty shim (undefined), so we
+// coalesce to '' — `isMain` then safely evaluates FALSE in the bundle (sea-entry does
+// the dispatch, design D5) instead of crashing on `undefined.endsWith`. On the npm
+// `dbgraph-mcp` (ESM) path `import.meta.url` is a real URL — behavior unchanged.
+const selfUrl = import.meta.url ?? '';
+const invokedPath = process.argv[1];
+const isMain = invokedPath !== undefined &&
+  (selfUrl.endsWith(invokedPath) ||
+   selfUrl.endsWith(invokedPath.replace(/\\/g, '/')) ||
+   invokedPath.includes('server.'));
 
 if (isMain) {
-  await startMcpServer();
+  // Fire-and-forget instead of a top-level `await`: esbuild cannot bundle top-level
+  // await into the CJS SEA main (design D4), and sea-entry imports startMcpServer from
+  // this module. Runtime behavior on the npm `dbgraph-mcp` (ESM) path is preserved —
+  // the stdio server starts and the process stays alive via the transport; a connect
+  // failure now surfaces via explicit handling (exit 2) instead of an unhandled rejection.
+  // In the SEA bundle import.meta.url is empty, so `isMain` is false here and sea-entry
+  // dispatches `dbgraph mcp` instead (design D5).
+  void startMcpServer().catch((err: unknown) => {
+    console.error('Unexpected error:', err);
+    process.exit(2);
+  });
 }

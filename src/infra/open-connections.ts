@@ -58,7 +58,12 @@ export interface OpenConnectionsDeps {
 
 function defaultIsSea(): boolean {
   try {
-    const sea = createRequire(import.meta.url)('node:sea') as { isSea?: () => boolean };
+    // Base is process.execPath — NOT import.meta.url: in the esbuild CJS SEA bundle
+    // import.meta.url is an empty shim (undefined), so createRequire(undefined) throws
+    // and the D2 store flip would silently NOT happen inside the binary (better-sqlite3's
+    // native module is absent there). process.execPath is valid in BOTH the SEA binary
+    // and the npm ESM path; node:sea is a builtin (the base only needs to be resolvable).
+    const sea = createRequire(process.execPath)('node:sea') as { isSea?: () => boolean };
     return typeof sea.isSea === 'function' ? sea.isSea() : false;
   } catch {
     // node:sea unavailable (older Node) → treat as not-a-SEA (npm/dev path).

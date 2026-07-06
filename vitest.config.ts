@@ -9,7 +9,11 @@ export default defineConfig({
     // This ensures: (a) Docker-less contributors stay green on `npm test`, and
     // (b) ubuntu-latest in the unit CI matrix (which has Docker) does NOT
     //     accidentally start containers — the explicit env flag is the true gate.
-    exclude: ['**/*.integration.test.ts'],
+    // Smoke files (*.smoke.test.ts, phase-9.5c) validate BUILT artifacts (esbuild
+    // bundle + SEA binary) and are excluded here so `npm test` stays green with NO
+    // binary built (D12 CI-independence). They run only via `npm run smoke:binary`
+    // (vitest.smoke.config.ts) and self-skip when their artifact is absent.
+    exclude: ['**/*.integration.test.ts', '**/*.smoke.test.ts'],
     // Native-module cold starts (better-sqlite3 first load) and temp-DB
     // materialization in hooks can exceed Vitest's 10s default on a cold
     // Windows CI runner — observed as a flaky "Hook timed out in 10000ms" on

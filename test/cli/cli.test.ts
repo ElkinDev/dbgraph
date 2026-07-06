@@ -229,4 +229,20 @@ describe('cli — --version / -v (task 1.1, design D6)', () => {
   it('USAGE_TEXT still begins with the product banner (unchanged by --version addition)', () => {
     expect(USAGE_TEXT.startsWith('dbgraph — database schema graph indexer')).toBe(true);
   });
+
+  // phase-9.5c task 2.6 prerequisite (spec R1): top-level `--help`/`-h` must exit 0
+  // and print USAGE to stdout. parseArgv makes the first token the command, so the
+  // command-position must be handled like --version (Batch 1 only wired the flag
+  // position). The no-node_modules smoke asserts `--help` on the binary — exit 0.
+  it('runCli(["--help"]) prints USAGE to stdout and returns 0 (command position, spec R1)', async () => {
+    const code = await runCli(['--help']);
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe(USAGE_TEXT + '\n');
+  });
+
+  it('runCli(["-h"]) prints USAGE to stdout and returns 0 (command position, spec R1)', async () => {
+    const code = await runCli(['-h']);
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe(USAGE_TEXT + '\n');
+  });
 });

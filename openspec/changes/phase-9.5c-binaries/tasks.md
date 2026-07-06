@@ -165,34 +165,34 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 > ("byte-identical bundle + SEA blob"). The pure config is **(vitest)**; everything that produces or inspects an ARTIFACT
 > is **(smoke)** — `npm test` stays green with NO binary. Materializes ADR-009 alongside the bundle it documents.
 
-- [ ] 2.1 **(doc)** Create `docs/adr/009-node-sea-standalone-binaries.md` verbatim from design.md §"ADR-009 (full text)"
+- [x] 2.1 **(doc)** Create `docs/adr/009-node-sea-standalone-binaries.md` verbatim from design.md §"ADR-009 (full text)"
   (Status Accepted · Date 2026-07-06 · Refines ADR-006 bundling clause + ADR-008). REFINES ADR-006's "static bundling in
   the binaries" sentence; ADR-006's pure-JS-driver + lazy-optional decisions STAND. Spec: R1 external-driver refinement
   narrative. Done: file exists, matches the design text, denylist-clean.
-- [ ] 2.2 **(vitest)** RED→GREEN `test/bin/esbuild-config.test.ts` (new) + `scripts/sea/esbuild-config.mjs` (new): export
+- [x] 2.2 **(vitest)** RED→GREEN `test/bin/esbuild-config.test.ts` (new) + `scripts/sea/esbuild-config.mjs` (new): export
   `SEA_EXTERNAL` (the 6 specifiers) + `buildOptions(version)` (DATA) + a `versionDefine(version)` helper. RED first: assert
   `buildOptions('0.0.0')` has `format==='cjs'`, `platform==='node'`, `bundle===true`, `target==='node24'`, `external` ⊇
   `['better-sqlite3','mysql2','mysql2/promise','pg','mssql','mongodb']`, entry is `src/bin/sea-entry.ts`, outfile
   `build/sea/dbgraph.cjs`, and `define['process.env.DBGRAPH_BUILD_VERSION'] === JSON.stringify('0.0.0')`. Spec scenario R1
   "better-sqlite3 and the four optional drivers are external, not inlined" (config half), design D4/D6. Done:
   `npm test esbuild-config`.
-- [ ] 2.3 **(smoke)** `scripts/sea/build-bundle.mjs` (new): reads `package.json.version`, calls
+- [x] 2.3 **(smoke)** `scripts/sea/build-bundle.mjs` (new): reads `package.json.version`, calls
   `esbuild.build(buildOptions(version))` → `build/sea/dbgraph.cjs`. Add `esbuild` devDep + `package.json` script
   `bundle:sea`. Local sanity (NOT in `npm test`): `node build/sea/dbgraph.cjs --version` prints `0.0.0` and `--help`
   prints the usage on a Node WITH `node_modules` present (proves the bundle wired the entry). Spec scenario R1 "Bundle
   boots…", design D8. Done: `npm run bundle:sea` emits the cjs; sanity run passes.
-- [ ] 2.4 **(smoke)** `test/bin/bundle-external.smoke.test.ts` (new, requires the built `build/sea/dbgraph.cjs`): scan the
+- [x] 2.4 **(smoke)** `test/bin/bundle-external.smoke.test.ts` (new, requires the built `build/sea/dbgraph.cjs`): scan the
   emitted bundle source and assert `better-sqlite3`, `mysql2`, `pg`, `mssql`, `mongodb` appear ONLY as external dynamic
   references and NONE of their module BODIES is inlined (assert the drivers' internal marker strings are ABSENT). Spec
   scenario R1 "better-sqlite3 and the four optional drivers are external, not inlined". Done: `npm run smoke:binary`
   (this file) green; SKIPS cleanly when the bundle is absent.
-- [ ] 2.5 **(smoke)** `scripts/sea/sea-config.json` (new: `main`/`output`/`disableExperimentalSEAWarning:true` +
+- [x] 2.5 **(smoke)** `scripts/sea/sea-config.json` (new: `main`/`output`/`disableExperimentalSEAWarning:true` +
   Batch-0.4 flags) + `scripts/sea/build-sea.ps1` (new): bundle → `node --experimental-sea-config` → `build/sea/dbgraph.blob`
   → copy pinned `node.exe` → (Batch-0.5 `signtool remove /s` if required) → `postject` inject at `NODE_SEA_FUSE` →
   `dist/bin/dbgraph-win-x64.exe`. Add `postject` devDep (justify per ADR-007) + `package.json` script `build:sea:win`. Spec
   scenario R2 "win-x64 SEA binary passes the no-node_modules smoke" (build half), design D8, Q6. Done: `npm run
   build:sea:win` emits the exe.
-- [ ] 2.6 **(smoke)** `vitest.smoke.config.ts` (new: `include:['test/**/*.smoke.test.ts']`, requires
+- [x] 2.6 **(smoke)** `vitest.smoke.config.ts` (new: `include:['test/**/*.smoke.test.ts']`, requires
   `DBGRAPH_BINARY_PATH`) + `vitest.config.ts` (add `**/*.smoke.test.ts` to `exclude`) + `package.json` script
   `smoke:binary` + `test/bin/win-binary.smoke.test.ts` (new): in a TEMP cwd with NO `node_modules`, using a `node:sqlite`
   fixture `.dbgraph` graph, assert the exe `--version` == `package.json.version` (`0.0.0`), `--help` prints the usage
@@ -201,12 +201,12 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
   scenarios R2 "win-x64 SEA binary…", R2 "query against an existing graph returns pinned output", R3 "Graph-read commands
   succeed with no driver present", R1 "Graph reads run on node:sqlite". Consumes Batch-0.3 readOnly recipe. Done:
   `npm run smoke:binary` green; `npm test` STILL green with the smoke EXCLUDED.
-- [ ] 2.7 **(smoke)** `test/bin/win-binary.smoke.test.ts` (extend) — driver-degradation in the binary: with NO resolvable
+- [x] 2.7 **(smoke)** `test/bin/win-binary.smoke.test.ts` (extend) — driver-degradation in the binary: with NO resolvable
   driver, a live-DB command (e.g. `sync` against a live DB) FAILS with a `ConnectivityUnavailableError` whose message is
   EXACTLY `Required driver '<name>' is not installed. Run: npm i <name>`, exits code 2, and prints NO raw stack trace.
   Spec scenario R3 "Live-DB command without a driver fails with the established install-command error", design D7. Done:
   `npm run smoke:binary` green.
-- [ ] 2.8 GATE (Batch 2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary built (smoke
+- [x] 2.8 GATE (Batch 2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary built (smoke
   EXCLUDED — D12); then LOCALLY the win exe builds and `npm run smoke:binary` is green; DETERMINISM: rebuild `dbgraph.cjs`
   and `dbgraph.blob` from the same source on the pinned Node and assert BOTH are byte-identical to the first build (the
   injected exe is NOT asserted byte-stable — its checksum is the anchor, R6). Denylist scan clean. Then COMMIT

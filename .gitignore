@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# SEA build outputs — esbuild bundle + SEA blob (phase-9.5c). Never commit binaries.
+build/
 coverage/
 .dbgraph/
 # Manual dump files: schema + procedure source from dump-emitter.ts output (R8 — never commit)

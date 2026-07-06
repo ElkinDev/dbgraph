@@ -42,10 +42,34 @@ const pathGuard = (name) => ({
   message: PATH_GUARD_MESSAGE,
 });
 
+// Node globals for the build-tooling .mjs scripts (phase-9.5c). Flat config does not
+// infer environment globals; without these, plain .mjs files raise no-undef for
+// process/console/module/Buffer/__dirname. (The `globals` package is not installed.)
+const NODE_GLOBALS = {
+  process: 'readonly',
+  console: 'readonly',
+  module: 'readonly',
+  require: 'readonly',
+  Buffer: 'readonly',
+  __dirname: 'readonly',
+  __filename: 'readonly',
+  URL: 'readonly',
+};
+
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/', 'node_modules/'] },
+  // `build/` holds the generated esbuild bundle + SEA blob (phase-9.5c) — never lint it.
+  { ignores: ['dist/', 'build/', 'coverage/', 'node_modules/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    // Build-tooling ESM scripts (esbuild config, bundle + docker drivers) — Node env.
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: NODE_GLOBALS,
+    },
+  },
   {
     // Host-independence guard — scoped to the pure core only.
     files: ['src/core/**/*.ts'],
