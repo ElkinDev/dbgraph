@@ -43,9 +43,9 @@
   },
   "optionalDependencies": {
     "mongodb": "^7.3.0",
-    "mssql": "12.5.5",
+    "mssql": "12.6.0",
     "mysql2": "^3.22.5",
-    "pg": "^8.21.0"
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
