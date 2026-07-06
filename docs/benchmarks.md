@@ -43,13 +43,13 @@ No claim is made beyond those measured conditions.
 | Field | Value |
 |-------|-------|
 | Model family | Claude (single family — no cross-model claim) |
-| Model id / version | {{MODEL_ID}} *(filled at run time)* |
-| Run date | {{RUN_DATE}} *(filled at run time)* |
-| Run id | {{RUN_ID}} *(filled at run time)* |
+| Model id / version | claude-fable-5 (all 10 condition agents; orchestrated sub-agents, fresh context each) |
+| Run date | 2026-07-06 |
+| Run id | torture-2026-07-06 |
 | dbgraph version | 0.0.0 (closeout) |
 | Node | >= 22.6 required to RUN the harness (`node --experimental-strip-types`); the product engine contract stays `>=22`, and `npm test` is unaffected (vitest transforms `.ts` itself) |
 | Primary substrate | SQLite torture fixture (`test/fixtures/sqlite/torture.sql`, committed) |
-| Secondary substrate | mssql-private (OPTIONAL corroboration only; see Limitations) |
+| Secondary substrate | mssql-private — **NOT RUN** in torture-2026-07-06 (optional per spec; the primary run's finding is CLI-surface-level and engine-agnostic, so a secondary would not alter it; see Run notes) |
 
 ## N
 
@@ -65,19 +65,65 @@ on the mssql secondary substrate. N stays within the pre-registered 5–10 bound
 
 ## Results
 
-*[FILLED POST-RUN — the orchestrator run (Batch R) fills these placeholders faithfully, reporting
-EVERY per-question outcome even where dbgraph is no-better or worse. No number is invented here.]*
+Run `torture-2026-07-06` (scored blind by `benchmark/score.ts`; table produced by `render.ts`):
 
-| Family | WITH accuracy | WITHOUT accuracy | WITH schema-tokens | WITHOUT schema-tokens |
-|--------|---------------|------------------|--------------------|-----------------------|
-| fk-path | {{ }} | {{ }} | {{ }} | {{ }} |
-| column-type (control) | {{ }} | {{ }} | {{ }} | {{ }} |
-| impact | {{ }} | {{ }} | {{ }} | {{ }} |
-| trigger-inventory | {{ }} | {{ }} | {{ }} | {{ }} |
-| constraint-semantics | {{ }} | {{ }} | {{ }} | {{ }} |
-| **Overall** | {{ }} | {{ }} | {{ }} | {{ }} |
+| Family | WITH accuracy | WITHOUT accuracy | WITH tokens (actual) | WITHOUT tokens (actual) |
+|--------|---------------|------------------|----------------------|-------------------------|
+| fk-path | 0% (0/1) | 100% (1/1) | 36467 | 26693 |
+| column-type (control) | 0% (0/1) | 100% (1/1) | 102282 | 26686 |
+| impact | 100% (1/1) | 0% (0/1) | 41660 | 26694 |
+| trigger-inventory | 100% (1/1) | 100% (1/1) | 30273 | 26704 |
+| constraint-semantics | 0% (0/1) | 100% (1/1) | 82643 | 26665 |
+| **Overall** | **40% (2/5)** | **80% (4/5)** | 293325 | 133442 |
 
-Per-question appendix: {{ }}
+**On this fixture, this question set, this model, the WITH condition LOST — 40% vs 80% — while
+spending 2.2× the tokens.** That unfavorable result is reported unsoftened, per the standing
+contract below, and it is the most useful outcome this benchmark could have produced (see Run
+notes).
+
+Per-question appendix (key from `benchmark/ground-truth/`; raw records in
+`benchmark/runs/torture-2026-07-06/raw/`, git-ignored):
+
+| qid | key | WITH answer | WITHOUT answer |
+|-----|-----|-------------|----------------|
+| column-type-assignments.dept_id | `INTEGER\|NOT NULL` | `INTEGER\|NULL` ✗ (nullability GUESSED — not retrievable via CLI) | `INTEGER\|NOT NULL` ✓ |
+| constraint-semantics-assignments | `project_id, emp_id, dept_id` | `emp_id, project_id` ✗ (PK membership not retrievable via CLI; 69 tool calls exhausted) | `project_id, emp_id, dept_id` ✓ |
+| fk-path-assignments-employees | both atoms (`emp_id`, `dept_id`) | `assignments.emp_id=employees.emp_id` ✗ (FK column mapping not retrievable via CLI) | both atoms ✓ |
+| impact-departments | `assignments, employees` (= `affected --json` whatToTest) | `assignments, employees` ✓ | `active_departments, employee_summary, employees, trg_active_dept_instead_insert` ✗ vs the mechanical key — see circularity note |
+| trigger-inventory-active_departments | `trg_active_dept_instead_insert:INSTEAD OF:INSERT` | ✓ (inferred from trigger NAME + view semantics; timing/events not exposed as fields) | ✓ |
+
+### Run notes (findings and incidents — part of the record)
+
+1. **ROOT CAUSE of the WITH losses — a product gap, not a graph-data gap.** The graph STORES the
+   exact facts (ground truth was mechanically derived from node payloads via the store API), but the
+   CLI presentation layer never renders payloads: `explore --detail full` shows edges + `bodyHash` +
+   `level` only — no column types/nullability, no PK/FK column membership — and `query`'s FTS indexes
+   names only. Both failing WITH agents proved this exhaustively (every `--detail` value, `--json`
+   flags, `affected` probes) and said so in their transcripts. The two WITH wins came from
+   `affected --json`, the ONE command that returns structured facts. **Follow-up: render node
+   payloads in `explore` (and/or give `query`/`explore` a `--json` payload view).** Until then, the
+   graph's exactness is not reachable by an agent through the CLI.
+2. **Circularity made concrete (impact family).** The mechanical key IS dbgraph's own
+   `affected --json whatToTest`. On SQLite the adapter declares dependency blindness
+   (`supportsDependencyHints=false`), so the key cannot contain view/trigger dependents; the WITHOUT
+   agent listed the two views + the INSTEAD OF trigger (which genuinely break) and was scored ✗
+   against that key. A human reviewer would judge that answer partially MORE complete than the key.
+   This family measures agreement-with-the-tool, exactly as the circularity limitation warns.
+   Follow-up: SQLite view-dependency extraction would improve both `affected` and this family.
+3. **Run incident (protocol integrity).** The first WITHOUT round was INVALIDATED and re-run: the
+   orchestrator invoked `build-packets.ts --db` with a POSIX-style path on Windows and the embedded
+   DDL dump did not match the real database (source undetermined — MSYS path conversion is
+   implicated; the same session saw two agents hit MSYS path-mangling on their first CLI calls).
+   Detected by cross-checking WITH-agent tool outputs against the packet DDL; fixed by regenerating
+   packets with a native Windows path and verifying the dump against the live database
+   (`full_name` present, etc.). Round-1 WITHOUT transcripts were discarded. The WITH round was
+   unaffected (agents hit the real graph — verified by re-executing their commands). Harness
+   hardening candidate: `build-packets` should assert the dump covers every question's target
+   objects against `ground-truth` source refs.
+4. **Smaller paper cuts observed by WITH agents:** `explore --detail` accepts ANY value silently
+   (no validation); `explore` headers render views as `[table]`; per-command `--help` prints only
+   the generic banner; `affected` matches only schema-qualified identifiers (bare `assignments`
+   goes to `unmatchedIdentifiers`); `explore` rejects node ids that `query` returns.
 
 Every figure above is scoped to *this fixture, this question set, this model*. Unfavorable
 per-question outcomes (dbgraph no-better or worse) MUST be reported here, not softened or omitted —
@@ -95,6 +141,15 @@ One boundary, applied IDENTICALLY to both conditions:
   cancel in the delta).
 
 The `chars/4` figure is an approximation, never presented as an exact token count.
+
+**What THIS run used (torture-2026-07-06):** the per-agent transcripts were not persisted by the
+runtime, so the schema-bearing-only `chars/4` figure was NOT computable after the fact. The table
+reports **ACTUAL runtime token usage per condition agent** (the spec-preferred boundary), applied
+identically to both conditions. Caveat, stated plainly: this figure includes a fixed per-agent
+harness overhead (system prompt + framing, ≈26.7k tokens, identical on both sides — the WITHOUT
+agents, which used zero tools, measure it directly), so the DELTA between conditions — not the
+absolute numbers — is the meaningful quantity. The WITHOUT DDL dump itself is ≈787 approx tokens
+(from `benchmark/packets/manifest.json`).
 
 ## Limitations
 

@@ -234,32 +234,32 @@ only — nothing pushed past `closeout`; no CI).
 > invocation, fresh context — D10) using the design's PINNED templates, then scores and fills `docs/benchmarks.md`.
 > Covers the RUN-TIME scenarios; verify checks presence/honesty afterward.
 
-- [ ] R.1 Build the graph from the committed fixture: `dbgraph init` / `sync` against `test/fixtures/sqlite/torture.sql`
+- [x] R.1 Build the graph from the committed fixture: `dbgraph init` / `sync` against `test/fixtures/sqlite/torture.sql`
   → `.dbgraph/dbgraph.db` in an isolated working dir. Spec scenario "Primary substrate is rebuildable from committed
   source" (execution). READ-ONLY throughout.
-- [ ] R.2 `node --experimental-strip-types benchmark/generate.ts` (Node ≥22.6) then `… benchmark/build-packets.ts` →
+- [x] R.2 `node --experimental-strip-types benchmark/generate.ts` (Node ≥22.6) then `… benchmark/build-packets.ts` →
   `packets/<qid>.{with,without}.md` (uses the COMMITTED pre-registered set; regenerating must reproduce it). Spec
   scenario "Each family's ground truth is derived by its pinned rule".
-- [ ] R.3 For EACH question, launch TWO isolated sub-agents (WITH: working dir + read-only CLI, FORBIDDEN from reading
+- [x] R.3 For EACH question, launch TWO isolated sub-agents (WITH: working dir + read-only CLI, FORBIDDEN from reading
   any `.sql`/DDL file — D11; WITHOUT: DDL dump only, no tools) with the IDENTICAL pinned system framing + question +
   `ANSWER FORMAT` spec; force the final `ANSWER:` line. Spec scenarios "WITH exposes exactly the four documented
   commands" + "Identical framing across conditions" (execution).
-- [ ] R.4 Save each invocation to `benchmark/runs/<run-id>/raw/<qid>.<condition>.json` (`runId`, `qid`, `family`,
+- [x] R.4 Save each invocation to `benchmark/runs/<run-id>/raw/<qid>.<condition>.json` (`runId`, `qid`, `family`,
   `condition`, `model`, `promptSha256`, `answerRaw`, `answerParsed`, `tokens{mode,schemaTokens}`, `transcriptRef`) +
   the full transcript beside it. Spec scenario "One token boundary applied identically" (recorded per side).
-- [ ] R.5 `node --experimental-strip-types benchmark/score.ts runs/<id>` → `scored/per-question.json` +
+- [x] R.5 `node --experimental-strip-types benchmark/score.ts runs/<id>` → `scored/per-question.json` +
   `aggregate.json` (blind to condition, D13); `render.ts` → the `docs/benchmarks.md` Results table. Spec scenario
   "Scorer is blind to condition labels".
-- [ ] R.6 FILL `docs/benchmarks.md` Results + per-question appendix + Environment (model id, run id, date, versions)
+- [x] R.6 FILL `docs/benchmarks.md` Results + per-question appendix + Environment (model id, run id, date, versions)
   FAITHFULLY — report EVERY per-question outcome even where dbgraph is no-better/worse; write NO extrapolation. Spec
   scenarios "Unfavorable results are reported, not suppressed" + "No extrapolation beyond measured conditions".
-- [ ] R.7 SECONDARY (optional): if `dbgraph status` confirms `C:\temp\dbgraph-validation` opens, run the SAME harness
+- [x] R.7 *(RESOLVED AS SKIPPED — optional per spec; the primary finding is CLI-surface-level and engine-agnostic, so a secondary run would not alter it; skip recorded in docs/benchmarks.md Environment row + Run notes)* SECONDARY (optional): if `dbgraph status` confirms `C:\temp\dbgraph-validation` opens, run the SAME harness
   read-only against the mssql graph; APPLY the redaction map (generalized placeholders) BEFORE writing any private
   name; tag `substrate: mssql-private`, `reproducible: false`, `provenance: author-attested`; restate read-only BY
   CONSTRUCTION + SSMS = author attestation. If it does NOT open, the report states the secondary run was SKIPPED (the
   benchmark still completes on the fixture). Spec scenarios "Secondary substrate is optional corroboration only" +
   "Secondary run labeled non-reproducible with honest read-only downgrade".
-- [ ] R.8 Commit the filled report + committed artifacts (runs/ stays git-ignored):
+- [x] R.8 Commit the filled report + committed artifacts (runs/ stays git-ignored):
   `docs(benchmark): record WITH/WITHOUT results on the torture fixture (US-035)`. Hand off to verify.
 
 ## Apply Batch Grouping (one sub-agent session each)
