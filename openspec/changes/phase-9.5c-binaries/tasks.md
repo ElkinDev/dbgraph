@@ -111,32 +111,32 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 > regression goldens (`git diff --exit-code test/golden/`) stay EMPTY. NO esbuild/SEA/postject here — only the seams the
 > bundle will later exercise. Realizes **Q1** (D7 full) and consumes the **Q3** argv offset from Batch 0.
 
-- [ ] 1.1 **(vitest)** RED→GREEN `test/cli/cli.test.ts` (extend) + `src/cli/cli.ts`: add a `--version`/`-v` branch in
+- [x] 1.1 **(vitest)** RED→GREEN `test/cli/cli.test.ts` (extend) + `src/cli/cli.ts`: add a `--version`/`-v` branch in
   `runCli` that prints `process.env.DBGRAPH_BUILD_VERSION ?? DBGRAPH_VERSION` (imported from `../index.js`) and returns 0;
   add a `version` line to `USAGE_TEXT`. Auto-run guard (L98) UNCHANGED. RED first: with `DBGRAPH_BUILD_VERSION` UNSET,
   `runCli(['--version'])` prints EXACTLY `0.0.0` + returns 0; with it SET to `'9.9.9'`, prints `9.9.9`. Assert `--help`
   still prints `USAGE_TEXT` beginning `dbgraph — database schema graph indexer`. Spec scenario R1 "Bundle boots and serves
   --help/--version" (`--version` half), design D6. Done: `npm test cli`.
-- [ ] 1.2 **(vitest)** RED→GREEN `test/bin/sea-entry.test.ts` (new) + `src/bin/sea-entry.ts` (new): export PURE
+- [x] 1.2 **(vitest)** RED→GREEN `test/bin/sea-entry.test.ts` (new) + `src/bin/sea-entry.ts` (new): export PURE
   `planEntry(argv, isSea): { mode:'mcp' } | { mode:'cli'; args }` = `args = argv.slice(isSea ? 1 : 2)` (offset from Batch
   0.2), route `args[0]==='mcp'` → `{mode:'mcp'}` else `{mode:'cli',args}`. RED first: assert SEA slice(1) vs npm slice(2),
   `mcp` routing, `--version`/`--help` pass-through, empty argv. NO spawn, NO `import.meta` guard. Wire the unconditional
   runner (dispatch `mcp`→`startMcpServer()` else `runCli(args)`) + the Batch-0.4 `process.on('warning')` filter (logic
   tested via `planEntry`; the runner glue is smoke-covered in 2.6). Spec scenario R1 "Bundle boots…", design D5. Done:
   `npx tsc --noEmit`; `npm test sea-entry`.
-- [ ] 1.3 **(vitest)** RED→GREEN `test/mcp/server.test.ts` (extend) + `src/mcp/server.ts`: export `startMcpServer()`
+- [x] 1.3 **(vitest)** RED→GREEN `test/mcp/server.test.ts` (extend) + `src/mcp/server.ts`: export `startMcpServer()`
   (wrapping the existing stdio-server startup at ~L420); KEEP the existing auto-run guard for the npm `dbgraph-mcp` bin
   (byte-identical behavior on that path). RED first: assert `startMcpServer` is exported and callable over an injected/fake
   transport WITHOUT the auto-run guard firing. Spec: design D5 (MCP reached as `dbgraph mcp`). Done: `npx tsc --noEmit`;
   `npm test server`.
-- [ ] 1.4 **(vitest)** RED→GREEN `test/adapters/engines/_shared/load-optional-driver.test.ts` (new) +
+- [x] 1.4 **(vitest)** RED→GREEN `test/adapters/engines/_shared/load-optional-driver.test.ts` (new) +
   `src/adapters/engines/_shared/load-optional-driver.ts` (new): `loadOptionalDriver(name): Promise<unknown>`. Inject fake
   `isSea`/`createRequire`/`import` seams. RED first: (a) SEA branch (`isSea()===true`) resolves via `createRequire` from an
   explicit cwd base (assert base = `process.cwd()` first, then `process.execPath` fallback), (b) off-SEA branch calls
   `import(name)` byte-identically to today, (c) a resolution MISS RETHROWS (so the callers' existing catch → `npm i`
   error). Spec scenario R3 "Live-DB command without a driver fails…", design D7, Q1 (D7 full). Done: `npx tsc --noEmit`;
   `npm test load-optional-driver`.
-- [ ] 1.5 **(vitest)** RED→GREEN (regression = RED-safe) swap the FOUR bare-specifier `import()` seams to
+- [x] 1.5 **(vitest)** RED→GREEN (regression = RED-safe) swap the FOUR bare-specifier `import()` seams to
   `loadOptionalDriver`, non-SEA branch BYTE-IDENTICAL: `src/adapters/engines/pg/factory.ts` (L134),
   `src/adapters/engines/mysql/factory.ts` (L140), `src/adapters/engines/mongodb/factory.ts` (L87), and
   `src/adapters/engines/mssql/strategies/native-tedious.strategy.ts` (L143) — NOT `mssql/factory.ts` (see DISCOVERY).
@@ -145,14 +145,14 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
   oracle: a drift means the seam leaked). Do NOT touch the `probe.ts` import seams (out of scope). Spec scenario R3
   "Live-DB command without a driver fails with the established install-command error" (byte-identical off-SEA), design D7,
   ADR-006. Done: `npx tsc --noEmit`; `npm test` (all engine suites green, no golden drift).
-- [ ] 1.6 **(vitest)** RED→GREEN `test/infra/open-connections.test.ts` (new or extend) + `src/infra/open-connections.ts`:
+- [x] 1.6 **(vitest)** RED→GREEN `test/infra/open-connections.test.ts` (new or extend) + `src/infra/open-connections.ts`:
   at L169, when `sea.isSea()` is true pass `driver:'node:sqlite'` to `createSqliteGraphStore` (conditional spread —
   `exactOptionalPropertyTypes`); npm/dev path UNCHANGED (no `driver` → default `better-sqlite3`). Access `isSea` via a
   `createRequire('node:sea')` seam INJECTABLE for the test (avoid a static `node:sea` type dep). RED first: with a fake
   `isSea()===true`, assert `createSqliteGraphStore` receives `driver:'node:sqlite'`; with `isSea()===false`, assert NO
   `driver` key is passed (default preserved). Spec scenario R1 "Graph reads run on node:sqlite inside the bundle",
   design D2. Done: `npx tsc --noEmit`; `npm test open-connections`.
-- [ ] 1.7 GATE (Batch 1): `npx tsc --noEmit` clean (NO `any`); `npm run lint` 0/0; `npm test` full suite GREEN with NO
+- [x] 1.7 GATE (Batch 1): `npx tsc --noEmit` clean (NO `any`); `npm run lint` 0/0; `npm test` full suite GREEN with NO
   binary; `git diff --exit-code test/golden/` EMPTY (every off-SEA branch byte-identical, ADR-008) — ANY drift is a HARD
   STOP (a seam leaked behavior; investigate, do NOT re-bless). Confirm NO static top-level driver import was introduced and
   the `dbgraph`/`dbgraph-mcp` bin behavior is unchanged. Then COMMIT `feat(9.5c): runtime seams for SEA binary (--version,

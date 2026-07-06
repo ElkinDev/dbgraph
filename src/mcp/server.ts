@@ -412,7 +412,22 @@ export function createDbgraphServer(storeOverride?: GraphStore): Server {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stdio entry point — only runs when executed directly, not when imported
+// startMcpServer — exported launcher (design D5, phase-9.5c)
+// The SEA binary reaches the MCP server as `dbgraph mcp`; sea-entry dispatches
+// here. The optional transport override lets tests drive the server over an
+// in-memory transport; production (stdio bin + SEA) passes none → StdioServerTransport.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function startMcpServer(
+  transport?: Parameters<Server['connect']>[0],
+): Promise<void> {
+  const server = createDbgraphServer();
+  await server.connect(transport ?? new StdioServerTransport());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stdio entry point — only runs when executed directly, not when imported.
+// The auto-run guard is UNCHANGED so the npm `dbgraph-mcp` bin behaves identically.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Detect if we are the main module (ESM-compatible check)
@@ -422,7 +437,5 @@ const isMain = process.argv[1] !== undefined &&
    process.argv[1].includes('server.'));
 
 if (isMain) {
-  const server = createDbgraphServer();
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await startMcpServer();
 }

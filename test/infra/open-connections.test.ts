@@ -134,3 +134,34 @@ describe('openConnections — pg dialect wiring (task 5.2)', () => {
     expect(config.password).toBe('secret123');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// phase-9.5c task 1.6 — SEA store-driver flip (design D2)
+// Under a SEA binary the local store MUST open on the in-binary node:sqlite driver;
+// off-SEA the default stays better-sqlite3 (byte-identical, ADR-008). isSea is an
+// INJECTABLE seam. The store flip is dialect-independent (asserted via the pg config).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('openConnections — SEA store-driver flip (design D2)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env['PG_PASSWORD'] = 'secret123';
+    mocks.createPgSchemaAdapterMock.mockResolvedValue(mocks.fakePgAdapterShape);
+    mocks.createSqliteGraphStoreMock.mockResolvedValue(mocks.fakeStore);
+  });
+
+  it('passes driver:"node:sqlite" to createSqliteGraphStore when isSea() is true', async () => {
+    await openConnections('/fake/project', undefined, { isSea: () => true });
+    const [opts] = mocks.createSqliteGraphStoreMock.mock.calls[0] as [{ path: string; driver?: string }];
+    expect(opts.driver).toBe('node:sqlite');
+    expect(opts.path.endsWith('dbgraph.db')).toBe(true);
+  });
+
+  it('passes NO driver key when isSea() is false (npm default better-sqlite3 preserved)', async () => {
+    await openConnections('/fake/project', undefined, { isSea: () => false });
+    const [opts] = mocks.createSqliteGraphStoreMock.mock.calls[0] as [{ path: string; driver?: string }];
+    // exactOptionalPropertyTypes: the key must be ABSENT (not `driver: undefined`).
+    expect('driver' in opts).toBe(false);
+    expect(opts.path.endsWith('dbgraph.db')).toBe(true);
+  });
+});

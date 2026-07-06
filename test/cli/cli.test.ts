@@ -10,7 +10,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { USAGE_TEXT } from '../../src/cli/cli.js';
+import { USAGE_TEXT, runCli } from '../../src/cli/cli.js';
+import { DBGRAPH_VERSION } from '../../src/index.js';
 // Note: runCli not directly tested here; dispatch mock not used via module spy
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,5 +165,68 @@ describe('cli — ConnectivityUnavailableError rendering (Batch 3, task 3.6)', (
 
   it('cli.ts USAGE_TEXT contains "doctor" command (added in task 3.6)', () => {
     expect(USAGE_TEXT).toContain('doctor');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// phase-9.5c task 1.1 — `--version`/`-v` branch in runCli (design D6)
+// The binary must answer `--version` with NO package.json on disk: the value is
+// `process.env.DBGRAPH_BUILD_VERSION ?? DBGRAPH_VERSION`. esbuild `define` bakes the
+// literal at bundle time; off-SEA the env var is undefined → falls back to
+// DBGRAPH_VERSION ('0.0.0'). RED → GREEN in `npm test` (no binary required).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('cli — --version / -v (task 1.1, design D6)', () => {
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+  let stdout: string[];
+  const originalBuildVersion = process.env['DBGRAPH_BUILD_VERSION'];
+
+  beforeEach(() => {
+    stdout = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stdout.push(String(chunk));
+      return true;
+    });
+    delete process.env['DBGRAPH_BUILD_VERSION'];
+  });
+
+  afterEach(() => {
+    stdoutSpy.mockRestore();
+    if (originalBuildVersion === undefined) {
+      delete process.env['DBGRAPH_BUILD_VERSION'];
+    } else {
+      process.env['DBGRAPH_BUILD_VERSION'] = originalBuildVersion;
+    }
+  });
+
+  it('DBGRAPH_VERSION placeholder is still exactly "0.0.0" (fallback anchor for the smoke)', () => {
+    expect(DBGRAPH_VERSION).toBe('0.0.0');
+  });
+
+  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "0.0.0\\n" and returns 0', async () => {
+    const code = await runCli(['--version']);
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('0.0.0\n');
+  });
+
+  it('runCli(["-v"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "0.0.0\\n" and returns 0', async () => {
+    const code = await runCli(['-v']);
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('0.0.0\n');
+  });
+
+  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION set to "9.9.9" prints EXACTLY "9.9.9\\n" and returns 0', async () => {
+    process.env['DBGRAPH_BUILD_VERSION'] = '9.9.9';
+    const code = await runCli(['--version']);
+    expect(code).toBe(0);
+    expect(stdout.join('')).toBe('9.9.9\n');
+  });
+
+  it('USAGE_TEXT documents the --version flag', () => {
+    expect(USAGE_TEXT).toContain('--version');
+  });
+
+  it('USAGE_TEXT still begins with the product banner (unchanged by --version addition)', () => {
+    expect(USAGE_TEXT.startsWith('dbgraph — database schema graph indexer')).toBe(true);
   });
 });
