@@ -77,6 +77,27 @@ describe('cli — USAGE_TEXT', () => {
     expect(MANUAL_SNIPPET).toContain('Supported agents');
     expect(USAGE_TEXT.toLowerCase()).toContain('agents');
   });
+
+  // ── phase-7-docs / US-038: install banner documents the --project scope flag ──
+
+  it('install banner line documents --project with the EXACT pinned text (US-038)', () => {
+    // cli-config scenario "install banner line documents the --project flag with the
+    // exact text" — a single-character drift (e.g. dropping --project) fails the build.
+    const installLine =
+      USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('install')) ?? '';
+    expect(installLine).toBe(
+      '  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)',
+    );
+  });
+
+  it('install banner line stays multi-agent AND still documents --remove (no single-agent regression)', () => {
+    const installLine =
+      USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('install')) ?? '';
+    expect(installLine).toContain('agents');
+    expect(installLine).toContain('--project');
+    expect(installLine).toContain('--remove');
+    expect(installLine).not.toContain('Claude Desktop');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

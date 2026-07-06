@@ -45,55 +45,55 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
 > byte-identical (D4); `--project` is a scoped, opt-in departure (create-when-absent, D3). Lands the ONE code change
 > the docs depend on, FIRST — so README/CONTRIBUTING/SECURITY document real behavior, not intent.
 
-- [ ] 1.1 RED→GREEN `test/cli/parse/args.test.ts` (extend) + `src/cli/parse/args.ts`: add `'project'` to
+- [x] 1.1 RED→GREEN `test/cli/parse/args.test.ts` (extend) + `src/cli/parse/args.ts`: add `'project'` to
   `BOOLEAN_LONG_FLAGS`. RED first: assert `parseArgv(['install','--project','--remove']).flags['project'] === true`
   AND `flags['remove'] === true` (proves `--project` does NOT greedily consume the next token; `--remove` still works).
   Design Decision #2. Done: `npm test args`.
-- [ ] 1.2 RED→GREEN `test/cli/commands/install.test.ts` (extend) + `src/cli/commands/install.ts`: add
+- [x] 1.2 RED→GREEN `test/cli/commands/install.test.ts` (extend) + `src/cli/commands/install.ts`: add
   `resolveProjectConfigPath(platform: string, cwd: string, segs: readonly string[]): string` — `pathWin32.join` on
   win32, `pathPosix.join` on posix (NEVER the host `join`). Assert ALL 6 rows × {win32, posix} to EXACT pinned strings
   from `cwd`: claude `<cwd>/.mcp.json`, cursor `<cwd>/.cursor/mcp.json`, vscode `<cwd>/.vscode/mcp.json`, gemini
   `<cwd>/.gemini/settings.json`, opencode `<cwd>/opencode.json`, codex `<cwd>/.codex/config.toml` (+ win32 backslash
   variants). Design §Testing Strategy "Unit (paths)"; Decision #1. Done: `npm test install`.
-- [ ] 1.3 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add
+- [x] 1.3 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts`: add
   `readonly projectPath?: readonly string[]` to `AgentDescriptor` and populate ALL 6 rows per the per-agent matrix
   (claude `['.mcp.json']`, cursor `['.cursor','mcp.json']`, vscode `['.vscode','mcp.json']`, gemini
   `['.gemini','settings.json']`, opencode `['opencode.json']`, codex `['.codex','config.toml']`); add
   `readonly project?: boolean` + `readonly cwd?: string` to `InstallOptions`; RETAIN `'unsupported'` in the
   `AgentAction` union (dormant). Assert the typed row literals compile and each row's `projectPath` equals its pinned
   segments. Design §Interfaces + per-agent matrix. Done: `npx tsc --noEmit`; `npm test install`.
-- [ ] 1.4 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts` `runInstall` project branch —
+- [x] 1.4 RED→GREEN `test/cli/commands/install.test.ts` + `src/cli/commands/install.ts` `runInstall` project branch —
   CREATE-WHEN-ABSENT (supported JSON agent): inject `cwd` + `project:true`; GIVEN no `<cwd>/.cursor/mcp.json`, THEN the
   file is CREATED containing EXACTLY `mcpServers.dbgraph-mcp = { "command":"npx", "args":["-y","dbgraph-mcp"] }`
   serialized as 2-space JSON with a single trailing `\n` (assert `written[path]` bytes). `mcp-server` scenario
   "--project creates an absent project file for a supported agent"; Decision #3. Done: `npm test install`.
-- [ ] 1.5 RED→GREEN `test/cli/commands/install.test.ts`: idempotent merge + preserve unrelated keys. GIVEN
+- [x] 1.5 RED→GREEN `test/cli/commands/install.test.ts`: idempotent merge + preserve unrelated keys. GIVEN
   `<cwd>/.cursor/mcp.json` already has `mcpServers.other` + top-level `"foo":1`, WHEN `--project` runs, THEN
   `mcpServers.dbgraph-mcp` is added, `mcpServers.other` and `foo` are preserved, and RE-RUNNING writes nothing
   (`next === raw`, byte-identical). `mcp-server` scenario "--project merges idempotently and preserves unrelated keys".
   Done: `npm test install`.
-- [ ] 1.6 RED→GREEN `test/cli/commands/install.test.ts`: Codex project branch + trust caveat. GIVEN no
+- [x] 1.6 RED→GREEN `test/cli/commands/install.test.ts`: Codex project branch + trust caveat. GIVEN no
   `<cwd>/.codex/config.toml`, WHEN `--project` runs, THEN it is CREATED via the SAME `mergeCodexToml` writer with EXACT
   bytes `[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n` (single trailing `\n`), the codex
   summary line reads VERBATIM `codex → written (requires trusted project: set trust_level in ~/.codex/config.toml)`, and
   the command exits 0. `mcp-server` scenario "--project creates an absent Codex config with the exact TOML bytes and a
   trust-caveat suffix"; Decision #5. Done: `npm test install`.
-- [ ] 1.7 RED→GREEN `test/cli/commands/install.test.ts`: `--remove --project` symmetry (NEVER delete). (a) GIVEN
+- [x] 1.7 RED→GREEN `test/cli/commands/install.test.ts`: `--remove --project` symmetry (NEVER delete). (a) GIVEN
   `<cwd>/.cursor/mcp.json` contains ONLY `mcpServers.dbgraph-mcp`, WHEN `--remove --project` runs, THEN the file REMAINS
   on disk as valid JSON `{}` + single trailing `\n` (emptied key dropped) and is NOT deleted. (b) GIVEN no such file,
   `--remove --project` creates nothing, writes nothing, exits 0. `mcp-server` scenarios "--remove --project deletes only
   the entry and leaves a valid file, never deleting it" + "--remove --project on an absent file is a no-op"; Decision #6.
   Done: `npm test install`.
-- [ ] 1.8 RED→GREEN `test/cli/commands/install.test.ts`: env-indirection preservation + DORMANT `unsupported`. (a) GIVEN
+- [x] 1.8 RED→GREEN `test/cli/commands/install.test.ts`: env-indirection preservation + DORMANT `unsupported`. (a) GIVEN
   `<cwd>/.cursor/mcp.json` has another entry whose args include `"${env:DB_PASSWORD}"`, WHEN `--project` runs, THEN that
   string is preserved byte-for-byte and NEVER expanded (`mcp-server` scenario "--project preserves ${env:VAR}
   indirection verbatim"). (b) via a SYNTHETIC row with NO `projectPath`, WHEN `--project` runs, THEN it is reported
   `→ not supported with --project`, no path is invented, no file is written, exit 0 (`mcp-server` scenario "A future
   unverified agent is excluded, never guessed"). Done: `npm test install`.
-- [ ] 1.9 RED→GREEN `test/cli/commands/install.test.ts`: GLOBAL regression — WHEN `--project` is ABSENT, behavior is
+- [x] 1.9 RED→GREEN `test/cli/commands/install.test.ts`: GLOBAL regression — WHEN `--project` is ABSENT, behavior is
   byte-identical to shipped (absent stays `absent`, NEVER create); the existing Claude Code / 6-agent install suites
   pass UNCHANGED. Design §Testing Strategy "Unit (global regression)"; Decision #4. Done: `npm test install`.
-- [ ] 1.10 RED→GREEN `test/cli/dispatch.test.ts` + `src/cli/dispatch.ts` AND `test/cli/cli.test.ts` + `src/cli/cli.ts`:
+- [x] 1.10 RED→GREEN `test/cli/dispatch.test.ts` + `src/cli/dispatch.ts` AND `test/cli/cli.test.ts` + `src/cli/cli.ts`:
   (a) `handleInstall` reads `flags['project']` and passes `project` (+ default `cwd`) to `runInstall`; extend
   `MANUAL_SNIPPET`/summary for `--project`. (b) Pin `USAGE_TEXT` install line to EXACTLY
   `  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)` (two leading
@@ -101,7 +101,7 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
   so dropping the `--project` mention FAILS the build. `cli-config` scenarios "install banner line describes the
   multi-agent reality", "install banner line documents the --project flag with the exact text", "Banner agent wording
   stays consistent with install's source of truth". Done: `npm test dispatch cli`.
-- [ ] 1.11 GATE (Batch 1): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` green (baseline 2907 +
+- [x] 1.11 GATE (Batch 1): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` green (baseline 2907 +
   new project suites) INCLUDING the shipped install suites UNCHANGED (global path byte-identical); leak-scan clean.
   Commit `feat(install): add --project scope for project-rooted agent config (US-038)`.
 

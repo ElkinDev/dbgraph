@@ -18,6 +18,18 @@ import { buildConfig, writeConfig } from '../../src/cli/config/build-config.js';
 import { createSqliteGraphStore } from '../../src/index.js';
 import { formatSyncSummary, type SyncSummary } from '../../src/cli/format/sync.js';
 import type { ParsedArgs } from '../../src/cli/parse/args.js';
+import { runInstall } from '../../src/cli/commands/install.js';
+
+// Mock the install command module so handleInstall's call to runInstall is captured
+// WITHOUT touching the real filesystem (US-038 — verify --project/cwd are forwarded).
+vi.mock('../../src/cli/commands/install.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../../src/cli/commands/install.js')>();
+  return {
+    ...actual,
+    runInstall: vi.fn(async () => ({ type: 'success' as const })),
+  };
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Known commands map to a handler
@@ -229,5 +241,47 @@ describe('handleSync — observable summary to STDOUT + progress to STDERR (task
     expect(stdoutStr).toContain('fingerprint  ');
     // info/progress suppressed on STDERR under --quiet.
     expect(stderrStr).not.toContain('[info]');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// handleInstall — forwards --project + default cwd to runInstall (US-038, phase-7-docs)
+// mcp-server "dbgraph install --project scopes agent config to the project directory".
+// runInstall is mocked (see vi.mock above) so no real FS is touched.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleInstall — forwards --project + cwd to runInstall (US-038)', () => {
+  beforeEach(() => {
+    vi.mocked(runInstall).mockClear();
+  });
+
+  async function callInstall(flags: Record<string, string | true>): Promise<void> {
+    const d = dispatch('install');
+    if (d.type !== 'handler') throw new Error('expected a handler for "install"');
+    await d.handler({ command: 'install', positionals: [], flags });
+  }
+
+  it('passes project:true and a non-empty cwd when --project is set', async () => {
+    await callInstall({ project: true });
+    expect(runInstall).toHaveBeenCalledTimes(1);
+    const arg = vi.mocked(runInstall).mock.calls[0]?.[0];
+    expect(arg?.project).toBe(true);
+    expect(arg?.remove).toBe(false);
+    expect(typeof arg?.cwd).toBe('string');
+    expect((arg?.cwd ?? '').length).toBeGreaterThan(0);
+  });
+
+  it('passes project:false when --project is absent (global default)', async () => {
+    await callInstall({});
+    const arg = vi.mocked(runInstall).mock.calls[0]?.[0];
+    expect(arg?.project).toBe(false);
+    expect(arg?.remove).toBe(false);
+  });
+
+  it('passes remove:true AND project:true together for --remove --project', async () => {
+    await callInstall({ remove: true, project: true });
+    const arg = vi.mocked(runInstall).mock.calls[0]?.[0];
+    expect(arg?.remove).toBe(true);
+    expect(arg?.project).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ import {
   mergeCodexToml,
   removeCodexToml,
   CODEX_RENDER,
+  resolveProjectConfigPath,
   type FsSeam,
   type McpServerEntry,
   type AgentFormat,
@@ -1817,5 +1818,397 @@ describe('E.4: MANUAL_SNIPPET names all 6 agents + per-agent summary', () => {
     });
 
     expect(output.join('')).toContain(`(${claudePath})`);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// F: US-038 project scope (phase-7-docs) — `install --project`
+// mcp-server spec: "dbgraph install --project scopes agent config to the project
+// directory" (7 scenarios). Design Decisions #1-#6. Global (no-flag) path stays
+// byte-identical — global regression covered in F.9 and the existing suites above.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// The exact minimal JSON doc created by the merge-on-empty writer (2-space + single \n).
+const EXPECTED_MCPSERVERS_DOC =
+  JSON.stringify(
+    { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] } } },
+    null,
+    2,
+  ) + '\n';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.2: resolveProjectConfigPath — all 6 segment sets × {win32, posix} to EXACT pins
+// Design §Testing Strategy "Unit (paths)"; Decision #1. NEVER the host join().
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.2: resolveProjectConfigPath — exact cross-platform pins (Decision #1)', () => {
+  const WIN_CWD = 'C:\\proj';
+  const POSIX_CWD = '/home/u/proj';
+
+  interface SegCase {
+    id: string;
+    segs: readonly string[];
+    win32: string;
+    posix: string;
+  }
+
+  const cases: SegCase[] = [
+    { id: 'claude-code', segs: ['.mcp.json'], win32: 'C:\\proj\\.mcp.json', posix: '/home/u/proj/.mcp.json' },
+    { id: 'cursor', segs: ['.cursor', 'mcp.json'], win32: 'C:\\proj\\.cursor\\mcp.json', posix: '/home/u/proj/.cursor/mcp.json' },
+    { id: 'vscode', segs: ['.vscode', 'mcp.json'], win32: 'C:\\proj\\.vscode\\mcp.json', posix: '/home/u/proj/.vscode/mcp.json' },
+    { id: 'gemini', segs: ['.gemini', 'settings.json'], win32: 'C:\\proj\\.gemini\\settings.json', posix: '/home/u/proj/.gemini/settings.json' },
+    { id: 'opencode', segs: ['opencode.json'], win32: 'C:\\proj\\opencode.json', posix: '/home/u/proj/opencode.json' },
+    { id: 'codex', segs: ['.codex', 'config.toml'], win32: 'C:\\proj\\.codex\\config.toml', posix: '/home/u/proj/.codex/config.toml' },
+  ];
+
+  for (const c of cases) {
+    it(`${c.id} win32 → ${c.win32}`, () => {
+      expect(resolveProjectConfigPath('win32', WIN_CWD, c.segs)).toBe(c.win32);
+    });
+    it(`${c.id} posix → ${c.posix}`, () => {
+      expect(resolveProjectConfigPath('linux', POSIX_CWD, c.segs)).toBe(c.posix);
+    });
+  }
+
+  it('uses backslash separators on win32 regardless of segment count', () => {
+    expect(resolveProjectConfigPath('win32', 'C:\\a', ['b', 'c', 'd.json'])).toBe('C:\\a\\b\\c\\d.json');
+  });
+
+  it('uses forward-slash separators on posix regardless of segment count', () => {
+    expect(resolveProjectConfigPath('darwin', '/a', ['b', 'c', 'd.json'])).toBe('/a/b/c/d.json');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.3: AgentDescriptor.projectPath populated for ALL 6 rows to pinned segments;
+// InstallOptions gains project/cwd; AgentAction RETAINS 'unsupported' (dormant).
+// Design §Interfaces + per-agent matrix; Decision #1/#5.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.3: AgentDescriptor.projectPath segments (per-agent matrix)', () => {
+  const expected: Record<string, readonly string[]> = {
+    'claude-code': ['.mcp.json'],
+    cursor: ['.cursor', 'mcp.json'],
+    vscode: ['.vscode', 'mcp.json'],
+    gemini: ['.gemini', 'settings.json'],
+    opencode: ['opencode.json'],
+    codex: ['.codex', 'config.toml'],
+  };
+
+  for (const [id, segs] of Object.entries(expected)) {
+    it(`${id} projectPath === ${JSON.stringify(segs)}`, () => {
+      const row = AGENT_TABLE.find((r) => r.id === id);
+      expect(row).toBeDefined();
+      expect(row?.projectPath).toStrictEqual(segs);
+    });
+  }
+
+  it('ALL 6 shipped rows have a projectPath (no dormant row today)', () => {
+    for (const row of AGENT_TABLE) {
+      expect(row.projectPath).toBeDefined();
+    }
+    expect(AGENT_TABLE).toHaveLength(6);
+  });
+
+  it("AgentAction RETAINS 'unsupported' as an assignable member (dormant machinery)", () => {
+    const dormant: AgentAction = 'unsupported';
+    expect(dormant).toBe('unsupported');
+  });
+
+  it('InstallOptions accepts project + cwd (typed seam)', () => {
+    const opts: import('../../../src/cli/commands/install.js').InstallOptions = {
+      project: true,
+      cwd: '/proj',
+    };
+    expect(opts.project).toBe(true);
+    expect(opts.cwd).toBe('/proj');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.4: --project create-when-absent (supported JSON agent) — Decision #3
+// mcp-server scenario "--project creates an absent project file for a supported agent".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.4: --project create-when-absent (Cursor) — Decision #3', () => {
+  it('posix: absent <cwd>/.cursor/mcp.json is CREATED with exact minimal 2-space JSON + single \\n', async () => {
+    const cwd = '/proj';
+    const cursorPath = '/proj/.cursor/mcp.json';
+    const { seam, written } = makeFakeFs({}); // absent
+    const out: string[] = [];
+
+    const result = await runInstall({
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      write: (t) => out.push(t),
+    });
+
+    expect(result.type).toBe('success');
+    expect(written[cursorPath]).toBe(EXPECTED_MCPSERVERS_DOC);
+  });
+
+  it('win32: absent <cwd>\\.cursor\\mcp.json is CREATED with the same exact bytes', async () => {
+    const cwd = 'C:\\proj';
+    const cursorPath = 'C:\\proj\\.cursor\\mcp.json';
+    const { seam, written } = makeFakeFs({});
+
+    await runInstall({ project: true, cwd, platform: 'win32', env: {}, fs: seam, write: () => {} });
+
+    expect(written[cursorPath]).toBe(EXPECTED_MCPSERVERS_DOC);
+  });
+
+  it('the default (no --project) run reports Cursor absent and creates nothing', async () => {
+    const { seam, written } = makeFakeFs({});
+    await runInstall({ platform: 'linux', env: { HOME: '/home/u' }, fs: seam, write: () => {} });
+    expect(written['/home/u/.cursor/mcp.json']).toBeUndefined();
+    expect(Object.keys(written)).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.5: --project merges idempotently and preserves unrelated keys
+// mcp-server scenario "--project merges idempotently and preserves unrelated keys".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.5: --project merges idempotently, preserves unrelated keys', () => {
+  const cwd = '/proj';
+  const cursorPath = '/proj/.cursor/mcp.json';
+
+  it('adds dbgraph-mcp, preserves mcpServers.other and top-level foo', async () => {
+    const initial =
+      JSON.stringify({ mcpServers: { other: { command: 'x', args: [] } }, foo: 1 }, null, 2) + '\n';
+    const { seam, written } = makeFakeFs({ [cursorPath]: initial });
+
+    await runInstall({ project: true, cwd, platform: 'linux', env: {}, fs: seam, write: () => {} });
+
+    const saved = JSON.parse(written[cursorPath]!) as {
+      mcpServers: Record<string, McpServerEntry>;
+      foo: number;
+    };
+    expect(saved.mcpServers['dbgraph-mcp']).toEqual({ command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(saved.mcpServers['other']).toEqual({ command: 'x', args: [] });
+    expect(saved.foo).toBe(1);
+  });
+
+  it('re-running on already-merged content writes cursor nothing (byte-identical idempotent)', async () => {
+    const merged =
+      JSON.stringify(
+        {
+          mcpServers: {
+            other: { command: 'x', args: [] },
+            'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+          },
+          foo: 1,
+        },
+        null,
+        2,
+      ) + '\n';
+    const { seam, written } = makeFakeFs({ [cursorPath]: merged });
+
+    await runInstall({ project: true, cwd, platform: 'linux', env: {}, fs: seam, write: () => {} });
+
+    // Cursor was already in the desired state → NOT re-written (byte-identical).
+    expect(written[cursorPath]).toBeUndefined();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.6: --project Codex create + trust-caveat suffix — Decision #5
+// mcp-server scenario "--project creates an absent Codex config with the exact TOML
+// bytes and a trust-caveat suffix".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.6: --project Codex create + trust-caveat suffix — Decision #5', () => {
+  const cwd = '/proj';
+  const codexPath = '/proj/.codex/config.toml';
+  // Pinned absent-case bytes (single trailing \n) — MUST equal mergeCodexToml('').
+  const CODEX_ABSENT_BYTES = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n';
+
+  it("pinned bytes equal mergeCodexToml('') (same writer/bytes as global)", () => {
+    expect(mergeCodexToml('')).toBe(CODEX_ABSENT_BYTES);
+  });
+
+  it('absent <cwd>/.codex/config.toml is CREATED with the EXACT pinned TOML bytes', async () => {
+    const { seam, written } = makeFakeFs({});
+    const result = await runInstall({
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      write: () => {},
+    });
+    expect(result.type).toBe('success');
+    expect(written[codexPath]).toBe(CODEX_ABSENT_BYTES);
+  });
+
+  it('codex summary line reads EXACTLY the trust-caveat line and exits 0', async () => {
+    const { seam } = makeFakeFs({});
+    const out: string[] = [];
+    const result = await runInstall({
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      write: (t) => out.push(t),
+    });
+    const lines = out.join('').split('\n');
+    expect(lines).toContain(
+      'codex → written (requires trusted project: set trust_level in ~/.codex/config.toml)',
+    );
+    expect(result).toStrictEqual({ type: 'success' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.7: --remove --project — never delete (Decision #6)
+// mcp-server scenarios "--remove --project deletes only the entry and leaves a valid
+// file, never deleting it" + "--remove --project on an absent file is a no-op".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.7: --remove --project symmetry — never delete (Decision #6)', () => {
+  const cwd = '/proj';
+  const cursorPath = '/proj/.cursor/mcp.json';
+
+  it('(a) file with ONLY dbgraph-mcp → left as valid JSON {} + single \\n, NOT deleted', async () => {
+    const initial =
+      JSON.stringify(
+        { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] } } },
+        null,
+        2,
+      ) + '\n';
+    const { seam, written } = makeFakeFs({ [cursorPath]: initial });
+
+    const result = await runInstall({
+      remove: true,
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      write: () => {},
+    });
+
+    expect(result.type).toBe('success');
+    expect(written[cursorPath]).toBe('{}\n');
+    // File REMAINS on disk (never deleted).
+    expect(seam.exists(cursorPath)).toBe(true);
+  });
+
+  it('(b) absent file → --remove --project creates nothing, writes nothing, exits 0', async () => {
+    const { seam, written } = makeFakeFs({});
+    const result = await runInstall({
+      remove: true,
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      write: () => {},
+    });
+    expect(result.type).toBe('success');
+    expect(Object.keys(written)).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.8: --project preserves ${env:VAR} verbatim + DORMANT unsupported path
+// mcp-server scenarios "--project preserves ${env:VAR} indirection verbatim" +
+// "A future unverified agent is excluded, never guessed".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.8: env-indirection preserved + dormant unsupported', () => {
+  const cwd = '/proj';
+  const cursorPath = '/proj/.cursor/mcp.json';
+
+  it('(a) ${env:DB_PASSWORD} in another entry is preserved byte-for-byte, never expanded', async () => {
+    const initial =
+      JSON.stringify(
+        { mcpServers: { secret: { command: 'db', args: ['--pw', '${env:DB_PASSWORD}'] } } },
+        null,
+        2,
+      ) + '\n';
+    const { seam, written } = makeFakeFs({ [cursorPath]: initial });
+
+    await runInstall({
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: { DB_PASSWORD: 'hunter2' },
+      fs: seam,
+      write: () => {},
+    });
+
+    expect(written[cursorPath]).toContain('${env:DB_PASSWORD}');
+    expect(written[cursorPath]).not.toContain('hunter2');
+    const saved = JSON.parse(written[cursorPath]!) as {
+      mcpServers: Record<string, { args: string[] }>;
+    };
+    expect(saved.mcpServers['secret']?.args).toStrictEqual(['--pw', '${env:DB_PASSWORD}']);
+  });
+
+  it('(b) synthetic row with NO projectPath → "→ not supported with --project", no path, no write, exit 0', async () => {
+    const synthetic: AgentDescriptor = {
+      id: 'future-agent',
+      displayName: 'Future Agent',
+      format: 'mcpServers',
+      resolvePath: () => undefined,
+      merge: (c) => c,
+      remove: (c) => c,
+      // NO projectPath — exercises the DORMANT unsupported project path.
+    };
+    const { seam, written } = makeFakeFs({});
+    const out: string[] = [];
+
+    const result = await runInstall({
+      project: true,
+      cwd,
+      platform: 'linux',
+      env: {},
+      fs: seam,
+      agents: [synthetic],
+      write: (t) => out.push(t),
+    });
+
+    expect(result.type).toBe('success');
+    expect(Object.keys(written)).toHaveLength(0);
+    expect(out.join('')).toContain('→ not supported with --project');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F.9: GLOBAL regression — --project absent stays byte-identical (Decision #4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('F.9: GLOBAL regression — --project absent is byte-identical (Decision #4)', () => {
+  it('project omitted: absent files create nothing; MANUAL_SNIPPET printed', async () => {
+    const { seam, written } = makeFakeFs({});
+    const out: string[] = [];
+    await runInstall({
+      platform: 'win32',
+      env: { APPDATA: 'C:\\Users\\u\\AppData\\Roaming', USERPROFILE: 'C:\\Users\\u' },
+      fs: seam,
+      write: (t) => out.push(t),
+    });
+    expect(Object.keys(written)).toHaveLength(0);
+    expect(out.join('')).toBe(MANUAL_SNIPPET);
+  });
+
+  it('project:false with cwd provided is identical to global (cwd ignored, absent never created)', async () => {
+    const { seam, written } = makeFakeFs({});
+    await runInstall({
+      project: false,
+      cwd: '/proj',
+      platform: 'linux',
+      env: { HOME: '/home/u' },
+      fs: seam,
+      write: () => {},
+    });
+    expect(Object.keys(written)).toHaveLength(0);
+    expect(written['/proj/.cursor/mcp.json']).toBeUndefined();
   });
 });

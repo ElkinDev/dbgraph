@@ -251,3 +251,32 @@ describe('parseArgv — --quiet flag (task 1.3)', () => {
     expect(result.positionals).toStrictEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --project flag (phase-7-docs / US-038, Design Decision #2)
+// Spec: mcp-server "dbgraph install --project scopes agent config to the project directory".
+// D2: BOOLEAN long flag — add 'project' to BOOLEAN_LONG_FLAGS so it does NOT consume the
+// next token, and `--remove` still works alongside it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseArgv — --project flag (phase-7-docs, US-038)', () => {
+  it('--project parses as boolean true AND --remove still works (does NOT greedily consume the next token)', () => {
+    const result = parseArgv(['install', '--project', '--remove']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.flags['remove']).toBe(true);
+  });
+
+  it('--project does NOT greedily consume a following non-flag token as its value', () => {
+    // Without 'project' in BOOLEAN_LONG_FLAGS the parser would set flags.project === 'extra'
+    // and swallow the positional — this pins the boolean semantics.
+    const result = parseArgv(['install', '--project', 'extra']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.positionals).toStrictEqual(['extra']);
+  });
+
+  it('--project alone sets flags.project to true', () => {
+    const result = parseArgv(['install', '--project']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.positionals).toStrictEqual([]);
+  });
+});

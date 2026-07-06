@@ -247,12 +247,15 @@ async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
 }
 
 /**
- * Idempotently wires the dbgraph-mcp server entry into Claude Code's MCP config.
- * --remove undoes it. Prints manual snippet when no agent config is found.
+ * Idempotently wires the dbgraph-mcp server entry into every supported agent's MCP config.
+ * --remove undoes it. --project (US-038) re-roots resolution at the project directory
+ * (process.cwd()) and creates absent supported files. Prints a manual snippet when no
+ * agent config is found (global scope only).
  */
 async function handleInstall(args: ParsedArgs): Promise<HandlerOutcome> {
   const remove = args.flags['remove'] === true;
-  await runInstall({ remove, fs: realFsSeam });
+  const project = args.flags['project'] === true;
+  await runInstall({ remove, project, cwd: process.cwd(), fs: realFsSeam });
   return { type: 'success' };
 }
 

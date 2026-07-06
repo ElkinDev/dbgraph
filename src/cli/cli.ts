@@ -33,7 +33,7 @@ Commands:
   explore   Explore a node and its neighbors in the graph
   diff      Compare two snapshots of the graph index
   affected  Analyze DDL to show impacted objects (--json for machine output)
-  install   Wire dbgraph-mcp into supported MCP agents (--remove to undo)
+  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)
   doctor    Run a content-free connectivity self-test (safe to share)
 
 Options:
