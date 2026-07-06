@@ -167,14 +167,14 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
 > doctor` request is content-free BY SPEC (safe to paste) — that is the whole point. Final batch runs the FULL
 > doc-claims verification checklist (design §Testing Strategy "Docs verify").
 
-- [ ] 4.1 Create `.github/ISSUE_TEMPLATE/bug_report.md` (or `.yml`): asks for `dbgraph doctor` output (content-free
+- [x] 4.1 Create `.github/ISSUE_TEMPLATE/bug_report.md` (or `.yml`): asks for `dbgraph doctor` output (content-free
   GUARANTEED by the `connectivity-diagnostics` doctor requirement — safe to paste) + version/OS/engine/repro. Design
   `.github` skeleton.
-- [ ] 4.2 Create `.github/ISSUE_TEMPLATE/feature_request.md` (or `.yml`): problem / proposal / alternatives. Design
+- [x] 4.2 Create `.github/ISSUE_TEMPLATE/feature_request.md` (or `.yml`): problem / proposal / alternatives. Design
   `.github` skeleton.
-- [ ] 4.3 Create `.github/PULL_REQUEST_TEMPLATE.md`: gate checklist (`tsc` / `lint` / `vitest`) + SDD checklist +
+- [x] 4.3 Create `.github/PULL_REQUEST_TEMPLATE.md`: gate checklist (`tsc` / `lint` / `vitest`) + SDD checklist +
   leak-scan + conventional-commit confirmation. Design `.github` skeleton.
-- [ ] 4.4 FINAL GATE (Batch 4) + doc-claims verification checklist (design §Testing Strategy "Docs verify"): (a) every
+- [x] 4.4 FINAL GATE (Batch 4) + doc-claims verification checklist (design §Testing Strategy "Docs verify"): (a) every
   matrix cell / capability claim has a spec citation; (b) copy-paste CLI examples RUN — auto-smoke the content-free
   subset (`--help`, `--version`, `doctor`), MANUAL checklist for `init`/`sync`/`query` against the SQLite torture
   fixture; (c) no-overclaim grep (`download`, `release`, `stable`, `Phase 0`) absent or qualified; (d) leak-scan clean;
@@ -214,16 +214,17 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
 
 ## Definition of Done (tied to the proposal's Success Criteria)
 
-- [ ] `README.md` no longer claims "Phase 0 / do not use"; every feature-matrix cell traces to a canonical spec;
+- [x] `README.md` no longer claims "Phase 0 / do not use"; every feature-matrix cell traces to a canonical spec;
   binaries described as source-only until v1.0. — Batch 2 (2.1, 2.2, 2.3, 2.7)
-- [ ] README has TROUBLESHOOTING (real F-1..F-7 breaks + shipped remedies) and a Limitations section (MongoDB structural
+- [x] README has TROUBLESHOOTING (real F-1..F-7 breaks + shipped remedies) and a Limitations section (MongoDB structural
   `$sample`, opt-in inference, no published release). — Batch 2 (2.6, 2.7)
-- [ ] `CONTRIBUTING.md` documents the gate, strict TDD, SDD cycle, `hooks:install`, and the three test tiers. — Batch 3 (3.1)
-- [ ] `SECURITY.md` states the read-only / env-indirection / content-free posture + private disclosure. — Batch 3 (3.2)
-- [ ] `.github/` bug template requests content-free `dbgraph doctor` output; feature + PR templates present. — Batch 4 (4.1, 4.2, 4.3)
-- [ ] `install --project` writes project-scoped config for ALL 6 verified agents (incl. Codex `.codex/config.toml` with
+- [x] `CONTRIBUTING.md` documents the gate, strict TDD, SDD cycle, `hooks:install`, and the three test tiers. — Batch 3 (3.1)
+- [x] `SECURITY.md` states the read-only / env-indirection / content-free posture + private disclosure. — Batch 3 (3.2)
+- [x] `.github/` bug template requests content-free `dbgraph doctor` output; feature + PR templates present. — Batch 4 (4.1, 4.2, 4.3)
+- [x] `install --project` writes project-scoped config for ALL 6 verified agents (incl. Codex `.codex/config.toml` with
   the trust-caveat suffix — SUPERSEDES the proposal's earlier "Codex excluded / errors actionably" assumption), CREATES
   absent project files, keeps the `unsupported` path DORMANT for future unverifiable agents; global (no-flag) behavior
   UNCHANGED; `--remove --project` mirrors it (never deletes files). — Batch 1 (1.4–1.10)
-- [ ] `mcp-server` (7 scenarios) + `cli-config` (banner, 3 scenarios) deltas are satisfied; `npx tsc --noEmit` strict +
-  `npm run lint` 0/0 + `npm test` clean (baseline 2907); leak-scan clean across all batches. — Batch 1 (1.11) + every batch GATE
+- [x] `mcp-server` (7 scenarios) + `cli-config` (banner, 3 scenarios) deltas are satisfied; `npx tsc --noEmit` strict +
+  `npm run lint` 0/0 + `npm test` clean (baseline 2907 → 2952 with Batch 1 project suites); leak-scan clean across all
+  batches. — Batch 1 (1.11) + every batch GATE
