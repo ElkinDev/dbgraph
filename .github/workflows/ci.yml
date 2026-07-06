@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs: a newer push/PR-sync on the same ref supersedes the
+# in-flight run, so keep only the latest per workflow+ref. Saves scarce CI quota.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     strategy:
