@@ -26,6 +26,8 @@ import type { CapabilityMatrix } from '../../index.js';
 import type { HandlerOutcome } from '../dispatch.js';
 import { openConnections } from '../../index.js';
 import { runSync } from './sync.js';
+import { createConsoleLogger } from '../log/console-logger.js';
+import { formatSyncSummary } from '../format/sync.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public input types
@@ -102,13 +104,22 @@ function ensureGitignored(projectRoot: string): void {
  * Delegates to openConnections (the single source for config → adapter + store wiring)
  * and then calls runSync.
  *
- * ADR-004: only imports via the public barrel + node builtins.
- * Security: never logs resolved URLs; openConnections handles resolution internally.
+ * OBSERVABILITY (ux-observability, US-005): this is the SECOND runSync caller. It builds a
+ * console Logger (progress → STDERR), passes it to openConnections + runSync, and writes the
+ * PURE-formatted SyncSummary to STDOUT — so the FIRST post-init sync is observable instead of
+ * running silent. The return stays Promise<void> (the summary is written, then discarded) —
+ * source-compatible with runInit's _syncFn seam.
+ *
+ * ADR-004: only imports via the public barrel + CLI-layer siblings + node builtins.
+ * Security: never logs resolved URLs; openConnections handles resolution internally, and the
+ * logger/formatter emit ONLY counts, phase names, drift state and snapshot metadata.
  */
 export async function syncAfterInit(projectRoot: string): Promise<void> {
-  const { adapter, store } = await openConnections(projectRoot);
+  const logger = createConsoleLogger({ level: 'info' });
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
-    await runSync({ adapter, store, full: false });
+    const summary = await runSync({ adapter, store, full: false, logger });
+    process.stdout.write(formatSyncSummary(summary));
   } finally {
     await adapter.close();
     await store.close();

@@ -172,6 +172,7 @@ afterEach(() => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { runSync } from '../../../src/cli/commands/sync.js';
+import { createConsoleLogger } from '../../../src/cli/log/console-logger.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Task 4.2: Fingerprint short-circuit (no extraction when fp unchanged)
@@ -284,12 +285,156 @@ describe('runSync — delta application', () => {
     expect(snap.engine).toBe('sqlite');
   });
 
-  it('returns success outcome', async () => {
+  it('returns a SyncSummary (migrated from {type:success}) — task 2.3', async () => {
     const adapter = makeFakeAdapter({ fingerprint: 'fp-x', extractNodes: [] });
     const store = makeFakeStore({ snapshots: [] });
 
-    const outcome = await runSync({ adapter, store, full: false });
+    const summary = await runSync({ adapter, store, full: false });
 
-    expect(outcome.type).toBe('success');
+    // The old contract returned HandlerOutcome {type:'success'}; the new contract
+    // returns a typed SyncSummary. Coverage is MIGRATED, not deleted.
+    expect(summary.mode).toBe('incremental');
+    expect(summary.counts).toStrictEqual({});
+    expect(summary.upserted).toBe(0);
+    expect(summary.deleted).toBe(0);
+    expect(summary.fingerprint).toBe('fp-x');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 2.2: runSync returns SyncSummary + emits phase logs via injected Logger
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runSync — SyncSummary return + phase logging (task 2.2)', () => {
+  it('returns a full SyncSummary and logs extract → delta → snapshot phases', async () => {
+    const captured: string[] = [];
+    const logger = createConsoleLogger({ write: (t) => captured.push(t) });
+    const newNode = makeNode('id-table-a', 'table_a', 'hash-a');
+    const adapter = makeFakeAdapter({ fingerprint: 'fp-new', extractNodes: [newNode] });
+    const store = makeFakeStore({ snapshots: [] });
+
+    const summary = await runSync({ adapter, store, full: false, logger });
+
+    // first sync (full=false) → mode 'incremental'
+    expect(summary.mode).toBe('incremental');
+    expect(summary.counts).toStrictEqual({ table: 1 });
+    expect(summary.upserted).toBe(1);
+    expect(summary.deleted).toBe(0);
+    expect(summary.hasDrift).toBe(false); // no prior snapshot
+    expect(summary.fingerprint).toBe('fp-new');
+    expect(summary.snapshotId).not.toBe('');
+
+    // Exact phase lines (snapshot id derived from the same run → deterministic pin)
+    expect(captured).toStrictEqual([
+      '[info] extract started\n',
+      '[info] delta computed {"upserted":1,"deleted":0}\n',
+      `[info] snapshot written {"id":"${summary.snapshotId}"}\n`,
+    ]);
+  });
+
+  it('mode is "full" when --full forces extraction over an unchanged fingerprint', async () => {
+    const fp = 'fp-same';
+    const adapter = makeFakeAdapter({ fingerprint: fp, extractNodes: [makeNode('id-1', 't1', 'h1')] });
+    const store = makeFakeStore({
+      snapshots: [{ id: 'snap-1', takenAt: '2024-01-01T00:00:00.000Z', engine: 'sqlite', fingerprint: fp, counts: {} }],
+    });
+
+    const summary = await runSync({ adapter, store, full: true });
+
+    expect(summary.mode).toBe('full');
+    // stored === live → no drift even though --full forced a rebuild
+    expect(summary.hasDrift).toBe(false);
+    expect(summary.upserted).toBe(1);
+  });
+
+  it('hasDrift is true when the stored fingerprint differs from live', async () => {
+    const adapter = makeFakeAdapter({ fingerprint: 'fp-new', extractNodes: [] });
+    const store = makeFakeStore({
+      snapshots: [{ id: 'snap-1', takenAt: '2024-01-01T00:00:00.000Z', engine: 'sqlite', fingerprint: 'fp-old', counts: {} }],
+    });
+
+    const summary = await runSync({ adapter, store, full: false });
+
+    expect(summary.mode).toBe('incremental');
+    expect(summary.hasDrift).toBe(true);
+  });
+
+  it('returns mode:skipped and logs "extraction skipped" when fingerprint is unchanged', async () => {
+    const captured: string[] = [];
+    const logger = createConsoleLogger({ write: (t) => captured.push(t) });
+    const fp = 'fp-unchanged';
+    const adapter = makeFakeAdapter({ fingerprint: fp });
+    const store = makeFakeStore({
+      snapshots: [{ id: 'snap-1', takenAt: '2024-01-01T00:00:00.000Z', engine: 'sqlite', fingerprint: fp, counts: {} }],
+    });
+
+    const summary = await runSync({ adapter, store, full: false, logger });
+
+    expect(summary).toStrictEqual({
+      mode: 'skipped',
+      counts: {},
+      upserted: 0,
+      deleted: 0,
+      hasDrift: false,
+      snapshotId: '',
+      fingerprint: fp,
+    });
+    expect(captured).toStrictEqual(['[info] extraction skipped\n']);
+    // no extraction happened
+    expect(adapter._extractCallCount.count).toBe(0);
+  });
+
+  it('works without an injected logger (defaults to noop — back-compat, D6)', async () => {
+    const adapter = makeFakeAdapter({ fingerprint: 'fp-x', extractNodes: [] });
+    const store = makeFakeStore({ snapshots: [] });
+
+    // No logger passed — must not throw and must still return a SyncSummary.
+    const summary = await runSync({ adapter, store, full: false });
+
+    expect(summary.mode).toBe('incremental');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 2.4: content-safety — the logger + summary NEVER leak names/secrets/data values
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runSync — content-safety non-leakage (task 2.4)', () => {
+  const SENTINEL = 'S3CR3T-SENTINEL';
+
+  it('captured logger output + formatted summary contain ONLY counts/id/fingerprint — never the sentinel', async () => {
+    const captured: string[] = [];
+    const logger = createConsoleLogger({ write: (t) => captured.push(t) });
+
+    // The sentinel is planted where REAL sensitive content would flow into the sync:
+    //   - a schema object identifier (node name), and
+    //   - a sampled data value inside the node payload.
+    // runSync emits ONLY per-kind counts, upserted/deleted totals, snapshot id and the
+    // (content-free) fingerprint — so the sentinel MUST never surface in any output.
+    const secretNode: GraphNode = {
+      id: 'id-secret',
+      kind: 'table',
+      schema: SENTINEL, // schema name — MUST NOT leak
+      name: `${SENTINEL}_table`, // object identifier — MUST NOT leak
+      qname: `${SENTINEL}.${SENTINEL}_table`,
+      level: 'full',
+      missing: false,
+      excluded: false,
+      bodyHash: 'hash-x',
+      payload: { sampledValue: SENTINEL }, // sampled data value — MUST NOT leak
+    };
+    const adapter = makeFakeAdapter({ fingerprint: 'fp-safe-hash', extractNodes: [secretNode] });
+    const store = makeFakeStore({ snapshots: [] });
+
+    const { formatSyncSummary } = await import('../../../src/cli/format/sync.js');
+    const summary = await runSync({ adapter, store, full: false, logger });
+    const rendered = formatSyncSummary(summary);
+
+    const allOutput = captured.join('') + rendered;
+
+    expect(allOutput).not.toContain(SENTINEL);
+    // Positive control: the safe, content-free fields ARE present.
+    expect(rendered).toContain('fp-safe-hash');
+    expect(rendered).toContain('table'); // per-kind COUNT label (the kind name is a fixed enum, not a schema identifier)
   });
 });

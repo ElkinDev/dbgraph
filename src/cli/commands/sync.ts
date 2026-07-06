@@ -17,10 +17,12 @@ import type {
   GraphNode,
   NodeKind,
 } from '../../index.js';
-import type { HandlerOutcome } from '../dispatch.js';
 import { computeDelta } from '../sync/incremental.js';
 import { NODE_KINDS } from '../../index.js';
 import { randomUUID } from 'node:crypto';
+import type { Logger } from '../../core/ports/logger.js';
+import { noopLogger } from '../../core/ports/logger.js';
+import type { SyncSummary } from '../format/sync.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public input type
@@ -33,6 +35,16 @@ export interface SyncOptions {
   readonly store: GraphStore;
   /** When true, skip the fingerprint short-circuit and force a full re-extract. */
   readonly full: boolean;
+  /**
+   * Optional Logger for observable progress (Design Decision D6).
+   * Defaults to noopLogger — back-compat, mirrors openConnections. runSync logs
+   * phase transitions (extract / delta / snapshot) but NEVER formats or writes I/O:
+   * the handler owns process.stdout via formatSyncSummary.
+   *
+   * CONTENT-SAFETY: only count/phase/id scalars are ever passed as log meta — never
+   * schema names, object identifiers, connection strings, secrets, or sampled values.
+   */
+  readonly logger?: Logger;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -49,10 +61,12 @@ export interface SyncOptions {
  *   4. Otherwise: extract → normalizeCatalog → computeDelta → apply delta → putSnapshot.
  *
  * The node-selection logic (computeDelta) is pure and unit-tested separately (task 4.1).
- * Returns HandlerOutcome { type: 'success' } on success.
+ * Emits phase progress through the injected Logger (Design Decision D6) and returns a
+ * typed SyncSummary (Design Decision D5) — the handler formats + writes it to stdout.
  */
-export async function runSync(options: SyncOptions): Promise<HandlerOutcome> {
+export async function runSync(options: SyncOptions): Promise<SyncSummary> {
   const { adapter, store, full } = options;
+  const logger = options.logger ?? noopLogger;
 
   // Step 1: Get live fingerprint
   const liveFingerprint = await adapter.fingerprint();
@@ -64,11 +78,24 @@ export async function runSync(options: SyncOptions): Promise<HandlerOutcome> {
 
   // Step 3: Short-circuit if fingerprint is unchanged and not forcing full rebuild
   if (!full && storedFingerprint !== null && storedFingerprint === liveFingerprint) {
-    // No changes — skip extraction entirely
-    return { type: 'success' };
+    // No changes — skip extraction entirely (but SPEAK it — no more silent exit).
+    logger.info('extraction skipped');
+    return {
+      mode: 'skipped',
+      counts: {},
+      upserted: 0,
+      deleted: 0,
+      hasDrift: false,
+      snapshotId: '',
+      fingerprint: liveFingerprint,
+    };
   }
 
+  // Drift = the stored fingerprint existed AND differed from live (this sync resolves it).
+  const hasDrift = storedFingerprint !== null && storedFingerprint !== liveFingerprint;
+
   // Step 4: Extract the schema
+  logger.info('extract started');
   const scope = {
     levels: adapter.capabilities.defaultLevels,
   };
@@ -83,6 +110,8 @@ export async function runSync(options: SyncOptions): Promise<HandlerOutcome> {
 
   // Step 7: Compute the delta (pure function)
   const delta = computeDelta(existingNodes, freshNodes);
+  const upserted = delta.toUpsert.length;
+  const deleted = delta.toDelete.length;
 
   // Step 8: Apply the delta
   if (delta.toDelete.length > 0) {
@@ -99,6 +128,9 @@ export async function runSync(options: SyncOptions): Promise<HandlerOutcome> {
     });
   }
 
+  // Content-safety: only count scalars are logged — never node names or values.
+  logger.info('delta computed', { upserted, deleted });
+
   // Step 9: Build per-kind counts from fresh nodes
   const counts = buildCounts(freshNodes);
 
@@ -111,8 +143,18 @@ export async function runSync(options: SyncOptions): Promise<HandlerOutcome> {
     counts,
   };
   await store.putSnapshot(snapshot);
+  logger.info('snapshot written', { id: snapshot.id });
 
-  return { type: 'success' };
+  // Step 11: Build the observable summary (Design Decision D5).
+  return {
+    mode: full ? 'full' : 'incremental',
+    counts,
+    upserted,
+    deleted,
+    hasDrift,
+    snapshotId: snapshot.id,
+    fingerprint: liveFingerprint,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

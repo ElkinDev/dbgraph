@@ -88,8 +88,11 @@ describe.skipIf(!mssqlIntegrationEnabled())(
       const store = await createSqliteGraphStore({ path: storePath });
 
       try {
-        const result = await runSync({ adapter, store, full: false });
-        expect(result.type).toBe('success');
+        // runSync now returns a SyncSummary (was HandlerOutcome {type:'success'}) — migrated
+        // assertion (ux-observability task 2.3). First sync over a fresh store → incremental.
+        const summary = await runSync({ adapter, store, full: false });
+        expect(summary.mode).toBe('incremental');
+        expect(summary.fingerprint).not.toBe('');
       } finally {
         await adapter.close();
         await store.close();

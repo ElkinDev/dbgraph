@@ -80,14 +80,14 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
 > leak + `--json` byte-identity. The `HandlerOutcome → SyncSummary` return change touches the two callers + the existing
 > `runSync` unit tests that assert `{type:'success'}` — ALL must be updated in this batch.
 
-- [ ] 2.1 RED→GREEN `test/cli/format/sync.test.ts` (new) + `src/cli/format/sync.ts` (new): define the `SyncSummary`
+- [x] 2.1 RED→GREEN `test/cli/format/sync.test.ts` (new) + `src/cli/format/sync.ts` (new): define the `SyncSummary`
   interface (per RESOLVED shape) + PURE `formatSyncSummary(view): string`. Golden-pin the EXACT output string
   (`.toBe`) for a known delta view — per-kind counts (SORTED kinds), `upserted`/`deleted` totals, drift state, snapshot
   id + fingerprint; mirror `format/status.ts` line shape (`lines[].join('\n')+'\n'`). Assert determinism:
   `formatSyncSummary(view) === formatSyncSummary(view)` byte-for-byte (run1 `.toBe` run2). Assert NO timing token /
   no `ms`/elapsed substring appears in the output (ADR-008, D4). Add a `mode:'skipped'` golden line ("already up to
   date"). Spec scenario: "sync emits a deterministic golden-pinned summary". Done: `npx tsc --noEmit`; `npm test format/sync`.
-- [ ] 2.2 RED→GREEN `test/cli/commands/sync.test.ts` (extend) + `src/cli/commands/sync.ts`: change `SyncOptions` to add
+- [x] 2.2 RED→GREEN `test/cli/commands/sync.test.ts` (extend) + `src/cli/commands/sync.ts`: change `SyncOptions` to add
   `logger?: Logger` (default `noopLogger` from `../../index.js`); change `runSync` return to `Promise<SyncSummary>`
   (build it in step 9/10: `mode` = `full?'full':'incremental'` on extract, `'skipped'` on the short-circuit;
   `counts` from `buildCounts`; `upserted = delta.toUpsert.length`; `deleted = delta.toDelete.length`;
@@ -98,18 +98,18 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
   `.toStrictEqual` on captured array). Spec scenarios: "Changed source applies only the delta and records a snapshot",
   "Unchanged fingerprint skips extraction" (now emits an up-to-date line, no silent exit), "--full forces a complete
   rebuild". Done: `npx tsc --noEmit`; `npm test commands/sync`.
-- [ ] 2.3 UPDATE (RED expected, then GREEN) the EXISTING `runSync` assertions in `test/cli/commands/sync.test.ts` that
+- [x] 2.3 UPDATE (RED expected, then GREEN) the EXISTING `runSync` assertions in `test/cli/commands/sync.test.ts` that
   read `outcome.type === 'success'` (the `describe('runSync — delta application')` "returns success outcome" case at
   ~L287–294, and any `{type:'success'}` reliance): replace with `SyncSummary` field assertions (`.mode`, `.counts`,
   `.upserted`, `.deleted`, `.fingerprint`). These tests MUST go RED on the signature change and GREEN once updated — do
   NOT delete coverage, MIGRATE it. Done: `npm test commands/sync` green.
-- [ ] 2.4 RED→GREEN `test/cli/commands/sync.test.ts` (extend) — content-safety NON-LEAKAGE: plant a SENTINEL secret
+- [x] 2.4 RED→GREEN `test/cli/commands/sync.test.ts` (extend) — content-safety NON-LEAKAGE: plant a SENTINEL secret
   (e.g. `'S3CR3T-SENTINEL'`) into the path that resolves connection identity (through REAL config resolution feeding
   the fake adapter/store, NOT hand-injected into `meta`), run a sync with a CAPTURING logger + capture the formatted
   summary, then assert the FULL captured output (all logger lines + the formatted summary) NEVER contains the sentinel,
   any connection-string value, or a sampled data value. Spec scenario: "sync output never leaks secrets or sampled
   data". Done: `npm test commands/sync`; `test/security/no-secret-leak.test.ts` still green.
-- [ ] 2.5 RED→GREEN `test/cli/dispatch.test.ts` (new or extend) + `src/cli/dispatch.ts`: `handleSync` builds
+- [x] 2.5 RED→GREEN `test/cli/dispatch.test.ts` (new or extend) + `src/cli/dispatch.ts`: `handleSync` builds
   `createConsoleLogger({ level: (args.flags['quiet'] === true || args.flags['q'] === true) ? 'warn' : 'info' })`,
   passes it to `openConnections(projectRoot, logger)` AND `runSync({ adapter, store, full, logger })`, then writes
   `formatSyncSummary(summary)` to `process.stdout` (mirroring `handleStatus`' `process.stdout.write(result.output)`).
@@ -119,19 +119,19 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
   progress on the captured STDERR seam while STDOUT summary is UNCHANGED. `handleSync` still returns `{type:'success'}`
   (exit code unchanged). Spec scenarios: "Observable output does not change exit codes", "--quiet suppresses progress
   but keeps warnings and errors". Done: `npx tsc --noEmit`; `npm test dispatch`.
-- [ ] 2.6 RED→GREEN `test/cli/commands/init.test.ts` (extend) + `src/cli/commands/init.ts`: thread a logger through the
+- [x] 2.6 RED→GREEN `test/cli/commands/init.test.ts` (extend) + `src/cli/commands/init.ts`: thread a logger through the
   SECOND `runSync` caller. `syncAfterInit` builds a `createConsoleLogger(...)`, passes it to `openConnections` +
   `runSync`, and writes `formatSyncSummary(summary)` to `process.stdout` so post-init sync is OBSERVABLE (today it
   discards the result and runs silent). `syncAfterInit` return stays `Promise<void>` (result discarded after formatting)
   — source-compatible with `runInit`'s `_syncFn` seam. RED: assert that after `runInit` (real `syncAfterInit`, fake
   connections) a non-empty sync summary reaches STDOUT. Spec scenario: "sync emits a deterministic golden-pinned
   summary" (post-init path). Done: `npx tsc --noEmit`; `npm test commands/init`.
-- [ ] 2.7 RED→GREEN `test/cli/cli.test.ts` (extend) or `test/cli/e2e.test.ts`: confirm `--json` BYTE-IDENTITY +
+- [x] 2.7 RED→GREEN `test/cli/cli.test.ts` (extend) or `test/cli/e2e.test.ts`: confirm `--json` BYTE-IDENTITY +
   stream discipline. For a `--json`-supporting command (`query`/`affected`), assert STDOUT is byte-identical to the
   pre-change golden (existing `--json` goldens are the regression net) AND that human diagnostics/progress appear on the
   STDERR seam ONLY, never STDOUT. Spec scenario: "--json payloads stay byte-identical and diagnostics go to STDERR".
   Done: `npm test` (the `--json` suites pass UNCHANGED).
-- [ ] 2.8 GATE (Batch 2 — load-bearing): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` full suite
+- [x] 2.8 GATE (Batch 2 — load-bearing): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` full suite
   green INCLUDING the migrated `runSync` tests (2.3), the non-leakage test (2.4), the `--json` byte-identity (2.7), and
   the unchanged exit-code + `no-secret-leak` suites. Confirm `git diff` on existing `test/golden/**` / `--json` goldens
   is EMPTY (no re-bless) — ANY drift is a HARD STOP (observability leaked into a machine payload; investigate, do NOT
@@ -189,17 +189,17 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
 
 ## Definition of Done (tied to the proposal's Acceptance Criteria)
 
-- [ ] `dbgraph sync` prints visible PROGRESS (extract started/skipped, delta computed, snapshot written) and a final
+- [x] `dbgraph sync` prints visible PROGRESS (extract started/skipped, delta computed, snapshot written) and a final
   SUMMARY (per-kind counts, upserted/deleted delta, drift state, snapshot id/fingerprint) through the wired console
   logger + pure formatter — no more silent runs, from BOTH `handleSync` AND the post-init `syncAfterInit` path. — Batch 2 (2.2, 2.5, 2.6)
-- [ ] The sync summary is produced by a PURE deterministic formatter, golden-pinned (ADR-008); elapsed timing is NOT in
+- [x] The sync summary is produced by a PURE deterministic formatter, golden-pinned (ADR-008); elapsed timing is NOT in
   the pinned body (timing flows through the logger seam). — Batch 2 (2.1)
-- [ ] The console logger is unit-tested via a CAPTURED-OUTPUT write-seam — no real stdout/stderr in tests. — Batch 1 (1.1, 1.2)
-- [ ] A test asserts NO secret, connection-string value, or sampled data value appears in captured logger/formatter
+- [x] The console logger is unit-tested via a CAPTURED-OUTPUT write-seam — no real stdout/stderr in tests. — Batch 1 (1.1, 1.2)
+- [x] A test asserts NO secret, connection-string value, or sampled data value appears in captured logger/formatter
   output (dbgraph-security); the `no-secret-leak` gate stays green. — Batch 2 (2.4)
-- [ ] `--quiet`/`-q` suppresses info/progress while preserving warn/error; `--quiet` parses without consuming the next
+- [x] `--quiet`/`-q` suppresses info/progress while preserving warn/error; `--quiet` parses without consuming the next
   token. — Batch 1 (1.2, 1.3), Batch 2 (2.5)
-- [ ] All existing command tests pass (the migrated `runSync` `{type:'success'}` tests now assert `SyncSummary`); every
+- [x] All existing command tests pass (the migrated `runSync` `{type:'success'}` tests now assert `SyncSummary`); every
   `--json` output is BYTE-IDENTICAL to before, diagnostics on STDERR only; exit codes (0/1/2/3/4) unchanged. — Batch 2 (2.3, 2.7, 2.8)
 - [ ] The `cli.ts` help/usage banner describes `install` as multi-agent (NO "Claude Desktop"), consistent with
   `install.ts`'s `MANUAL_SNIPPET`; a unit test pins the banner so a single-agent regression fails the build. — Batch 3 (3.1)
