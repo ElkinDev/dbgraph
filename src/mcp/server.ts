@@ -35,6 +35,7 @@ import {
 
 import { DBGRAPH_INSTRUCTIONS } from './instructions.js';
 import { DbgraphError, openConnections, type GraphStore } from '../index.js';
+import { parseMcpFlags, startHttpMcpServer, type HttpMcpServerHandle } from './http.js';
 
 // ── Batch C tool handlers ─────────────────────────────────────────────────────
 import { runExploreTool } from './tools/explore.js';
@@ -426,6 +427,38 @@ export async function startMcpServer(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// runMcpBin — the npm `dbgraph-mcp` auto-run dispatch (task 1.3, design D1).
+// Parses `process.argv.slice(2)` via the SHARED parseMcpFlags and dispatches:
+//   { kind:'stdio' } → startMcpServer()  (default — today's byte-identical STDIO path)
+//   { kind:'http' }  → startHttpMcpServer({host,port,quiet})
+// The bin IS the server, so there is NO `mcp` token to strip (unlike the SEA seam).
+// createDbgraphServer / startMcpServer / the 8-tool table stay UNTOUCHED.
+// Dependencies are injectable so the dispatch is unit-testable without a real listener.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Injectable dependencies for {@link runMcpBin} (testing seam). */
+export interface RunMcpBinDeps {
+  startStdio?: () => Promise<void>;
+  startHttp?: (opts: { host: string; port: number; quiet: boolean }) => Promise<HttpMcpServerHandle>;
+}
+
+/**
+ * Dispatches the npm `dbgraph-mcp` bin argv to STDIO (default) or Streamable HTTP.
+ * Throws {@link ConfigError} (via parseMcpFlags) on an invalid `--port`/`--host`;
+ * the auto-run guard's catch maps that to exit 2.
+ */
+export async function runMcpBin(argv: readonly string[], deps: RunMcpBinDeps = {}): Promise<void> {
+  const plan = parseMcpFlags(argv);
+  if (plan.kind === 'http') {
+    const startHttp = deps.startHttp ?? startHttpMcpServer;
+    await startHttp({ host: plan.host, port: plan.port, quiet: plan.quiet });
+    return;
+  }
+  const startStdio = deps.startStdio ?? ((): Promise<void> => startMcpServer());
+  await startStdio();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stdio entry point — only runs when executed directly, not when imported.
 // The auto-run guard is UNCHANGED so the npm `dbgraph-mcp` bin behaves identically.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -446,11 +479,17 @@ if (isMain) {
   // Fire-and-forget instead of a top-level `await`: esbuild cannot bundle top-level
   // await into the CJS SEA main (design D4), and sea-entry imports startMcpServer from
   // this module. Runtime behavior on the npm `dbgraph-mcp` (ESM) path is preserved —
-  // the stdio server starts and the process stays alive via the transport; a connect
-  // failure now surfaces via explicit handling (exit 2) instead of an unhandled rejection.
-  // In the SEA bundle import.meta.url is empty, so `isMain` is false here and sea-entry
-  // dispatches `dbgraph mcp` instead (design D5).
-  void startMcpServer().catch((err: unknown) => {
+  // with no `--http` flag parseMcpFlags returns { kind:'stdio' } and runMcpBin calls
+  // startMcpServer() with no args (today's exact, byte-identical path); the stdio server
+  // starts and the process stays alive via the transport. A parse ConfigError (invalid
+  // --port/--host) or a connect failure surfaces via explicit handling (exit 2) instead
+  // of an unhandled rejection. In the SEA bundle import.meta.url is empty, so `isMain`
+  // is false here and sea-entry dispatches `dbgraph mcp` instead (design D5).
+  void runMcpBin(process.argv.slice(2)).catch((err: unknown) => {
+    if (err instanceof DbgraphError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(2);
+    }
     console.error('Unexpected error:', err);
     process.exit(2);
   });

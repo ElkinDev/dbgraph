@@ -72,32 +72,32 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 > level — every seam is pure TypeScript, RED→GREEN in `npm test`, NO listener bound. The off-flag branch is
 > BYTE-IDENTICAL to today, so `git diff --exit-code test/mcp/golden/` stays EMPTY. Realizes D1.
 
-- [ ] 1.1 **(vitest)** RED→GREEN `test/mcp/http.test.ts` (new) + `src/mcp/http.ts` `parseMcpFlags(args)`: PURE
+- [x] 1.1 **(vitest)** RED→GREEN `test/mcp/http.test.ts` (new) + `src/mcp/http.ts` `parseMcpFlags(args)`: PURE
   `{kind:'stdio'} | {kind:'http',host,port,quiet}`. RED first: `[]`→stdio; `['--http']`→http with default host
   `127.0.0.1`, port `7423`, quiet `false`; `['--http','--port','8000']`→port 8000; `['--http','--host','0.0.0.0']`→host
   set; `['--http','--quiet']`/`-q`→quiet; `['--http','--port','notaport']`→throws `ConfigError` naming the value;
   `['--http','--host']` (no value)→throws `ConfigError`. Exit-2 mapping is the EXISTING seam catch (`DbgraphError`→2), NOT
   re-implemented here. Spec: cli-config S "--http starts HTTP mode…" / "Invalid --port exits 2" / "--host without a value
   exits 2". Design D1/D4. Done: `npx tsc --noEmit`; `npm test http`.
-- [ ] 1.2 **(vitest)** RED→GREEN `test/bin/sea-entry.test.ts` (extend) + `src/bin/sea-entry.ts`: `EntryPlan` `mcp` variant
+- [x] 1.2 **(vitest)** RED→GREEN `test/bin/sea-entry.test.ts` (extend) + `src/bin/sea-entry.ts`: `EntryPlan` `mcp` variant
   carries `transport: parseMcpFlags(argsAfterMcp)`; `runSeaEntry` dispatches `stdio → startMcpServer()` vs `http →
   startHttpMcpServer(opts)`. RED first: `planEntry(['mcp'])`→`{mode:'mcp',transport:{kind:'stdio'}}`;
   `planEntry(['mcp','--http','--port','7423'])`→http transport plan; NON-mcp argv unchanged; `NODE/SEA_ARGV_OFFSET` seam
   untouched. Spec: cli-config S "--http starts HTTP mode through both seams" / "Bare mcp stays byte-identical STDIO"; mcp-server
   S "Bare mcp stays byte-identical STDIO across both entry seams". Design D1. Done: `npx tsc --noEmit`; `npm test sea-entry`.
-- [ ] 1.3 **(vitest)** RED→GREEN `test/mcp/server.test.ts` (extend) + `src/mcp/server.ts` bin guard: the npm `dbgraph-mcp`
+- [x] 1.3 **(vitest)** RED→GREEN `test/mcp/server.test.ts` (extend) + `src/mcp/server.ts` bin guard: the npm `dbgraph-mcp`
   auto-run guard parses `process.argv.slice(2)` via the SAME `parseMcpFlags` → `stdio` (default, byte-identical) vs
   `startHttpMcpServer`. `createDbgraphServer`/`startMcpServer`/the 8-tool table UNTOUCHED. RED first: argv `[]`→stdio path
   fires unchanged (no new output, no branch); `['--http']`→http path selected. Spec: cli-config S "--http starts HTTP mode
   through both seams" / "Bare mcp stays byte-identical STDIO"; mcp-server S "Bare mcp stays byte-identical STDIO". Design D1.
   Done: `npx tsc --noEmit`; `npm test server`.
-- [ ] 1.4 **(vitest)** RED→GREEN STDIO byte-identity regression (extend 1.2/1.3 + the phase-5 harness): assert BOTH seams
+- [x] 1.4 **(vitest)** RED→GREEN STDIO byte-identity regression (extend 1.2/1.3 + the phase-5 harness): assert BOTH seams
   with no `--http` reach `startMcpServer()` with no args (today's exact path), NO listener socket is bound, and the phase-5
   in-process `InMemoryTransport` 8-tool goldens still pin the surface (factory untouched) → `git diff --exit-code
   test/mcp/golden/` EMPTY. Spec: mcp-http-transport S "Without HTTP mode no socket is opened"; mcp-server S "Bare mcp stays
   byte-identical STDIO across both entry seams"; cli-config S "Bare mcp stays byte-identical STDIO through both seams".
   Design D1. Done: `npm test`; goldens empty.
-- [ ] 1.5 GATE (Batch 1): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + parser/seam
+- [x] 1.5 GATE (Batch 1): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + parser/seam
   suites); `git diff --exit-code test/mcp/golden/` EMPTY; confirm NO listener is opened off-flag and the `dbgraph`/`dbgraph-mcp`
   bins are unchanged. Then COMMIT `feat(http-transport): shared parseMcpFlags threaded through both MCP entry seams`.
 
