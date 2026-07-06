@@ -51,24 +51,24 @@ gate stay GREEN. Diagnostics MUST appear on STDERR only — never STDOUT.
 > stdio. Maps to spec scenarios "--quiet suppresses progress but keeps warnings and errors" and (foundation for)
 > "--json payloads stay byte-identical and diagnostics go to STDERR".
 
-- [ ] 1.1 RED→GREEN `test/cli/log/console-logger.test.ts` (new) + `src/cli/log/console-logger.ts` (new): define
+- [x] 1.1 RED→GREEN `test/cli/log/console-logger.test.ts` (new) + `src/cli/log/console-logger.ts` (new): define
   `LogLevel` + `ConsoleLoggerOptions { write?, level? }` + `createConsoleLogger(opts?): Logger`. Inject a capturing
   `write: (t) => lines.push(t)` seam; assert `logger.info('extract…')` / `.warn(...)` / `.error(...)` emit a
   formatted `level msg` line through the seam (EXACT string, `.toBe`), and that `meta` count/phase scalars render
   deterministically (same input → same bytes). Assert the adapter satisfies the `Logger` port type (compile-level —
   assign to `Logger`). NO real `process.stderr` touched in the test. Spec scenario: "--json payloads stay
   byte-identical and diagnostics go to STDERR" (STDERR-seam half). Done: `npm test console-logger`.
-- [ ] 1.2 RED→GREEN `test/cli/log/console-logger.test.ts` (extend): level suppression. Default level `'info'` emits
+- [x] 1.2 RED→GREEN `test/cli/log/console-logger.test.ts` (extend): level suppression. Default level `'info'` emits
   debug?(no)/info/warn/error per the contract; `createConsoleLogger({ write, level: 'warn' })` (the `--quiet` level)
   SUPPRESSES `debug` + `info` (zero seam writes) while STILL emitting `warn` + `error`. Assert captured line count +
   exact surviving lines (`.toStrictEqual` on the captured array). Spec scenario: "--quiet suppresses progress but
   keeps warnings and errors". Done: `npm test console-logger`.
-- [ ] 1.3 RED→GREEN `test/cli/parse/args.test.ts` (extend) + `src/cli/parse/args.ts`: add `'quiet'` to
+- [x] 1.3 RED→GREEN `test/cli/parse/args.test.ts` (extend) + `src/cli/parse/args.ts`: add `'quiet'` to
   `BOOLEAN_LONG_FLAGS` (L29). RED first: assert `parseArgv(['sync','--quiet','extra']).flags['quiet'] === true` AND
   `positionals === ['extra']` (proves `--quiet` does NOT greedily consume the next token); assert `-q` already parses
   as `flags['q'] === true` (regression guard, no code change for `-q`). Spec scenario: "--quiet suppresses progress
   but keeps warnings and errors" (parse half). Done: `npm test args`.
-- [ ] 1.4 GATE (Batch 1): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` full suite green. Confirm
+- [x] 1.4 GATE (Batch 1): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` full suite green. Confirm
   NO command behavior changed yet (dispatch/sync/init untouched) — the adapter + flag are dormant until Batch 2. Confirm
   the existing `--json`/status/diff/exit-code/no-secret-leak suites are UNCHANGED-green. Done: all three gate commands pass.
 

@@ -26,7 +26,7 @@ export interface ParsedArgs {
  * Boolean-only long flags — these do NOT consume the next token as a value.
  * Short flags are always boolean.
  */
-const BOOLEAN_LONG_FLAGS = new Set(['json', 'full', 'last']);
+const BOOLEAN_LONG_FLAGS = new Set(['json', 'full', 'last', 'quiet']);
 
 /**
  * Parses a raw argv array (already sliced — do NOT include node / script path).
