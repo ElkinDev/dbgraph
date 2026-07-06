@@ -148,17 +148,17 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
 > Satisfies the proposal's CONTRIBUTING + SECURITY success criteria. DOCS. Each claim cites its evidence source (design
 > §Doc content architecture).
 
-- [ ] 3.1 Create `CONTRIBUTING.md`: setup (`npm ci`); per-batch GATE (`build`=tsc-strict, `lint` 0/0, `test`=vitest);
+- [x] 3.1 Create `CONTRIBUTING.md`: setup (`npm ci`); per-batch GATE (`build`=tsc-strict, `lint` 0/0, `test`=vitest);
   strict TDD (RED→GREEN test headers); openspec SDD cycle (`openspec/` proposal→spec→design→tasks→apply→verify→archive);
   conventional commits; `npm run hooks:install` (leak-scan); TEST TIERS (`test` unit / `test:integration`
   Docker-testcontainers / `smoke:binary` — SEPARATE from `npm test`); branch convention. Evidence: `package.json`
   scripts; `openspec/` tree; `binary-distribution` spec (smoke); F-7 (opt-in sqlcmd CI lane). Design CONTRIBUTING skeleton.
-- [ ] 3.2 Create `SECURITY.md`: read-only-by-construction (`cli-config` "Read-only INVIOLABLE"; `mcp-server` read-only);
+- [x] 3.2 Create `SECURITY.md`: read-only-by-construction (`cli-config` "Read-only INVIOLABLE"; `mcp-server` read-only);
   `${env:VAR}` indirection, plaintext rejected (`cli-config` plaintext requirement); sampled values never persisted
   (`cli-config` L41-42; `mongodb-extraction`); content-free diagnostics (`connectivity-diagnostics` doctor requirement);
   local-only storage (`graph-storage`); private disclosure (simple — `package.json` `private:true`). Design SECURITY
   skeleton.
-- [ ] 3.3 GATE (Batch 3 — docs verify): each CONTRIBUTING/SECURITY claim cites its spec; no-overclaim grep clean;
+- [x] 3.3 GATE (Batch 3 — docs verify): each CONTRIBUTING/SECURITY claim cites its spec; no-overclaim grep clean;
   leak-scan clean; `tsc`/`lint`/`test` green. Commit `docs: add CONTRIBUTING and SECURITY`.
 
 ## Batch 4: `.github/` issue + PR templates + FINAL doc-claims verification gate
