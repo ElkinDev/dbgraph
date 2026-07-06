@@ -1,0 +1,131 @@
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# release.yml — standalone SEA binaries for GitHub Releases (US-037, phase-9.5c, design D10/Q7).
+#
+# ⚠️  TRIGGER-GUARDED AND NEVER FIRED THIS PHASE. ⚠️
+# CI quota is exhausted, so this workflow is WRITTEN but must be IMPOSSIBLE to start by accident:
+# it triggers ONLY on a version TAG push (`v*.*.*`) or an explicit manual `workflow_dispatch`.
+# There is deliberately NO `push: { branches }` and NO `pull_request:` trigger — a merge or PR
+# can never start it. No tag is pushed in phase-9.5c, so it stays dormant until 9.5d opts in.
+# The trigger set is pinned by test/bin/release-workflow.test.ts (parses this `on:` block as data).
+#
+# Matrix: windows-latest + ubuntu-latest build the shipped win-x64/linux-x64 binaries; macos-latest
+# is PRESENT BUT DORMANT (Q7) — the macOS SEA leg is deferred to phase-9.5d and its build step is a
+# no-op here. Each leg emits SHA256SUMS over its artifact; the release job aggregates them, attests
+# build provenance (actions/attest-build-provenance), and creates the Release attaching the binaries
+# + SHA256SUMS. The installers (install.ps1 / install.sh) verify that recorded checksum before PATH.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write # create the Release and upload assets
+  id-token: write # OIDC token for build-provenance attestation
+  attestations: write # write the provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build SEA binary (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win-x64
+            asset: dbgraph-win-x64.exe
+          - os: ubuntu-latest
+            target: linux-x64
+            asset: dbgraph-linux-x64
+          # macOS leg PRESENT BUT DORMANT (Q7) — deferred to phase-9.5d; build step is a no-op.
+          - os: macos-latest
+            target: macos-x64
+            asset: dbgraph-macos-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc' # the pinned build Node (24.18.0) — determinism anchor
+          cache: npm
+
+      - run: npm ci
+
+      - name: Assemble SEA binary
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Windows) npm run build:sea:win ;;
+            Linux)   bash scripts/sea/build-sea.sh ;;
+            macOS)
+              echo "::notice::macOS SEA leg is deferred to phase-9.5d (US-037) — not built here."
+              exit 0
+              ;;
+            *) echo "unknown runner OS: ${{ runner.os }}"; exit 1 ;;
+          esac
+
+      - name: Produce SHA256SUMS over the built artifact
+        if: runner.os != 'macOS'
+        shell: bash
+        run: |
+          cd dist/bin
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ matrix.asset }}" > SHA256SUMS
+          else
+            shasum -a 256 "${{ matrix.asset }}" > SHA256SUMS
+          fi
+          cat SHA256SUMS
+
+      - name: Upload binary + checksum
+        if: runner.os != 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: |
+            dist/bin/${{ matrix.asset }}
+            dist/bin/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    name: Attest provenance and publish the Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect binaries and aggregate SHA256SUMS
+        shell: bash
+        run: |
+          mkdir -p release
+          # Flatten every per-target binary into release/ (skip the per-leg SHA256SUMS files).
+          find artifacts -type f ! -name 'SHA256SUMS' -exec cp {} release/ \;
+          # Recompute one aggregate SHA256SUMS over the collected binaries (the integrity anchor).
+          cd release
+          sha256sum dbgraph-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Attest build provenance for the binaries
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'release/dbgraph-*'
+
+      - name: Create the GitHub Release (tag pushes only)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            release/dbgraph-* release/SHA256SUMS \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

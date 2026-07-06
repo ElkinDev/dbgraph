@@ -40,13 +40,15 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-037 — Self-contained binaries (no Node)
 **As** a user without Node installed, **I want** to download a binary and use dbgraph, **so that** I can adopt it without preparing any environment — parity with codegraph's "no Node.js required".
-**Phase:** 9.5 · **Depends on:** US-036 · **Status:** ☐ pending
+**Phase:** 9.5 · **Depends on:** US-036 · **Change:** `phase-9.5c-binaries` · **Status:** ☐ partial (phase-9.5c: win-x64 + linux-x64 SEA binaries build LOCALLY, trigger-guarded `release.yml` + checksum installers written; macOS + actual GitHub-Release publication deferred to 9.5d)
+
+_Note: phase-9.5c landed the LOCAL, CI-quota-safe half via Node SEA (ADR-009): win-x64 (native) + linux-x64 (Docker) binaries, a WRITTEN-but-NEVER-FIRED `release.yml` (tag-push + `workflow_dispatch` only), and checksum-verifying `install.ps1`/`install.sh`. The macOS matrix leg is present-but-dormant and the actual Release publication is deferred to 9.5d (CI-quota-blocked). The "5 drivers statically bundled" AC below is reconciled to external/optional per ADR-009 (which refines ADR-006's bundling clause)._
 
 **Acceptance criteria:**
 - Spike documented in an ADR: Node SEA vs `bun build --compile`, with evidence of the 5 adapters working from a binary of each technology.
 - win-x64/linux-x64/macos-x64/arm64 binaries built in CI, published on GitHub Releases with `SHA256SUMS` + provenance attestations.
 - On a clean machine WITHOUT Node: `dbgraph init` + `sync` + MCP server work from the binary.
-- The binary uses `node:sqlite`/`bun:sqlite` (zero native modules) through the `GraphStore` port; the 5 drivers are statically bundled.
+- The binary uses `node:sqlite`/`bun:sqlite` (zero native modules) through the `GraphStore` port; the 5 DB drivers stay **external, lazy and optional** (dynamic `import()`), NOT statically bundled — reconciled per **ADR-009**, which refines ADR-006's "static bundling in the binaries" clause. The binary's guaranteed capability is READ/serve of an already-indexed graph on the in-binary `node:sqlite` with ZERO drivers; live extraction loads a driver only when one is resolvable (`$CWD/node_modules` → `NODE_PATH` → global), otherwise the established `npm i <driver>` error.
 - PowerShell (`irm|iex`) and sh (`curl|sh`) installers verify the checksum BEFORE installing.
 
 ### US-038 — Multi-agent install

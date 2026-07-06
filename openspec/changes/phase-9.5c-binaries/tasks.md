@@ -245,12 +245,12 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 > **(vitest)**; the fail-closed installer behavior is **(smoke)** against LOCAL fixtures (no release is fired). Q7 (macOS
 > leg) is realized here as present-but-dormant. This batch closes the phase.
 
-- [ ] 4.1 **(vitest)** RED→GREEN `test/bin/asset-name.test.ts` (new) + `scripts/install/asset-name.mjs` (new): pure
+- [x] 4.1 **(vitest)** RED→GREEN `test/bin/asset-name.test.ts` (new) + `scripts/install/asset-name.mjs` (new): pure
   `assetName(platform, arch)`. RED first: `assetName('win32','x64')==='dbgraph-win-x64.exe'`,
   `assetName('linux','x64')==='dbgraph-linux-x64'`; an unsupported pair throws (or a defined sentinel). This is the shared
   contract the ps1/sh replicate. Spec scenario R5 "Fetch is parameterized by version and platform" (asset half). Done:
   `npm test asset-name`.
-- [ ] 4.2 **(vitest)** RED→GREEN `test/bin/release-workflow.test.ts` (new — the TRIGGER-GUARD test) +
+- [x] 4.2 **(vitest)** RED→GREEN `test/bin/release-workflow.test.ts` (new — the TRIGGER-GUARD test) +
   `.github/workflows/release.yml` (new): trigger-guarded `on: { push: { tags: ['v*.*.*'] }, workflow_dispatch: {} }`;
   matrix `[windows-latest, ubuntu-latest, macos-latest]` (macOS leg PRESENT but dormant — Q7); each leg builds bundle+SEA
   and emits `SHA256SUMS`; a release job runs `actions/attest-build-provenance` + creates the Release attaching binaries +
@@ -259,7 +259,7 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
   `SHA256SUMS`-producing step and an attestation step exist. Spec scenarios R4 "Workflow triggers contain ONLY tag-push and
   workflow_dispatch", R4 "Release job produces SHA256SUMS and provenance attestation", design D10, Q7. Done:
   `npm test release-workflow`.
-- [ ] 4.3 **(smoke)** `install.ps1` + `install.sh` (new, pure shell, no runtime deps — D11): detect os/arch →
+- [x] 4.3 **(smoke)** `install.ps1` + `install.sh` (new, pure shell, no runtime deps — D11): detect os/arch →
   `assetName()` (replicating 4.1) → download binary + `SHA256SUMS` from a pinned release selected by VERSION+PLATFORM →
   compute local SHA256 → compare case-insensitively → on MISMATCH delete the partial and exit non-zero with an actionable
   message BEFORE any PATH placement → on MATCH `chmod +x`(sh)/move to a user-local install dir + print PATH guidance.
@@ -269,13 +269,13 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
   binary on PATH", R5 "Checksum mismatch fails closed with nothing on PATH", R5 "Fetch is parameterized by version and
   platform", R6 "Injected binary integrity is pinned by its recorded checksum", design D11. Done: fail-closed smoke green
   (both installers) against local fixtures.
-- [ ] 4.4 **(config)** `.nvmrc` (new): pin the exact Node 24 LTS patch decided in Batch 0.1 (determinism, ADR-008/ADR-009);
+- [x] 4.4 **(config)** `.nvmrc` (new): pin the exact Node 24 LTS patch decided in Batch 0.1 (determinism, ADR-008/ADR-009);
   `package.json` `engines.node` stays `>=22` (npm path), `.nvmrc` is the BUILD/embed pin. Spec: R6 determinism, design D3,
   Q2. Done: `.nvmrc` content matches the Batch-0 pin + ADR-009.
-- [ ] 4.5 **(doc)** `docs/stories/07-quality-publication.md` (US-037): reconcile the "5 drivers statically bundled" AC →
+- [x] 4.5 **(doc)** `docs/stories/07-quality-publication.md` (US-037): reconcile the "5 drivers statically bundled" AC →
   external/optional per ADR-009 (drivers stay `external`, lazy, optional; the binary READS on in-binary `node:sqlite` with
   zero drivers). Spec: R1 refinement narrative, ADR-006→ADR-009. Done: the AC wording matches ADR-009; no other AC altered.
-- [ ] 4.6 GATE (Batch 4 — FINAL): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary (includes
+- [x] 4.6 GATE (Batch 4 — FINAL): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN with NO binary (includes
   the `asset-name` 4.1 + `release-workflow` 4.2 vitest tests); `git diff --exit-code test/golden/` EMPTY; the installer
   fail-closed smoke green LOCALLY; **`release.yml` has NOT been dispatched and NO release tag has been pushed** (inspect
   `git tag` + workflow-run history — the R4 "never fired" scenario); FINAL denylist/codename scan across ALL new files
@@ -321,30 +321,30 @@ Then COMMIT (conventional, references US-037, NO AI attribution, NO push/PR/gh/t
 
 ## Definition of Done (tied to the proposal's Success Criteria)
 
-- [ ] ADR-009 authored (concise format); states SEA-vs-bun, tradeoffs, and explicitly REFINES ADR-006's "static bundling"
+- [x] ADR-009 authored (concise format); states SEA-vs-bun, tradeoffs, and explicitly REFINES ADR-006's "static bundling"
   clause; drivers stay external/optional. — Batch 2 (2.1), Batch 4 (4.5)
-- [ ] ONE self-contained esbuild bundle is emitted; `better-sqlite3` + the 4 optional drivers are `external` and NONE is
+- [x] ONE self-contained esbuild bundle is emitted; `better-sqlite3` + the 4 optional drivers are `external` and NONE is
   inlined; the bundle boots and serves `--help`/`--version` with `node_modules` absent; determinism (ADR-008) preserved
   (bundle + blob byte-identical across rebuilds). — Batch 1 (1.1, 1.2), Batch 2 (2.2, 2.3, 2.4, 2.8)
-- [ ] win-x64 (native) + linux-x64 (Docker) SEA binaries build LOCALLY and pass the no-`node_modules` smoke: `--version` ==
+- [x] win-x64 (native) + linux-x64 (Docker) SEA binaries build LOCALLY and pass the no-`node_modules` smoke: `--version` ==
   `package.json.version`, `--help` usage, and a real `query` against an existing graph BYTE-IDENTICAL to the golden. —
   Batch 2 (2.5, 2.6), Batch 3 (3.1, 3.2)
-- [ ] The "works without any driver installed" guarantee holds in the binary: graph-READ (`query`/`explore`/`status`)
+- [x] The "works without any driver installed" guarantee holds in the binary: graph-READ (`query`/`explore`/`status`)
   succeeds on in-binary `node:sqlite` with ZERO drivers; a live-DB command without a driver fails with the EXACT
   `Required driver '<name>' is not installed. Run: npm i <name>` (`ConnectivityUnavailableError`, exit 2, no stack). —
   Batch 1 (1.4, 1.5, 1.6), Batch 2 (2.6, 2.7)
-- [ ] `release.yml` exists, is trigger-guarded (tag-push + `workflow_dispatch` ONLY, NO `pull_request`/branch-push), defines
+- [x] `release.yml` exists, is trigger-guarded (tag-push + `workflow_dispatch` ONLY, NO `pull_request`/branch-push), defines
   the windows/linux/macos matrix, emits `SHA256SUMS`, and attaches build provenance — and has NOT been fired; NO tag
   pushed. — Batch 4 (4.2, 4.6)
-- [ ] `install.ps1` + `install.sh` verify SHA256 BEFORE placing on PATH and FAIL CLOSED on mismatch (partial deleted,
+- [x] `install.ps1` + `install.sh` verify SHA256 BEFORE placing on PATH and FAIL CLOSED on mismatch (partial deleted,
   nothing on PATH, non-zero exit); the asset + checksum are selected by version+platform; the injected binary's integrity
   is anchored by its recorded `SHA256SUMS` checksum. — Batch 4 (4.1, 4.3)
-- [ ] Determinism (ADR-008/ADR-009): the pinned Node patch is in `.nvmrc`; the esbuild bundle + SEA blob are
+- [x] Determinism (ADR-008/ADR-009): the pinned Node patch is in `.nvmrc`; the esbuild bundle + SEA blob are
   byte-reproducible; the injected binary is NOT asserted byte-stable but pinned by checksum. — Batch 0 (0.1), Batch 2
   (2.8), Batch 3 (3.3), Batch 4 (4.4)
-- [ ] No project codename leaks (denylist scan clean across all new files); `npx tsc --noEmit` strict clean (NO `any`);
+- [x] No project codename leaks (denylist scan clean across all new files); `npx tsc --noEmit` strict clean (NO `any`);
   `npm run lint` 0/0; `npm test` GREEN with NO binary built (D12 CI-independence); no `test/golden` re-bless — all proven
   LOCALLY (no CI burn), nothing pushed past `closeout`. — Batch 1 (1.7), Batch 2 (2.8), Batch 3 (3.3), Batch 4 (4.6)
-- [ ] US-037 (binaries half) satisfied for win/linux; the "5 drivers statically bundled" AC is reconciled to
+- [x] US-037 (binaries half) satisfied for win/linux; the "5 drivers statically bundled" AC is reconciled to
   external/optional per ADR-009; macOS + release publication explicitly deferred to 9.5d (matrix leg present-but-dormant). —
   Batch 4 (4.2, 4.5)
