@@ -112,37 +112,37 @@ only — nothing pushed past `closeout`; no CI).
 > vitest-TDD — a dev stage with LOUD self-check assertions. Reads the built graph via `dist/cli.js … --json` + the
 > shipped `dist/index.js` store API — NEVER re-implements extraction (D5). Emits the FROZEN pre-registered set.
 
-- [ ] 2.1 Modify `tsconfig.json`: add `"benchmark"` to `include` (now `["src","test","benchmark"]`, D4) so this
+- [x] 2.1 Modify `tsconfig.json`: add `"benchmark"` to `include` (now `["src","test","benchmark"]`, D4) so this
   batch's GATE type-checks the standalone stage files (no test imports them). Confirm `eslint .` stays 0/0 on the new
   `benchmark/**` — add a scoped `files:['benchmark/**/*.ts']` block ONLY if a real `no-undef`/violation surfaces
   (decision criterion per RESOLVED). Design D4; Open Q3. Done: `npx tsc --noEmit`; `npm run lint`.
-- [ ] 2.2 Create `benchmark/generate.ts` skeleton + `benchmark/impact-snippets/`: open the built graph at
+- [x] 2.2 Create `benchmark/generate.ts` skeleton + `benchmark/impact-snippets/`: open the built graph at
   `<project>/.dbgraph/dbgraph.db` via `createSqliteGraphStore` (from `dist/index.js`) + `dist/cli.js … --json`; wire
   the six-family enumerator with per-family candidate source + canonical lexicographic sort key + first-N-lexicographic
   selection (D7, NO seed/randomness). Emit `--per-family` (default 1 → N=6) and print N in the `questions.yaml` header.
   Design §Question generation table; Open Q1. Done: stage runs against a torture-built graph, lists candidates
   deterministically.
-- [ ] 2.3 In `generate.ts`, derive the three SPEC-PINNED families BYTE-for-BYTE: `fk-path` ordered hops
+- [x] 2.3 In `generate.ts`, derive the three SPEC-PINNED families BYTE-for-BYTE: `fk-path` ordered hops
   `{fromTable,toTable,joinColumns[]}` from the FK EDGE table; `column-type` `{dataType,nullable}` from node FIELD
   payloads; `impact` `whatToTest` from `affected <impact-snippets/<qid>.sql> --json` — generating each snippet from
   column nodes then WRITING it committed under `impact-snippets/` (RESOLVED). Spec scenario "Each family's ground
   truth is derived by its pinned rule (byte-for-byte)". Done: regenerating reproduces `ground-truth/*.json` identically.
-- [ ] 2.4 In `generate.ts`, derive the three ADDITIVE families: `trigger-inventory` `{triggerQname,timing,events}`
+- [x] 2.4 In `generate.ts`, derive the three ADDITIVE families: `trigger-inventory` `{triggerQname,timing,events}`
   from trigger nodes + `fires_on` edges (STRICT, RESOLVED); `view-dependency` dependency qnames from
   `depends_on`/`reads_from` edges; `constraint-semantics` PK column order from `constraint` nodes (`ConstraintPayload`).
   Each key file carries a `source_ddl_ref` pointer into `torture.sql` (D5). Spec scenario "Each family's ground truth
   is derived by its pinned rule". Done: keys carry `source_ddl_ref`; `constraint-semantics` preserves PK order.
-- [ ] 2.5 SELF-CHECK assertions in `generate.ts` (fail LOUDLY): (a) `5 ≤ N ≤ 10` HARD-ASSERT (guards the spec bound
+- [x] 2.5 SELF-CHECK assertions in `generate.ts` (fail LOUDLY): (a) `5 ≤ N ≤ 10` HARD-ASSERT (guards the spec bound
   against a `--per-family` bump); (b) EVERY `ground-truth/<qid>.json` carries a `source_ddl_ref`; (c) NO ground-truth
   VALUE string appears verbatim in the matching `questions.yaml` entry (D5 leakage guard). Spec scenarios "N is fixed
   and pre-registered before any run" + "No question embeds its own answer". Done: assertions run inside `generate.ts`;
   a planted leak/over-N aborts the stage.
-- [ ] 2.6 Run `generate.ts` against the torture-built graph and COMMIT the frozen pre-registered set:
+- [x] 2.6 Run `generate.ts` against the torture-built graph and COMMIT the frozen pre-registered set:
   `benchmark/questions.yaml` (N=6 header) + `benchmark/ground-truth/*.json` + `benchmark/impact-snippets/*.sql`. This
   is the pre-registration — fixed BEFORE any transcript exists under `runs/`. Spec scenarios "N is fixed and
   pre-registered before any run" + "Primary substrate is rebuildable from committed source". Done: set committed;
   `git status` shows the frozen artifacts.
-- [ ] 2.7 GATE (Batch 2): `npx tsc --noEmit` clean (now covers `benchmark/generate.ts`); `npm run lint` 0/0;
+- [x] 2.7 GATE (Batch 2): `npx tsc --noEmit` clean (now covers `benchmark/generate.ts`); `npm run lint` 0/0;
   `npm test` green with ZERO benchmark artifacts (the committed `questions.yaml`/`ground-truth`/`impact-snippets` are
   NOT run artifacts and MUST NOT make any vitest suite depend on a run — confirm none does); leak-scan clean (synthetic
   fixture). Commit `feat(benchmark): add generate stage — pre-registered questions and mechanical ground truth (US-035)`.

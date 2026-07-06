@@ -1,0 +1,5 @@
+{
+  "dataType": "INTEGER",
+  "nullable": false,
+  "source_ddl_ref": "test/fixtures/sqlite/torture.sql:L46"
+}

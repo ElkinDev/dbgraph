@@ -1,0 +1,12 @@
+{
+  "triggers": [
+    {
+      "triggerQname": "trg_active_dept_instead_insert",
+      "timing": "INSTEAD OF",
+      "events": [
+        "INSERT"
+      ]
+    }
+  ],
+  "source_ddl_ref": "test/fixtures/sqlite/torture.sql:L97"
+}
