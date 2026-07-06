@@ -11,7 +11,7 @@ import {
   normalizeQname,
   type GroundTruthByFamily,
   type ScoreResult,
-} from './index.js';
+} from './index.ts';
 
 // ── Small pure set helpers ───────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@
     "skipLibCheck": true,
     "declaration": true,
     "outDir": "dist",
+    "allowImportingTsExtensions": true,
     "types": ["node"]
   },
   "include": ["src", "test", "benchmark"]

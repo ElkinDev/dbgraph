@@ -154,36 +154,36 @@ only — nothing pushed past `closeout`; no CI).
 > blind). NOT vitest-TDD — dev stages with LOUD self-check assertions; correctness of scoring rides on Batch 1's unit
 > tests. Builds the code the ORCHESTRATOR run (Batch R) invokes.
 
-- [ ] 3.1 Create `benchmark/build-packets.ts`: per question emit `packets/<qid>.with.md` (question + allowed-command
+- [x] 3.1 Create `benchmark/build-packets.ts`: per question emit `packets/<qid>.with.md` (question + allowed-command
   doc block for EXACTLY `query --json`, `explore`, `affected --json`, `status` + "do NOT read any `.sql`/DDL file —
   use the tool", D11; NO DDL, NO key) and `packets/<qid>.without.md` (question + full `sqlite_master` DDL dump +
   IDENTICAL answer-format spec; NO tool docs, NO key). Question text + `{{ANSWER_FORMAT_SPEC}}` (the per-family
   canonical SHAPE from Batch 1, never a value) are byte-identical across the pair. Spec scenarios "WITH exposes
   exactly the four documented commands" + "Identical framing across conditions". Done: paired packets differ ONLY in
   the schema-access section.
-- [ ] 3.2 In `build-packets.ts`, the WITHOUT DDL dump = `SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL
+- [x] 3.2 In `build-packets.ts`, the WITHOUT DDL dump = `SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL
   AND name NOT LIKE 'sqlite_%' ORDER BY type,name` — the comment-free catalog DDL a dev inheriting the DB gets (D8),
   NOT the annotated `torture.sql`. Compute `schemaTokens` per side via Batch 1 `tokens.ts` (WITHOUT = dump once; WITH
   = concat of tool outputs at run time), the SAME boundary both sides. Spec scenarios "WITHOUT dump is fair, from the
   same source of truth" + "One token boundary applied identically". Done: dump is complete + un-impoverished; token
   accounting is symmetric.
-- [ ] 3.3 SELF-CHECK assertion in `build-packets.ts` (fail LOUDLY): NO ground-truth key value appears in ANY packet;
+- [x] 3.3 SELF-CHECK assertion in `build-packets.ts` (fail LOUDLY): NO ground-truth key value appears in ANY packet;
   the WITH packet contains NO DDL; the WITHOUT packet contains NO tool docs. Emit `promptSha256` per packet so verify
   can later confirm no key leaked. Spec scenario "No question embeds its own answer" (prompt half). Done: a planted key
   in a packet aborts the stage.
-- [ ] 3.4 Create `benchmark/protocols/with.md` + `benchmark/protocols/without.md` — human-readable condition contracts
+- [x] 3.4 Create `benchmark/protocols/with.md` + `benchmark/protocols/without.md` — human-readable condition contracts
   MIRRORING the pinned run templates (identical system framing + question + answer-format; WITH = read-only CLI, no
   file reads; WITHOUT = DDL dump only, no tools). Spec scenarios "WITH exposes exactly the four documented commands" +
   "Identical framing across conditions". Done: protocols match the design run templates verbatim in framing.
-- [ ] 3.5 Create `benchmark/score.ts` + `benchmark/render.ts`: `score.ts` reads `runs/<id>/raw/*.json`, runs each
+- [x] 3.5 Create `benchmark/score.ts` + `benchmark/render.ts`: `score.ts` reads `runs/<id>/raw/*.json`, runs each
   answer (both conditions) through the Batch-1 scorer BLIND to the label (D13), writes `scored/per-question.json` +
   `aggregate.json` (per-family + overall accuracy per condition; token totals + delta); `render.ts` turns
   `aggregate.json` into the `docs/benchmarks.md` results table in STABLE order. Spec scenario "Scorer is blind to
   condition labels" (driver half). Done: driver imports `scorer/`; no label reaches the comparator.
-- [ ] 3.6 Create `benchmark/.gitignore` (or root entries): ignore `benchmark/packets/` + `benchmark/runs/` (generated
+- [x] 3.6 Create `benchmark/.gitignore` (or root entries): ignore `benchmark/packets/` + `benchmark/runs/` (generated
   working artifacts). Confirm `benchmark/questions.yaml` + `ground-truth/` + `impact-snippets/` + `protocols/` stay
   TRACKED (the pre-registered/committed set). Design §Layout. Done: `git status` ignores packets/runs, tracks the set.
-- [ ] 3.7 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green with ZERO benchmark artifacts
+- [x] 3.7 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green with ZERO benchmark artifacts
   (confirm NO vitest suite imports `build-packets`/`score`/`render` or reads `runs/`); leak-scan clean. Commit
   `feat(benchmark): add packet builder, scorer driver, renderer, and condition protocols (US-035)`.
 

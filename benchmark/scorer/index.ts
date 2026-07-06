@@ -125,11 +125,11 @@ export {
   compareTriggerInventory,
   compareViewDependency,
   compareConstraintSemantics,
-} from './families.js';
+} from './families.ts';
 
 // ── Public re-exports: token-accounting formula (design §Token accounting, D9) ──
-export { schemaTokens } from './tokens.js';
-export type { TokenCount, TokenMode, SchemaTokenInput } from './tokens.js';
+export { schemaTokens } from './tokens.ts';
+export type { TokenCount, TokenMode, SchemaTokenInput } from './tokens.ts';
 
 // ── Blind dispatcher (task 1.7, D13) ─────────────────────────────────────────
 import {
@@ -139,7 +139,7 @@ import {
   compareTriggerInventory,
   compareViewDependency,
   compareConstraintSemantics,
-} from './families.js';
+} from './families.ts';
 
 /**
  * Score one answer against its ground-truth key. The input carries NO condition label
