@@ -107,25 +107,25 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 > R6 (Origin/Host 403) at the UNIT level — pure validators + registry + the listener wired with an INJECTED
 > `createServer`. Consumes the Batch-0 `handleRequest` recipe. Realizes D2/D3/D4/D6/D7. NO new dependency.
 
-- [ ] 2.1 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` `validateOriginHost({headers,bindHost,port})`:
+- [x] 2.1 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` `validateOriginHost({headers,bindHost,port})`:
   PURE `{ok:true} | {ok:false,status:403,reason}`. RED first: no `Origin`→ok; loopback Origin
   (`http://localhost|127.0.0.1|[::1]` ±`:port`)→ok; foreign Origin→403; Host in `{127.0.0.1,localhost,[::1]}(:port)` on
   loopback bind→ok; foreign Host→403; `bindHost:'0.0.0.0'` RELAXES Host (any) but KEEPS Origin rejection. Reject body =
   `{jsonrpc,error:{code:-32000,message:'Forbidden'},id:null}`. Spec: mcp-http-transport S "Disallowed Origin is rejected
   before any tool runs" / "Allowed Origin proceeds". Design D3. Done: `npx tsc --noEmit`; `npm test http`.
-- [ ] 2.2 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` `SessionRegistry`: `Map<sessionId,{transport,server}>`
+- [x] 2.2 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` `SessionRegistry`: `Map<sessionId,{transport,server}>`
   with add/get/drop/size. RED first: add→get returns the entry; drop removes it (size decrements); `close()` awaits
   `transport.close()` AND `server.close()` for EVERY entry (spy both) then empties the map — the drain primitive for D6.
   Spec: mcp-http-transport S "SIGINT/SIGTERM drains sessions and closes the listener" (registry half). Design D2/D6. Done:
   `npm test http`.
-- [ ] 2.3 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` STDERR `Logger` default + message goldens:
+- [x] 2.3 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`) + `src/mcp/http.ts` STDERR `Logger` default + message goldens:
   pin the startup INFO line `dbgraph mcp: Streamable HTTP on http://{host}:{port} (read-only, no auth)`; pin the D4 WARN
   line naming (a) non-loopback exposure, (b) no auth in v1, (c) the reverse-proxy remedy; content-free session DEBUG
   `session initialized/closed {uuid}`; `--quiet`/`-q`→level `warn` suppresses startup + session lines, KEEPS the WARN +
   errors. Assert NO object/schema name, connection string, or resolved secret appears in any line. Spec: mcp-http-transport
   S "Default bind is loopback and states the no-auth posture" / "Non-loopback bind prints the pinned security warning" /
   "Diagnostics leak no schema names or secrets". Design D4/D7. Done: `npm test http`.
-- [ ] 2.4 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`, injected `createServer` fixture) + `src/mcp/http.ts`
+- [x] 2.4 **(vitest)** RED→GREEN (in `test/mcp/http.test.ts`, injected `createServer` fixture) + `src/mcp/http.ts`
   `startHttpMcpServer(opts, deps?) → {port, close()}`: `http.createServer` → `validateOriginHost` (403 BEFORE
   `handleRequest`) → POST init w/o `mcp-session-id` + `isInitializeRequest` → new `StreamableHTTPServerTransport`
   (`sessionIdGenerator:randomUUID`, `onsessioninitialized:register`, `onsessionclosed:drop+close`) + `createDbgraphServer()`
@@ -134,7 +134,7 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
   the Batch-0 body recipe; `deps.createServer` defaults to `createDbgraphServer`. Spec: mcp-http-transport S "--http serves
   the 8 tools…" (wiring half) / "initialize issues a session id…" / "DELETE terminates the session" / "Missing or unknown
   session id is rejected…" / "HTTP mode adds no write surface". Design D2/D6/D7. Done: `npx tsc --noEmit`; `npm test http`.
-- [ ] 2.5 GATE (Batch 2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (new validator/registry/listener
+- [x] 2.5 GATE (Batch 2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (new validator/registry/listener
   units); `git diff --exit-code test/mcp/golden/` EMPTY; ADR-004 `src/mcp/**` boundary scan green (only barrel + `node:*` +
   SDK); NO new `package.json` dependency. Then COMMIT `feat(http-transport): node:http listener, SessionRegistry, in-house
   Origin/Host validator, graceful shutdown`.
