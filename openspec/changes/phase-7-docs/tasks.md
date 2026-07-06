@@ -111,34 +111,34 @@ batch with a conventional-commit message (local only — nothing pushed past `cl
 > "Planned engine support"; KEEP the Vision bullets + MIT. EVERY claim slot below names its evidence source (design
 > §Doc content architecture); HONESTY gate — no marketing, limitations inline.
 
-- [ ] 2.1 Rewrite `README.md` header + what/why (codegraph-for-databases, MCP-served, 100% local); KEEP surviving Vision
+- [x] 2.1 Rewrite `README.md` header + what/why (codegraph-for-databases, MCP-served, 100% local); KEEP surviving Vision
   bullets + MIT; DELETE "pre-alpha/Phase 0/do not use" + "Planned engine support". Evidence: `mcp-server` spec Purpose;
   surviving README Vision bullets. Design skeleton row 1.
-- [ ] 2.2 Add the FEATURE MATRIX (engines × capabilities: tables/cols, views, indexes, constraints/FKs, procs/functions,
+- [x] 2.2 Add the FEATURE MATRIX (engines × capabilities: tables/cols, views, indexes, constraints/FKs, procs/functions,
   triggers, inferred rels, connectivity) with a PER-CELL spec citation. Evidence PER CELL:
   `sqlite/mssql/pg/mysql/mongodb-extraction` + `schema-extraction`; inference cells → `graph-model`/`graph-normalization`;
   SQLite=no procs and MongoDB=no triggers → `cli-config` spec. Design skeleton row 2 + Decision #8. NO cell without a
   citation.
-- [ ] 2.3 Add QUICKSTART FROM SOURCE (`npm ci` → `init` → `sync` → `query`); phrase binaries as "from source today,
+- [x] 2.3 Add QUICKSTART FROM SOURCE (`npm ci` → `init` → `sync` → `query`); phrase binaries as "from source today,
   standalone binaries at v1.0". Evidence: `package.json` scripts; `cli-config` spec (init/sync/query requirements).
   Design skeleton row 3.
-- [ ] 2.4 Add the CLI REFERENCE summary (9 commands: init, sync, query, explore, affected, diff, status, doctor,
+- [x] 2.4 Add the CLI REFERENCE summary (9 commands: init, sync, query, explore, affected, diff, status, doctor,
   install; `--json`, `--quiet`). Evidence: `cli.ts` `USAGE_TEXT`; `dispatch.ts` COMMAND_TABLE; `cli-config` spec.
   Design skeleton row 4.
-- [ ] 2.5 Add the MCP INSTALL section (6 agents + `--project` scope incl. Codex + the Codex trust caveat) AND the
+- [x] 2.5 Add the MCP INSTALL section (6 agents + `--project` scope incl. Codex + the Codex trust caveat) AND the
   per-agent env-interpolation nuances table (claude `${VAR}`; cursor `${env:VAR}`; vscode `${env:VAR}`+`inputs`; gemini
   `$VAR`/`${VAR}`; opencode `{env:VAR}`; codex TOML env tables — no interpolation). Evidence: `mcp-server` install
   requirement; `install.ts` `MANUAL_SNIPPET`; THIS phase (Batch 1); design env-interpolation table. Design skeleton row 5.
-- [ ] 2.6 Add TROUBLESHOOTING (symptom → REAL doctor field → shipped fix), citing ONLY F-1..F-7: F-1 `cliTools`/
+- [x] 2.6 Add TROUBLESHOOTING (symptom → REAL doctor field → shipped fix), citing ONLY F-1..F-7: F-1 `cliTools`/
   `chosenStrategy` → install `sqlcmd`; F-2 `resolvedProfile` variant; F-3 legacy profile; F-4 output-shape; F-5 encoding
   (UTF-8 codepage); F-6 actionable error (not stack trace); F-7 routed to CONTRIBUTING/Limitations. Evidence:
   `connectivity-environments.md` F-1..F-7; `connectivity` + `connectivity-diagnostics` specs; `doctor.ts` `DoctorView`
   fields. Design skeleton row 6 + troubleshooting mapping table.
-- [ ] 2.7 Add LIMITATIONS (no published release, v0.0.0; MongoDB STRUCTURAL `$sample`, sampled values never persisted;
+- [x] 2.7 Add LIMITATIONS (no published release, v0.0.0; MongoDB STRUCTURAL `$sample`, sampled values never persisted;
   inferred relationships OPT-IN; SQL Server integrated-auth needs `sqlcmd`; sqlcmd CI gap). Evidence: `binary-distribution`
   spec (release.yml never fired, v0.0.0); `cli-config` spec L41-42 + `mongodb-extraction`; `graph-normalization`;
   `connectivity` spec; F-7. Design skeleton row 7.
-- [ ] 2.8 GATE (Batch 2 — docs verify): claims↔citations audit (every matrix cell + capability line cites a spec);
+- [x] 2.8 GATE (Batch 2 — docs verify): claims↔citations audit (every matrix cell + capability line cites a spec);
   no-overclaim grep (`download`, `release`, `stable`, `Phase 0`) absent or qualified; troubleshooting cites ONLY
   F-1..F-7; content-free CLI examples (`--help`, `--version`, `doctor`) run copy-paste; leak-scan clean; `tsc`/`lint`/
   `test` still green. Commit `docs(readme): rewrite for shipped reality (matrix, quickstart, MCP, troubleshooting, limitations)`.
