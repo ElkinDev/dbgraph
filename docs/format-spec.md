@@ -344,3 +344,20 @@ Every formatter in `src/core/present/` MUST be a pure function:
 - No `Math.random()`
 - No file I/O or network calls
 - Same `(*View, detail)` input → always the exact same output bytes (ADR-008)
+
+---
+
+## 8. Consumers of this contract
+
+The formatters in `src/core/present/` are the SINGLE source of object-detail truth. Every
+surface that shows a node's detail reuses them — there is NO second renderer:
+
+- CLI `dbgraph object` / `dbgraph explore` and MCP `dbgraph_object` — direct callers.
+- `dbgraph viz` (see `docs/viz.md`) — the interactive HTML export pre-renders each node's
+  detail with `formatObject(view, 'full')` server-side and injects it verbatim into a
+  `<pre>`. A node's viz detail panel is therefore BYTE-IDENTICAL to
+  `dbgraph object <qname> --detail full`; a `test/core/viz/detail-parity` test pins this, so
+  a change to this contract that drifts the two fails the build.
+
+The live viz force animation is NOT covered by any golden (ADR-008 honest split) — only the
+deterministic embedded data block, community assignment, and Mermaid ER text are pinned.
