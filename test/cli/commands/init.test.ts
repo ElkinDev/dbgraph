@@ -14,7 +14,7 @@
  * TDD: RED → GREEN.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -22,6 +22,8 @@ import { Readable, Writable } from 'node:stream';
 import { runInit } from '../../../src/cli/commands/init.js';
 import { writeConfig, buildConfig } from '../../../src/cli/config/build-config.js';
 import { SQLITE_CAPABILITIES } from '../../../src/index.js';
+import { materializeTorture } from '../../fixtures/sqlite/materialize.js';
+import type { MaterializedDb } from '../../fixtures/sqlite/materialize.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -277,5 +279,49 @@ describe('byte-identity — flag form and wizard produce IDENTICAL writeConfig o
     const config1 = buildConfig({ dialect: 'sqlite', file: './test.db' });
     const config2 = buildConfig({ dialect: 'sqlite', file: './test.db' });
     expect(writeConfig(config1)).toBe(writeConfig(config2));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task 2.6: post-init sync is OBSERVABLE — the SECOND runSync caller (syncAfterInit)
+// writes the formatted summary to STDOUT instead of running silent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runInit — post-init sync is observable via the real syncAfterInit (task 2.6)', () => {
+  let mat: MaterializedDb;
+
+  beforeEach(() => {
+    mat = materializeTorture();
+  });
+
+  afterEach(() => {
+    mat.cleanup();
+  });
+
+  it('the REAL syncAfterInit writes a non-empty sync summary to STDOUT after init', async () => {
+    const stdout: string[] = [];
+    const outSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation((c: string | Uint8Array) => { stdout.push(String(c)); return true; });
+
+    try {
+      // No _syncFn override → the REAL syncAfterInit runs (opens the sqlite fixture,
+      // syncs, and MUST write the formatted summary to stdout — no more silent post-init sync).
+      await runInit({
+        projectRoot: tmpDir,
+        dialect: 'sqlite',
+        file: mat.path,
+      });
+    } finally {
+      outSpy.mockRestore();
+    }
+
+    const stdoutStr = stdout.join('');
+    expect(stdoutStr).toContain('Sync Summary');
+    expect(stdoutStr).toContain('fingerprint  ');
+    // First post-init sync extracts → mode is incremental, not skipped.
+    expect(stdoutStr).toContain('mode         incremental');
+    // STREAM DISCIPLINE: progress diagnostics never pollute STDOUT.
+    expect(stdoutStr).not.toContain('[info]');
   });
 });

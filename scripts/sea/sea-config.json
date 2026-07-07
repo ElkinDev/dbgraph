@@ -1,0 +1,7 @@
+{
+  "main": "build/sea/dbgraph.cjs",
+  "output": "build/sea/dbgraph.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": false
+}

@@ -14,7 +14,7 @@
 import { parseArgv } from './parse/args.js';
 import { dispatch } from './dispatch.js';
 import { exitCodeFor } from './exit-code.js';
-import { DbgraphError, ConnectivityUnavailableError, formatOutcome } from '../index.js';
+import { DbgraphError, ConnectivityUnavailableError, formatOutcome, DBGRAPH_VERSION } from '../index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Usage text (also tested in unit tests — exported for testability)
@@ -33,11 +33,12 @@ Commands:
   explore   Explore a node and its neighbors in the graph
   diff      Compare two snapshots of the graph index
   affected  Analyze DDL to show impacted objects (--json for machine output)
-  install   Wire dbgraph-mcp into the Claude Desktop config (--remove to undo)
+  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)
   doctor    Run a content-free connectivity self-test (safe to share)
 
 Options:
-  --help, -h    Show this help text
+  --help, -h       Show this help text
+  --version, -v    Print the dbgraph version and exit
 
 Run "dbgraph <command> --help" for command-specific options.
 `.trim();
@@ -56,9 +57,32 @@ Run "dbgraph <command> --help" for command-specific options.
 export async function runCli(argv: readonly string[]): Promise<number> {
   const parsed = parseArgv(argv);
 
-  // --help at the top level (before or instead of a command)
-  if (parsed.flags['help'] === true || parsed.flags['h'] === true) {
+  // --help at the top level (before or instead of a command). Handles BOTH the
+  // command position (`dbgraph --help` → parseArgv makes it the command, mirroring
+  // the --version handling below) and the flag position (`dbgraph init --help`).
+  // Spec R1: top-level --help exits 0 and prints USAGE to stdout (design D6 symmetry).
+  if (
+    parsed.command === '--help' ||
+    parsed.command === '-h' ||
+    parsed.flags['help'] === true ||
+    parsed.flags['h'] === true
+  ) {
     process.stdout.write(USAGE_TEXT + '\n');
+    return 0;
+  }
+
+  // --version/-v at the top level (design D6, phase-9.5c). Handles both the
+  // command position (`dbgraph --version` → parseArgv makes it the command) and
+  // the flag position. The value is baked at bundle time via esbuild `define`
+  // (process.env.DBGRAPH_BUILD_VERSION) so the binary answers with NO disk read;
+  // off-SEA the env var is undefined → falls back to DBGRAPH_VERSION.
+  if (
+    parsed.command === '--version' ||
+    parsed.command === '-v' ||
+    parsed.flags['version'] === true ||
+    parsed.flags['v'] === true
+  ) {
+    process.stdout.write((process.env['DBGRAPH_BUILD_VERSION'] ?? DBGRAPH_VERSION) + '\n');
     return 0;
   }
 

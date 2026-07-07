@@ -212,3 +212,71 @@ describe('parseArgv — mixed flags and positionals', () => {
     expect(result.positionals).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --quiet flag (task 1.3 — ux-observability)
+// Spec scenario: "--quiet suppresses progress but keeps warnings and errors" (parse half)
+// Design D7: add 'quiet' to BOOLEAN_LONG_FLAGS so it does NOT consume the next token.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseArgv — --quiet flag (task 1.3)', () => {
+  it('--quiet parses as boolean true (does NOT consume the next token as its value)', () => {
+    const result = parseArgv(['sync', '--quiet', 'extra']);
+    expect(result.flags['quiet']).toBe(true);
+    expect(result.positionals).toStrictEqual(['extra']);
+  });
+
+  it('--quiet alone sets flags.quiet to true', () => {
+    const result = parseArgv(['sync', '--quiet']);
+    expect(result.flags['quiet']).toBe(true);
+    expect(result.positionals).toStrictEqual([]);
+  });
+
+  it('-q already parses as flags.q === true (regression guard — no code change for -q)', () => {
+    const result = parseArgv(['sync', '-q']);
+    expect(result.flags['q']).toBe(true);
+    expect(result.positionals).toStrictEqual([]);
+  });
+
+  it('-q does not consume the next token as its value', () => {
+    const result = parseArgv(['sync', '-q', 'extra']);
+    expect(result.flags['q']).toBe(true);
+    expect(result.positionals).toStrictEqual(['extra']);
+  });
+
+  it('--quiet can be combined with --full (both boolean)', () => {
+    const result = parseArgv(['sync', '--quiet', '--full']);
+    expect(result.flags['quiet']).toBe(true);
+    expect(result.flags['full']).toBe(true);
+    expect(result.positionals).toStrictEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// --project flag (phase-7-docs / US-038, Design Decision #2)
+// Spec: mcp-server "dbgraph install --project scopes agent config to the project directory".
+// D2: BOOLEAN long flag — add 'project' to BOOLEAN_LONG_FLAGS so it does NOT consume the
+// next token, and `--remove` still works alongside it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseArgv — --project flag (phase-7-docs, US-038)', () => {
+  it('--project parses as boolean true AND --remove still works (does NOT greedily consume the next token)', () => {
+    const result = parseArgv(['install', '--project', '--remove']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.flags['remove']).toBe(true);
+  });
+
+  it('--project does NOT greedily consume a following non-flag token as its value', () => {
+    // Without 'project' in BOOLEAN_LONG_FLAGS the parser would set flags.project === 'extra'
+    // and swallow the positional — this pins the boolean semantics.
+    const result = parseArgv(['install', '--project', 'extra']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.positionals).toStrictEqual(['extra']);
+  });
+
+  it('--project alone sets flags.project to true', () => {
+    const result = parseArgv(['install', '--project']);
+    expect(result.flags['project']).toBe(true);
+    expect(result.positionals).toStrictEqual([]);
+  });
+});

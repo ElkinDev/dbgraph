@@ -20,7 +20,9 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-035 — Validation and benchmark against a real enterprise database
 **As** the author, **I want** OWN numbers measured against a real enterprise database, **so that** the README promises nothing I have not tested.
-**Phase:** 6 · **Depends on:** US-027, US-016, US-018 · **Status:** ☐ pending
+**Phase:** 6 · **Depends on:** US-027, US-016, US-018 · **Change:** `phase-benchmark` · **Status:** ☐ partial (reproducible WITH/WITHOUT harness shipped on the committed SQLite torture fixture; the real-DB run is optional corroboration filled by the orchestrator run)
+
+_Note: phase-benchmark reconciles US-035 to what actually ships. The **primary substrate is the committed SQLite torture fixture** (reproducible from source), NOT the private enterprise DB — a valid, complete benchmark is producible from the fixture alone (`docs/benchmarks.md`). The real mssql graph at `C:\temp\dbgraph-validation` is **OPTIONAL, labeled corroboration** run only if `dbgraph status` opens it. The "dedicated read-only login" AC is **DOWNGRADED to read-only BY CONSTRUCTION** of the tool (catalog `SELECT`s only): the validation config uses integrated (Windows SSPI) auth under the author's own principal, so zero-writes is a property of the tool's query surface, not of a restricted grant. The SSMS-accuracy contrast is an **author attestation**, labeled as such — never a machine-verified figure. `init + sync` duration / index size / peak memory are reported **opportunistically**, not as hard gates. The methodology, mechanically-derived question set with machine-checkable ground truth, condition-blind unit-tested scorer, and the honesty-first `docs/benchmarks.md` (limitations travel WITH the numbers; extrapolation forbidden) are the load-bearing deliverable._
 
 **Acceptance criteria:**
 - Verified prerequisites: the validation database auth mode confirmed, dedicated read-only login created (NEVER application credentials).
@@ -40,13 +42,15 @@ _Note: mssql-integration CI job added to `.github/workflows/ci.yml` (ubuntu-late
 
 ### US-037 — Self-contained binaries (no Node)
 **As** a user without Node installed, **I want** to download a binary and use dbgraph, **so that** I can adopt it without preparing any environment — parity with codegraph's "no Node.js required".
-**Phase:** 9.5 · **Depends on:** US-036 · **Status:** ☐ pending
+**Phase:** 9.5 · **Depends on:** US-036 · **Change:** `phase-9.5c-binaries` · **Status:** ☐ partial (phase-9.5c: win-x64 + linux-x64 SEA binaries build LOCALLY, trigger-guarded `release.yml` + checksum installers written; macOS + actual GitHub-Release publication deferred to 9.5d)
+
+_Note: phase-9.5c landed the LOCAL, CI-quota-safe half via Node SEA (ADR-009): win-x64 (native) + linux-x64 (Docker) binaries, a WRITTEN-but-NEVER-FIRED `release.yml` (tag-push + `workflow_dispatch` only), and checksum-verifying `install.ps1`/`install.sh`. The macOS matrix leg is present-but-dormant and the actual Release publication is deferred to 9.5d (CI-quota-blocked). The "5 drivers statically bundled" AC below is reconciled to external/optional per ADR-009 (which refines ADR-006's bundling clause)._
 
 **Acceptance criteria:**
 - Spike documented in an ADR: Node SEA vs `bun build --compile`, with evidence of the 5 adapters working from a binary of each technology.
 - win-x64/linux-x64/macos-x64/arm64 binaries built in CI, published on GitHub Releases with `SHA256SUMS` + provenance attestations.
 - On a clean machine WITHOUT Node: `dbgraph init` + `sync` + MCP server work from the binary.
-- The binary uses `node:sqlite`/`bun:sqlite` (zero native modules) through the `GraphStore` port; the 5 drivers are statically bundled.
+- The binary uses `node:sqlite`/`bun:sqlite` (zero native modules) through the `GraphStore` port; the 5 DB drivers stay **external, lazy and optional** (dynamic `import()`), NOT statically bundled — reconciled per **ADR-009**, which refines ADR-006's "static bundling in the binaries" clause. The binary's guaranteed capability is READ/serve of an already-indexed graph on the in-binary `node:sqlite` with ZERO drivers; live extraction loads a driver only when one is resolvable (`$CWD/node_modules` → `NODE_PATH` → global), otherwise the established `npm i <driver>` error.
 - PowerShell (`irm|iex`) and sh (`curl|sh`) installers verify the checksum BEFORE installing.
 
 ### US-038 — Multi-agent install

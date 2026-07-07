@@ -1,0 +1,19 @@
+{
+  "hops": [
+    {
+      "fromTable": "assignments",
+      "toTable": "employees",
+      "joinColumns": [
+        {
+          "fromColumn": "dept_id",
+          "toColumn": "dept_id"
+        },
+        {
+          "fromColumn": "emp_id",
+          "toColumn": "emp_id"
+        }
+      ]
+    }
+  ],
+  "source_ddl_ref": "test/fixtures/sqlite/torture.sql:L46"
+}

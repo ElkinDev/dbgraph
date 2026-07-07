@@ -25,6 +25,7 @@ import { ConnectivityUnavailableError } from '../../../core/errors.js';
 import { createMysqlReadonlyDriver, type ConnectionLike } from './driver.js';
 import { MysqlSchemaAdapter } from './mysql-schema-adapter.js';
 import { buildConnectivityOutcome } from '../_shared/connectivity-outcome.js';
+import { loadOptionalDriver } from '../_shared/load-optional-driver.js';
 import {
   SQL_MYSQL_TABLES,
   SQL_MYSQL_COLUMNS,
@@ -130,14 +131,17 @@ export async function createMysqlSchemaAdapter(
   if (deps.createConnection !== undefined) {
     createConnectionFn = deps.createConnection;
   } else {
-    // Lazy dynamic import — ADR-006: no top-level mysql2 import anywhere.
-    // Use 'mysql2/promise' as string to prevent bundlers from statically resolving it
-    // and to mirror the pattern established in pg/factory.ts.
+    // Lazy dynamic import via the centralized optional-driver seam (design D7).
+    // Off-SEA this is byte-identical to `await import('mysql2/promise')`; under SEA
+    // it resolves via createRequire (CWD → NODE_PATH → global). The existing
+    // deps.importMysql test override is routed through loadOptionalDriver's import
+    // seam so the MODULE_NOT_FOUND catch below still fires. ADR-006: no top-level import.
     let mysqlMod: unknown;
     try {
-      mysqlMod = deps.importMysql !== undefined
-        ? await deps.importMysql()
-        : await (import('mysql2/promise' as string));
+      mysqlMod = await loadOptionalDriver(
+        'mysql2/promise',
+        deps.importMysql !== undefined ? { importModule: deps.importMysql } : {},
+      );
     } catch {
       // MODULE_NOT_FOUND → build a ConnectivityOutcome with ≥3 options (Batch 3)
       throw buildMysqlConnectivityOutcome(

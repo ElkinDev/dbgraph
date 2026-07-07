@@ -1,0 +1,3 @@
+{
+  "whatToTest": ["employees", "assignments", "employee_summary"]
+}

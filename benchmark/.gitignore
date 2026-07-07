@@ -1,0 +1,9 @@
+# Generated working artifacts (US-035, design §Layout) — NEVER committed.
+#
+# packets/ : per-question prompt bodies emitted by build-packets.ts (regenerable).
+# runs/    : run transcripts + scored + aggregate emitted by the orchestrator run (Batch R).
+#
+# The pre-registered/committed set stays TRACKED: questions.yaml, ground-truth/, impact-snippets/,
+# protocols/, scorer/, and the *.ts stages themselves.
+packets/
+runs/

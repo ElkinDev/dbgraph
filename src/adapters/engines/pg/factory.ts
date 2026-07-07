@@ -26,6 +26,7 @@ import { ConnectivityUnavailableError } from '../../../core/errors.js';
 import { createPgReadonlyDriver, type ClientLike } from './driver.js';
 import { PgSchemaAdapter } from './pg-schema-adapter.js';
 import { buildConnectivityOutcome } from '../_shared/connectivity-outcome.js';
+import { loadOptionalDriver } from '../_shared/load-optional-driver.js';
 import {
   SQL_PG_SCHEMAS,
   SQL_PG_TABLES,
@@ -124,14 +125,17 @@ export async function createPgSchemaAdapter(
   if (deps.Client !== undefined) {
     ClientCtor = deps.Client;
   } else {
-    // Lazy dynamic import — ADR-006: no top-level pg import anywhere.
-    // Use 'pg' as string to prevent bundlers from statically resolving it and
-    // to mirror the pattern established in sqlite/factory.ts (node:sqlite path).
+    // Lazy dynamic import via the centralized optional-driver seam (design D7).
+    // Off-SEA this is byte-identical to `await import('pg')`; under SEA it resolves
+    // via createRequire (CWD → NODE_PATH → global). The existing deps.importPg test
+    // override is routed through loadOptionalDriver's import seam so the
+    // MODULE_NOT_FOUND catch below still fires. ADR-006: no top-level pg import.
     let pgMod: unknown;
     try {
-      pgMod = deps.importPg !== undefined
-        ? deps.importPg()
-        : await (import('pg' as string));
+      pgMod = await loadOptionalDriver(
+        'pg',
+        deps.importPg !== undefined ? { importModule: deps.importPg } : {},
+      );
     } catch {
       // MODULE_NOT_FOUND → build a ConnectivityOutcome with ≥3 options
       throw buildPgConnectivityOutcome(

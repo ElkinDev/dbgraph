@@ -93,6 +93,25 @@ export function resolveConfigPath(
   return pathPosix.join(home, '.config', 'Claude', CLAUDE_CONFIG_FILE);
 }
 
+/**
+ * Resolves a PROJECT-scoped config path (US-038, phase-7-docs, Decision #1).
+ *
+ * Joins the given relative segments onto the project root (cwd) using the
+ * platform-explicit joiner — pathWin32.join on win32, pathPosix.join elsewhere —
+ * so the separators are deterministic regardless of the host OS this code runs on
+ * (ADR-008; the node:path host-default join is banned by convention). The segments
+ * come from an agent row's `projectPath` (e.g. codex → ['.codex','config.toml']).
+ */
+export function resolveProjectConfigPath(
+  platform: string,
+  cwd: string,
+  segs: readonly string[],
+): string {
+  return platform === 'win32'
+    ? pathWin32.join(cwd, ...segs)
+    : pathPosix.join(cwd, ...segs);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Agent table types (US-038 — phase-9.5a)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,8 +122,21 @@ export type AgentFormat = 'mcpServers' | 'vscode' | 'opencode' | 'codex-toml';
 /** Environment variable record injected from the caller. */
 export type Env = Record<string, string | undefined>;
 
-/** The outcome of processing one AGENT_TABLE row in a single runInstall pass. */
-export type AgentAction = 'installed' | 'already' | 'removed' | 'absent' | 'skipped';
+/**
+ * The outcome of processing one AGENT_TABLE row in a single runInstall pass.
+ *
+ * 'unsupported' is RETAINED as DORMANT machinery (US-038, phase-7-docs): it is the
+ * action reported at project scope for any FUTURE agent whose project-scoped config
+ * location cannot be verified (a row with no `projectPath`). As of 2026-07-06 NO
+ * shipped agent uses it — all 6 rows (incl. Codex) have a `projectPath`.
+ */
+export type AgentAction =
+  | 'installed'
+  | 'already'
+  | 'removed'
+  | 'absent'
+  | 'skipped'
+  | 'unsupported';
 
 /** Per-agent result recorded by the multi-pass loop. */
 export interface AgentResult {
@@ -125,6 +157,13 @@ export interface AgentDescriptor {
   readonly format: AgentFormat;
   merge(content: string, entry: McpServerEntry): string;
   remove(content: string): string;
+  /**
+   * PROJECT-scoped config path segments relative to the project root (cwd), used by
+   * `install --project` (US-038). Joined via {@link resolveProjectConfigPath}.
+   * ABSENT ⇒ the agent has no verified project scope and is reported 'unsupported'
+   * under `--project` (dormant — no shipped row is absent as of 2026-07-06).
+   */
+  readonly projectPath?: readonly string[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -635,6 +674,8 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'claude-code',
     displayName: 'Claude Code',
     format: 'mcpServers',
+    // Project scope (US-038): <cwd>/.mcp.json — LIVE-verified 2026-07-06.
+    projectPath: ['.mcp.json'],
     resolvePath(platform: string, env: Env): string | undefined {
       // Reuses the exact resolveConfigPath logic — APPDATA on win32, HOME on posix
       return resolveConfigPath(platform, env);
@@ -650,6 +691,8 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'cursor',
     displayName: 'Cursor',
     format: 'mcpServers',
+    // Project scope (US-038): <cwd>/.cursor/mcp.json — LIVE-verified 2026-07-06.
+    projectPath: ['.cursor', 'mcp.json'],
     resolvePath(platform: string, env: Env): string | undefined {
       const root = homeRoot(platform, env);
       if (root === undefined) return undefined;
@@ -668,6 +711,8 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'gemini',
     displayName: 'Gemini CLI',
     format: 'mcpServers',
+    // Project scope (US-038): <cwd>/.gemini/settings.json — LIVE-verified 2026-07-06.
+    projectPath: ['.gemini', 'settings.json'],
     resolvePath(platform: string, env: Env): string | undefined {
       const root = homeRoot(platform, env);
       if (root === undefined) return undefined;
@@ -686,6 +731,8 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'vscode',
     displayName: 'VS Code',
     format: 'vscode',
+    // Project scope (US-038): <cwd>/.vscode/mcp.json — LIVE-verified 2026-07-06.
+    projectPath: ['.vscode', 'mcp.json'],
     resolvePath(platform: string, env: Env): string | undefined {
       const root = homeRoot(platform, env);
       if (root === undefined) return undefined;
@@ -704,6 +751,9 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'opencode',
     displayName: 'opencode',
     format: 'opencode',
+    // Project scope (US-038): <cwd>/opencode.json — LIVE-verified 2026-07-06.
+    // NOTE: project location is the repo-root opencode.json (NOT ~/.config/opencode).
+    projectPath: ['opencode.json'],
     resolvePath(platform: string, env: Env): string | undefined {
       const root = homeRoot(platform, env);
       if (root === undefined) return undefined;
@@ -722,6 +772,11 @@ export const AGENT_TABLE: readonly AgentDescriptor[] = [
     id: 'codex',
     displayName: 'Codex CLI',
     format: 'codex-toml',
+    // Project scope (US-038, Decision #5): <cwd>/.codex/config.toml — LIVE-verified
+    // 2026-07-06. Reuses the SAME mergeCodexToml writer as global; the project file is
+    // TRUST-GATED (the project must be trusted in ~/.codex/config.toml), so the codex
+    // summary line carries a trust-caveat suffix (see runInstall project branch).
+    projectPath: ['.codex', 'config.toml'],
     resolvePath(platform: string, env: Env): string | undefined {
       const root = homeRoot(platform, env);
       if (root === undefined) return undefined;
@@ -809,6 +864,18 @@ Config file locations:
 export interface InstallOptions {
   /** When true, removes the dbgraph-mcp entry instead of adding it. */
   readonly remove?: boolean;
+  /**
+   * When true, resolve config paths at PROJECT scope rooted at {@link cwd}
+   * (US-038) — create-when-absent for supported agents — instead of user-home
+   * scope. When false/omitted, behavior is byte-identical to the shipped global
+   * install (Decision #4: absent ⇒ absent, never create).
+   */
+  readonly project?: boolean;
+  /**
+   * Project root for `--project` (defaults to process.cwd()). Injected as a seam
+   * in unit tests. Ignored when {@link project} is false/omitted.
+   */
+  readonly cwd?: string;
   /** Injected FS seam (defaults to realFsSeam in production). */
   readonly fs?: FsSeam;
   /** Injected platform string (defaults to process.platform in production). */
@@ -817,6 +884,12 @@ export interface InstallOptions {
   readonly env?: Record<string, string | undefined>;
   /** Output writer (defaults to process.stdout.write). */
   readonly write?: (text: string) => void;
+  /**
+   * Injected agent table (defaults to AGENT_TABLE). Test seam ONLY — lets a suite
+   * exercise the DORMANT `unsupported` project path via a synthetic row that has no
+   * `projectPath`. Production always uses the shipped AGENT_TABLE.
+   */
+  readonly agents?: readonly AgentDescriptor[];
 }
 
 export interface InstallOutcome {
@@ -837,6 +910,39 @@ const DEFAULT_MCP_ENTRY: McpServerEntry = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The verbatim trust-caveat suffix appended to Codex's PROJECT summary line
+ * (US-038, Decision #5). Codex loads project MCP servers ONLY for TRUSTED projects,
+ * so the summary must tell the user how to trust the project. Pinned by the
+ * `mcp-server` spec scenario — a single-character drift fails the build.
+ */
+const CODEX_PROJECT_TRUST_SUFFIX =
+  ' (requires trusted project: set trust_level in ~/.codex/config.toml)';
+
+/**
+ * Renders a single PROJECT-scope (`--project`) summary line for one agent result.
+ *
+ * Uses the agent id (not displayName) and project-scoped verbs. Codex's WRITTEN line
+ * carries the trust-caveat suffix verbatim. A row that has no `projectPath` is
+ * reported 'unsupported' with an actionable message (dormant — no shipped agent).
+ * The GLOBAL (no-flag) summary format is UNCHANGED and handled separately.
+ */
+function projectSummaryLine(id: string, action: AgentAction): string {
+  if (action === 'unsupported') {
+    return `${id} → not supported with --project\n`;
+  }
+  const verb =
+    action === 'installed'
+      ? 'written'
+      : action === 'removed'
+        ? 'removed'
+        : action === 'already'
+          ? 'already present'
+          : 'absent';
+  const suffix = id === 'codex' && action === 'installed' ? CODEX_PROJECT_TRUST_SUFFIX : '';
+  return `${id} → ${verb}${suffix}\n`;
+}
+
+/**
  * Idempotently installs or removes the dbgraph-mcp server entry across all
  * detected MCP agents (Claude Code, Cursor, Gemini CLI, and future rows).
  *
@@ -849,69 +955,127 @@ const DEFAULT_MCP_ENTRY: McpServerEntry = {
  * When every result is {skipped, absent}: prints MANUAL_SNIPPET and exits 0
  * (US-024 preserved). Otherwise prints a per-agent summary.
  *
+ * PROJECT scope (US-038, `project: true`): paths re-root at {@link InstallOptions.cwd}
+ * via {@link resolveProjectConfigPath}; absent supported files are CREATED (Decision #3,
+ * install only — `--remove` never creates); Codex reuses the same TOML writer and its
+ * written summary carries a trust-caveat suffix (Decision #5); a row with no
+ * `projectPath` is reported 'unsupported' (dormant). GLOBAL scope is UNCHANGED and
+ * byte-identical to today (Decision #4).
+ *
  * Never throws for missing agent — that is a soft failure with exit 0.
- * InstallOptions and InstallOutcome shapes are UNCHANGED (dispatch.ts unaffected).
  */
 export async function runInstall(options: InstallOptions = {}): Promise<InstallOutcome> {
   const {
     remove = false,
+    project = false,
+    cwd = process.cwd(),
     fs: fsSeam = realFsSeam,
     platform = process.platform,
     env = process.env as Record<string, string | undefined>,
     write = (text: string) => process.stdout.write(text),
+    agents = AGENT_TABLE,
   } = options;
 
   const results: AgentResult[] = [];
 
-  // ── Multi-pass loop over AGENT_TABLE ──────────────────────────────────────
-  for (const row of AGENT_TABLE) {
-    const configPath = row.resolvePath(platform, env);
+  // ── Multi-pass loop over the agent table ──────────────────────────────────
+  for (const row of agents) {
+    if (project) {
+      // ── PROJECT scope (US-038) ────────────────────────────────────────────
+      // Dormant: an agent with no verified project-scoped location — NEVER guess.
+      if (row.projectPath === undefined) {
+        results.push({ agent: row.id, action: 'unsupported' });
+        continue;
+      }
 
-    // env var missing — skip this agent entirely
-    if (configPath === undefined) {
-      results.push({ agent: row.id, action: 'skipped' });
-      continue;
-    }
+      const configPath = resolveProjectConfigPath(platform, cwd, row.projectPath);
+      const fileExists = fsSeam.exists(configPath);
 
-    // agent not installed (config file absent) — skip, never create the file
-    if (!fsSeam.exists(configPath)) {
-      results.push({ agent: row.id, action: 'absent' });
-      continue;
-    }
+      // Remove NEVER creates an absent project file (Decision #6).
+      if (!fileExists && remove) {
+        results.push({ agent: row.id, action: 'absent', path: configPath });
+        continue;
+      }
 
-    // ── Read raw text (catch parse error → treat as empty per format) ───────
-    let raw: string;
-    try {
-      raw = fsSeam.readFile(configPath);
-    } catch {
-      raw = row.format === 'codex-toml' ? '' : '{}';
-    }
+      // Create-when-absent: seed '' so the merge-on-empty writer emits the minimal
+      // valid doc, then write it (Decision #3). ZERO new writer code.
+      let raw: string;
+      if (!fileExists) {
+        raw = '';
+      } else {
+        try {
+          raw = fsSeam.readFile(configPath);
+        } catch {
+          raw = row.format === 'codex-toml' ? '' : '{}';
+        }
+      }
 
-    // ── Apply merge or remove (pure, format-blind at this level) ────────────
-    const next = remove ? row.remove(raw) : row.merge(raw, DEFAULT_MCP_ENTRY);
+      const next = remove ? row.remove(raw) : row.merge(raw, DEFAULT_MCP_ENTRY);
 
-    if (next === raw) {
-      // No change — already in desired state
-      results.push({ agent: row.id, action: remove ? 'absent' : 'already', path: configPath });
+      if (next === raw) {
+        results.push({ agent: row.id, action: remove ? 'absent' : 'already', path: configPath });
+      } else {
+        fsSeam.writeFile(configPath, next);
+        results.push({ agent: row.id, action: remove ? 'removed' : 'installed', path: configPath });
+      }
     } else {
-      fsSeam.writeFile(configPath, next);
-      results.push({ agent: row.id, action: remove ? 'removed' : 'installed', path: configPath });
+      // ── GLOBAL scope (UNCHANGED — byte-identical to shipped) ──────────────
+      const configPath = row.resolvePath(platform, env);
+
+      // env var missing — skip this agent entirely
+      if (configPath === undefined) {
+        results.push({ agent: row.id, action: 'skipped' });
+        continue;
+      }
+
+      // agent not installed (config file absent) — skip, never create the file
+      if (!fsSeam.exists(configPath)) {
+        results.push({ agent: row.id, action: 'absent' });
+        continue;
+      }
+
+      // ── Read raw text (catch parse error → treat as empty per format) ─────
+      let raw: string;
+      try {
+        raw = fsSeam.readFile(configPath);
+      } catch {
+        raw = row.format === 'codex-toml' ? '' : '{}';
+      }
+
+      // ── Apply merge or remove (pure, format-blind at this level) ──────────
+      const next = remove ? row.remove(raw) : row.merge(raw, DEFAULT_MCP_ENTRY);
+
+      if (next === raw) {
+        // No change — already in desired state
+        results.push({ agent: row.id, action: remove ? 'absent' : 'already', path: configPath });
+      } else {
+        fsSeam.writeFile(configPath, next);
+        results.push({ agent: row.id, action: remove ? 'removed' : 'installed', path: configPath });
+      }
     }
   }
 
   // ── Output ────────────────────────────────────────────────────────────────
-  const allSkippedOrAbsent = results.every(
-    (r) => r.action === 'skipped' || r.action === 'absent',
-  );
-
-  if (allSkippedOrAbsent) {
-    write(MANUAL_SNIPPET);
-  } else {
+  if (project) {
+    // PROJECT summary: one line per agent (id-based verbs; Codex trust caveat).
     for (const r of results) {
-      if (r.action !== 'skipped' && r.action !== 'absent') {
-        const row = AGENT_TABLE.find((t) => t.id === r.agent);
-        const name = row?.displayName ?? r.agent;
-        write(`${name} → ${r.action}${r.path !== undefined ? ` (${r.path})` : ''}\n`);
+      write(projectSummaryLine(r.agent, r.action));
+    }
+  } else {
+    // GLOBAL summary — UNCHANGED.
+    const allSkippedOrAbsent = results.every(
+      (r) => r.action === 'skipped' || r.action === 'absent',
+    );
+
+    if (allSkippedOrAbsent) {
+      write(MANUAL_SNIPPET);
+    } else {
+      for (const r of results) {
+        if (r.action !== 'skipped' && r.action !== 'absent') {
+          const row = agents.find((t) => t.id === r.agent);
+          const name = row?.displayName ?? r.agent;
+          write(`${name} → ${r.action}${r.path !== undefined ? ` (${r.path})` : ''}\n`);
+        }
       }
     }
   }

@@ -22,6 +22,9 @@ import { runAffected } from './commands/affected.js';
 import { runInstall, realFsSeam } from './commands/install.js';
 import { runDoctor } from './commands/doctor.js';
 import { openConnections } from '../index.js';
+import { createConsoleLogger } from './log/console-logger.js';
+import { formatSyncSummary } from './format/sync.js';
+import type { Logger } from '../core/ports/logger.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Handler type
@@ -50,6 +53,21 @@ export type HandlerOutcome = { readonly type: 'success' } | { readonly type: 'ne
 export type DispatchResult =
   | { readonly type: 'handler'; readonly handler: CommandHandler }
   | { readonly type: 'unknown'; readonly command: string };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Console logger construction (ux-observability, Design Decisions D2/D7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Builds the console Logger for a command run.
+ * Diagnostics go to STDERR (default seam) so STDOUT stays machine-clean and any
+ * `--json` payload remains byte-identical. `--quiet`/`-q` lowers the level to 'warn'
+ * (suppresses debug/info/progress, keeps warn/error). Default level is 'info' (verbose).
+ */
+function buildLogger(args: ParsedArgs): Logger {
+  const quiet = args.flags['quiet'] === true || args.flags['q'] === true;
+  return createConsoleLogger({ level: quiet ? 'warn' : 'info' });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Stub handlers (later batches replace these with real implementations)
@@ -104,14 +122,23 @@ async function handleInit(args: ParsedArgs): Promise<HandlerOutcome> {
 /**
  * Opens adapter + store from the project config and runs sync.
  * --full flag forces a full re-extraction regardless of fingerprint.
+ *
+ * OBSERVABILITY (ux-observability, US-005): builds a console Logger, passes it to
+ * openConnections + runSync so progress diagnostics surface on STDERR, then writes the
+ * PURE-formatted SyncSummary to STDOUT (mirroring handleStatus). Exit code is unchanged —
+ * the handler still returns {type:'success'} regardless of the summary content.
  */
 async function handleSync(args: ParsedArgs): Promise<HandlerOutcome> {
   const full = args.flags['full'] === true;
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
-    return await runSync({ adapter, store, full });
+    const summary = await runSync({ adapter, store, full, logger });
+    // Summary → STDOUT (machine/human payload); diagnostics already went to STDERR.
+    process.stdout.write(formatSyncSummary(summary));
+    return { type: 'success' };
   } finally {
     await adapter.close();
     await store.close();
@@ -122,11 +149,11 @@ async function handleSync(args: ParsedArgs): Promise<HandlerOutcome> {
  * Opens adapter + store from the project config and runs status.
  * Writes formatted output to stdout.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function handleStatus(_args: ParsedArgs): Promise<HandlerOutcome> {
+async function handleStatus(args: ParsedArgs): Promise<HandlerOutcome> {
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     const result = await runStatus({ adapter, store });
     // Write to stdout (cli.ts owns process.exit but handlers own I/O)
@@ -151,8 +178,9 @@ async function handleQuery(args: ParsedArgs): Promise<HandlerOutcome> {
   const term = args.positionals[0] ?? '';
   const json = args.flags['json'] === true;
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     const result = await runQuery({ store, term, json });
     process.stdout.write(result.output);
@@ -175,8 +203,9 @@ async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
       ? detailRaw
       : 'normal';
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     const result = await runExplore({ store, qname, detail });
     process.stdout.write(result.output);
@@ -204,8 +233,9 @@ async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
       ? detailRaw
       : 'normal';
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     const result = await runAffected({ store, sqlFile, json, detail });
     process.stdout.write(result.output);
@@ -217,12 +247,15 @@ async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
 }
 
 /**
- * Idempotently wires the dbgraph-mcp server entry into Claude Code's MCP config.
- * --remove undoes it. Prints manual snippet when no agent config is found.
+ * Idempotently wires the dbgraph-mcp server entry into every supported agent's MCP config.
+ * --remove undoes it. --project (US-038) re-roots resolution at the project directory
+ * (process.cwd()) and creates absent supported files. Prints a manual snippet when no
+ * agent config is found (global scope only).
  */
 async function handleInstall(args: ParsedArgs): Promise<HandlerOutcome> {
   const remove = args.flags['remove'] === true;
-  await runInstall({ remove, fs: realFsSeam });
+  const project = args.flags['project'] === true;
+  await runInstall({ remove, project, cwd: process.cwd(), fs: realFsSeam });
   return { type: 'success' };
 }
 
@@ -310,8 +343,9 @@ async function buildProbe(engine: string): Promise<() => Promise<import('../inde
 async function handleDiff(args: ParsedArgs): Promise<HandlerOutcome> {
   const last = args.flags['last'] === true;
   const projectRoot = process.cwd();
+  const logger = buildLogger(args);
 
-  const { adapter, store } = await openConnections(projectRoot);
+  const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     let result;
     if (last) {

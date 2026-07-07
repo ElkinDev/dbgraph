@@ -31,7 +31,7 @@
  * ADR-004: test imports command functions, not adapter internals.
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -465,5 +465,97 @@ describe('E2E: config files and gitignore', () => {
       );
       expect(wouldIgnoreConfig).toBe(false);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suite 6: --json byte-identity + stream discipline through the FULL runCli path
+// (task 2.7). The observability wiring (logger threaded into every handler) MUST NOT
+// pollute the machine payload on STDOUT — diagnostics belong on STDERR only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('E2E: --json byte-identity + stream discipline through runCli (task 2.7)', () => {
+  let projectRoot: string;
+  let cleanup: () => void;
+  let originalCwd: string;
+
+  beforeAll(async () => {
+    const proj = makeProjectRoot();
+    projectRoot = proj.projectRoot;
+    cleanup = proj.cleanup;
+
+    writeProjectConfig(projectRoot, mat.path);
+
+    // Sync so the graph has content to query.
+    const { adapter, store } = await openAdapterAndStore(mat.path, projectRoot);
+    try {
+      await runSync({ adapter, store, full: false });
+    } finally {
+      await adapter.close();
+      await store.close();
+    }
+
+    // runCli reads config from process.cwd(); chdir into the project for this suite.
+    originalCwd = process.cwd();
+    process.chdir(projectRoot);
+  });
+
+  afterAll(() => {
+    process.chdir(originalCwd);
+    cleanup();
+  });
+
+  async function captureRunCli(
+    argv: readonly string[],
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const outSpy = vi
+      .spyOn(process.stdout, 'write')
+      .mockImplementation((c: string | Uint8Array) => { stdout.push(String(c)); return true; });
+    const errSpy = vi
+      .spyOn(process.stderr, 'write')
+      .mockImplementation((c: string | Uint8Array) => { stderr.push(String(c)); return true; });
+    let code: number;
+    try {
+      code = await runCli(argv);
+    } finally {
+      outSpy.mockRestore();
+      errSpy.mockRestore();
+    }
+    return { code, stdout: stdout.join(''), stderr: stderr.join('') };
+  }
+
+  it('query --json writes ONLY the JSON payload to STDOUT (no logger diagnostics), byte-identical on re-run', async () => {
+    const r1 = await captureRunCli(['query', 'employees', '--json']);
+    const r2 = await captureRunCli(['query', 'employees', '--json']);
+
+    // Exit-code contract unchanged: matching term → exit 0.
+    expect(r1.code).toBe(0);
+
+    // STREAM DISCIPLINE: no logger diagnostics leaked onto STDOUT.
+    expect(r1.stdout).not.toContain('[info]');
+    expect(r1.stdout).not.toContain('[warn]');
+    expect(r1.stdout).not.toContain('[error]');
+
+    // STDOUT is a clean, parseable machine payload.
+    const parsed = JSON.parse(r1.stdout) as { term: string; total: number };
+    expect(parsed.term).toBe('employees');
+    expect(parsed.total).toBeGreaterThan(0);
+
+    // BYTE-IDENTITY across runs — the machine payload is deterministic (ADR-008).
+    expect(r1.stdout).toBe(r2.stdout);
+  });
+
+  it('affected --json also keeps STDOUT free of logger diagnostics', async () => {
+    // Write a tiny DDL script that touches a known table so affected has a payload.
+    const sqlPath = join(projectRoot, 'change.sql');
+    writeFileSync(sqlPath, 'ALTER TABLE employees ADD COLUMN note TEXT;\n', 'utf-8');
+
+    const { stdout } = await captureRunCli(['affected', sqlPath, '--json']);
+
+    expect(stdout).not.toContain('[info]');
+    // Parseable JSON payload on STDOUT.
+    expect(() => JSON.parse(stdout)).not.toThrow();
   });
 });

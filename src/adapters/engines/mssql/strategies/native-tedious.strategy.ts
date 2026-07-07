@@ -25,6 +25,7 @@ import type { MssqlAdapterConfig } from '../../../../core/ports/schema-adapter.j
 import { createMssqlReadonlyDriver } from '../driver.js';
 import { mapMssqlError } from '../error-mapper.js';
 import { MssqlSchemaAdapter } from '../mssql-schema-adapter.js';
+import { loadOptionalDriver } from '../../_shared/load-optional-driver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Duck-typed pool interface (matches factory.ts pattern — no top-level mssql import)
@@ -137,10 +138,12 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
   private async _ensureConnected(): Promise<void> {
     if (this._adapter !== null) return; // already connected
 
-    // Step 1: Lazy import mssql (ADR-006 — optional dependency)
+    // Step 1: Lazy import mssql via the centralized optional-driver seam (design D7).
+    // Off-SEA this is byte-identical to `await import('mssql')`; under SEA it resolves
+    // via createRequire (CWD → NODE_PATH → global). ADR-006 — optional dependency.
     let mssqlMod: { ConnectionPool: new(cfg: unknown) => MssqlPool };
     try {
-      mssqlMod = await import('mssql' as string) as unknown as typeof mssqlMod;
+      mssqlMod = await loadOptionalDriver('mssql') as unknown as typeof mssqlMod;
     } catch (cause) {
       throw new ConnectionError(
         "Required driver 'mssql' is not installed. Run: npm i mssql",

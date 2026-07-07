@@ -24,6 +24,7 @@ import type { MongodbAdapterConfig } from '../../../core/ports/schema-adapter.js
 import { mapMongoError } from './error-mapper.js';
 import { createMongodbReadonlyDriver, type MongoClientLike } from './driver.js';
 import { MongodbSchemaAdapter } from './mongodb-schema-adapter.js';
+import { loadOptionalDriver } from '../_shared/load-optional-driver.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Optional deps (test seam — omit entirely for production use)
@@ -78,13 +79,17 @@ export async function createMongodbSchemaAdapter(
   if (deps.MongoClient !== undefined) {
     MongoClientCtor = deps.MongoClient;
   } else {
-    // Lazy dynamic import — ADR-006: no top-level mongodb import anywhere.
-    // Use 'mongodb' as string to prevent bundlers from statically resolving it.
+    // Lazy dynamic import via the centralized optional-driver seam (design D7).
+    // Off-SEA this is byte-identical to `await import('mongodb')`; under SEA it
+    // resolves via createRequire (CWD → NODE_PATH → global). The existing
+    // deps.importMongodb test override is routed through loadOptionalDriver's import
+    // seam so the MODULE_NOT_FOUND catch below still fires. ADR-006: no top-level import.
     let mongoMod: unknown;
     try {
-      mongoMod = deps.importMongodb !== undefined
-        ? await deps.importMongodb()
-        : await (import('mongodb' as string));
+      mongoMod = await loadOptionalDriver(
+        'mongodb',
+        deps.importMongodb !== undefined ? { importModule: deps.importMongodb } : {},
+      );
     } catch (importErr: unknown) {
       // MODULE_NOT_FOUND → forward to mapMongoError which builds the ConnectivityOutcome.
       throw mapMongoError(importErr);

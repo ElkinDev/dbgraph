@@ -1,0 +1,14 @@
+{
+  "triggers": [
+    {
+      "triggerQname": "trg_employees_audit_upd",
+      "timing": "AFTER",
+      "events": ["UPDATE"]
+    },
+    {
+      "triggerQname": "trg_employees_audit_del",
+      "timing": "AFTER",
+      "events": ["DELETE"]
+    }
+  ]
+}
