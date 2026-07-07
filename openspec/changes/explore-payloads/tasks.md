@@ -194,39 +194,39 @@ nothing pushed; no CI).
 > `formatObject` (ZERO new rendering logic); its parity is asserted against the (Batch-B re-blessed) EXISTING object
 > goldens (ruling 4). Consumes the D3-corrected resolution loop from Batch B (D5).
 
-- [ ] C.1 (vitest) RED→GREEN `test/cli/parse/detail.test.ts` (new) + `src/cli/parse/detail.ts` (new): pure
+- [x] C.1 (vitest) RED→GREEN `test/cli/parse/detail.test.ts` (new) + `src/cli/parse/detail.ts` (new): pure
   `parseDetail(raw: unknown): ExploreDetail` — returns the value for `brief|normal|full`, `undefined`→`normal`,
   THROWS `ConfigError` naming the offending value (message shape `explore: "detail" must be one of brief|normal|full
   (got "bogus")`). RED: `bogus`→`ConfigError`; the three valid values pass; `undefined`→`normal`. Spec: cli-config
   "valid --detail values are unaffected". Design D4. Done: `npm test detail`.
-- [ ] C.2 (vitest) RED→GREEN `test/cli/dispatch.test.ts` + `src/cli/dispatch.ts`: replace the silent-coercion
+- [x] C.2 (vitest) RED→GREEN `test/cli/dispatch.test.ts` + `src/cli/dispatch.ts`: replace the silent-coercion
   `--detail` ternaries in `handleExplore` (`dispatch.ts:201-204`) AND `handleAffected` (`231-234`) with
   `parseDetail(...)`; a `ConfigError` (a `DbgraphError`) maps to exit 2 via the established `exit-code.ts` contract.
   RED: `explore … --detail bogus` exits 2 surfacing the ConfigError; `affected … --detail bogus` likewise. Spec:
   cli-config "unknown --detail value exits 2 with an actionable message". Design D4. Done: `npm test dispatch`.
-- [ ] C.3 (vitest) RED→GREEN `test/cli/commands/object.test.ts` (new) + `src/cli/commands/object.ts` (new):
+- [x] C.3 (vitest) RED→GREEN `test/cli/commands/object.test.ts` (new) + `src/cli/commands/object.ts` (new):
   `runObject({store,qname,detail})` mirroring `runExplore` — resolve via the D3-corrected loop → `getNeighbors` →
   `formatObject(view, detail)` → `ExploreOutcome`. NO `--json` (parity with the MCP tool, which has none). Imports
   ONLY `src/index.ts` + Node builtins — NEVER `src/adapters/**` (ADR-004). RED: `runObject` returns the formatted
   object bytes; the boundary scan flags any adapter import. Spec: cli-config "object honors the CLI import boundary".
   Design D5. Done: `npm test object` (command); `npm test boundaries` (CLI scan green).
-- [ ] C.4 (vitest) RED→GREEN `dispatch.test.ts` + `src/cli/dispatch.ts`: register `object: handleObject` in
+- [x] C.4 (vitest) RED→GREEN `dispatch.test.ts` + `src/cli/dispatch.ts`: register `object: handleObject` in
   `COMMAND_TABLE`; `handleObject` reads `positionals[0]` (qname) + `parseDetail(...)`, opens the store, calls
   `runObject`. RED: `dbgraph object main.employees --detail full` dispatches and prints via `runObject`. Design D5.
   Done: `npm test dispatch`.
-- [ ] C.5 (vitest) RED→GREEN `test/cli/cli.test.ts` (USAGE_TEXT pin) + `src/cli/cli.ts`: add an `object` line to
+- [x] C.5 (vitest) RED→GREEN `test/cli/cli.test.ts` (USAGE_TEXT pin) + `src/cli/cli.ts`: add an `object` line to
   `USAGE_TEXT` after `explore`, its description beginning at character index 12 (`  object` + four spaces) — the SAME
   alignment as `query`/`explore`/`install`: `  object    Show one object in full (columns, constraints, indexes,
   triggers)`. RED: the pinned banner test asserts the line at the exact column (dropping the `object` command fails
   the build). Spec: cli-config "usage banner documents the object line with the exact alignment". Design D5. Done:
   `npm test cli` (banner pin).
-- [ ] C.6 (golden — parity, no new golden set) RED→GREEN `test/cli/commands/object.test.ts`: PARITY assertion —
+- [x] C.6 (golden — parity, no new golden set) RED→GREEN `test/cli/commands/object.test.ts`: PARITY assertion —
   `runObject` output bytes === the (Batch-B re-blessed) EXISTING `test/mcp/golden/object-tool-{brief,normal,full}.txt`,
   byte-identical to `dbgraph_object({qname,detail})` (same-source-same-golden; NO duplicate object golden set, ruling
   4). RED on `main.employees --detail full` incl. `  salary  REAL  [NN]  DEFAULT 0.0` and `  idx_emp_email  UNIQUE
   (email)`. Spec: cli-config "object renders one object's full detail, byte-identical to the MCP tool". Design D5/D6.
   Done: `npm test object` (parity green).
-- [ ] C.7 GATE (Batch C): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (parseDetail + dispatch +
+- [x] C.7 GATE (Batch C): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (parseDetail + dispatch +
   object command + banner + parity suites); CLI boundary test green (`object` imports only the barrel + Node
   builtins); cross-transport parity green; leak-scan clean. Commit `feat(cli): add object command, validate --detail
   with ConfigError (US-036)`.

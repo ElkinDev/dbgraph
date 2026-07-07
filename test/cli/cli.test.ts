@@ -115,6 +115,28 @@ describe('cli — USAGE_TEXT', () => {
     expect(mcpLine).toContain('--http');
   });
 
+  // ── explore-payloads C.5: the object banner line, column-aligned + placed after explore ──
+
+  it('object banner line is present with EXACTLY the pinned, column-aligned text (C.5)', () => {
+    // cli-config scenario "usage banner documents the object line with the exact alignment":
+    // two leading spaces, `object`, four spaces — description aligned at character index 12,
+    // matching query/explore/install. Dropping the object command fails the build.
+    const objectLine = USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('object')) ?? '';
+    expect(objectLine).toBe(
+      '  object    Show one object in full (columns, constraints, indexes, triggers)',
+    );
+    // Description column is index 12 (same as every other command line).
+    expect(objectLine.indexOf('Show')).toBe(12);
+  });
+
+  it('object line is placed immediately AFTER the explore line (C.5)', () => {
+    const lines = USAGE_TEXT.split('\n');
+    const exploreIdx = lines.findIndex((l) => l.trimStart().startsWith('explore'));
+    const objectIdx = lines.findIndex((l) => l.trimStart().startsWith('object'));
+    expect(exploreIdx).toBeGreaterThanOrEqual(0);
+    expect(objectIdx).toBe(exploreIdx + 1);
+  });
+
   it('adds ONLY the mcp line — every existing command line stays byte-identical (task 4.1)', () => {
     // cli-config scenario "Adding the mcp line leaves the other command lines unchanged":
     // init…doctor (incl. the pinned install line) are byte-identical to before.

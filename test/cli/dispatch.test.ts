@@ -12,6 +12,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { dispatch, type DispatchResult } from '../../src/cli/dispatch.js';
+import { runCli } from '../../src/cli/cli.js';
+import { ConfigError } from '../../src/index.js';
 import { materializeTorture } from '../fixtures/sqlite/materialize.js';
 import type { MaterializedDb } from '../fixtures/sqlite/materialize.js';
 import { buildConfig, writeConfig } from '../../src/cli/config/build-config.js';
@@ -67,6 +69,14 @@ describe('dispatch — known commands', () => {
   it('dispatches "diff" to a handler function', () => {
     const result = dispatch('diff');
     expect(result.type).toBe('handler');
+  });
+
+  it('dispatches "object" to a handler function (explore-payloads C.4)', () => {
+    const result = dispatch('object');
+    expect(result.type).toBe('handler');
+    if (result.type === 'handler') {
+      expect(typeof result.handler).toBe('function');
+    }
   });
 
   it('each known command returns a different handler reference', () => {
@@ -241,6 +251,132 @@ describe('handleSync — observable summary to STDOUT + progress to STDERR (task
     expect(stdoutStr).toContain('fingerprint  ');
     // info/progress suppressed on STDERR under --quiet.
     expect(stderrStr).not.toContain('[info]');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// explore-payloads C.2: --detail is validated by parseDetail (ConfigError → exit 2).
+// The silent-coercion ternaries in handleExplore + handleAffected are REPLACED, so a
+// bogus value surfaces a ConfigError BEFORE any DB access (parseDetail runs before
+// openConnections) and cli.ts maps the DbgraphError to exit 2. Hermetic — no store.
+// Spec: cli-config "unknown --detail value exits 2 with an actionable message".
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleExplore / handleAffected — parseDetail rejects a bogus --detail (C.2)', () => {
+  let stderr: string[];
+  let outSpy: ReturnType<typeof vi.spyOn>;
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderr = [];
+    outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    errSpy = vi.spyOn(process.stderr, 'write').mockImplementation((c: string | Uint8Array) => {
+      stderr.push(String(c));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    outSpy.mockRestore();
+    errSpy.mockRestore();
+  });
+
+  it('explore --detail bogus exits 2 and surfaces the naming ConfigError message', async () => {
+    const code = await runCli(['explore', 'main.employees', '--detail', 'bogus']);
+    expect(code).toBe(2);
+    expect(stderr.join('')).toContain(
+      'explore: "detail" must be one of brief|normal|full (got "bogus")',
+    );
+  });
+
+  it('affected --detail bogus exits 2 and surfaces the naming ConfigError message', async () => {
+    const code = await runCli(['affected', 'some-script.sql', '--detail', 'bogus']);
+    expect(code).toBe(2);
+    expect(stderr.join('')).toContain(
+      'explore: "detail" must be one of brief|normal|full (got "bogus")',
+    );
+  });
+
+  it('the parseDetail rejection is a ConfigError (DbgraphError → exit 2 contract)', () => {
+    // Anchors the exit-code contract the runCli tests above rely on: parseDetail's
+    // throw is the exact DbgraphError subclass exit-code.ts maps to 2.
+    const err = new ConfigError('x');
+    expect(err).toBeInstanceOf(ConfigError);
+    expect(err.code).toBe('E_CONFIG');
+  });
+
+  it('object --detail bogus exits 2 and surfaces the naming ConfigError message', async () => {
+    // Proves handleObject also validates --detail via parseDetail BEFORE opening the store.
+    const code = await runCli(['object', 'main.employees', '--detail', 'bogus']);
+    expect(code).toBe(2);
+    expect(stderr.join('')).toContain(
+      'explore: "detail" must be one of brief|normal|full (got "bogus")',
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// explore-payloads C.4: handleObject dispatches, opens the synced store, and prints
+// the formatObject bytes to STDOUT via runObject. Uses the real torture graph (sync
+// then object over the same chdir'd project) — mirrors the handleSync integration setup.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('handleObject — dispatches and prints via runObject (C.4)', () => {
+  let projectRoot: string;
+  let originalCwd: string;
+  let mat: MaterializedDb;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    mat = materializeTorture();
+    projectRoot = join(tmpdir(), `dbgraph-dispatch-object-${randomUUID()}`);
+    mkdirSync(join(projectRoot, '.dbgraph'), { recursive: true });
+    const cfg = buildConfig({ dialect: 'sqlite', file: mat.path });
+    writeFileSync(join(projectRoot, 'dbgraph.config.json'), writeConfig(cfg), 'utf-8');
+    process.chdir(projectRoot);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    rmSync(projectRoot, { recursive: true, force: true });
+    mat.cleanup();
+  });
+
+  function handlerFor(command: string): (args: ParsedArgs) => Promise<{ readonly type: string }> {
+    const d = dispatch(command);
+    if (d.type !== 'handler') throw new Error(`expected a handler for "${command}"`);
+    return d.handler;
+  }
+
+  it('object main.employees --detail full prints the columns/triggers payload to STDOUT', async () => {
+    // First build the graph (sync), then run the object handler over the same project.
+    await handlerFor('sync')({ command: 'sync', positionals: [], flags: {} });
+
+    const stdout: string[] = [];
+    const outSpy = vi.spyOn(process.stdout, 'write').mockImplementation((c: string | Uint8Array) => {
+      stdout.push(String(c));
+      return true;
+    });
+    let outcome: { readonly type: string };
+    try {
+      outcome = await handlerFor('object')({
+        command: 'object',
+        positionals: ['main.employees'],
+        flags: { detail: 'full' },
+      });
+    } finally {
+      outSpy.mockRestore();
+    }
+
+    expect(outcome).toStrictEqual({ type: 'success' });
+    const out = stdout.join('');
+    // Dispatched → opened store → runObject → formatObject: the payload facts are present.
+    expect(out).toContain('main.employees  [table]');
+    expect(out).toContain('COLUMNS');
+    expect(out).toContain('  salary  REAL  [NN]  DEFAULT 0.0');
+    expect(out).toContain('  [FK]  fk_employees_0  (dept_id → main.departments)');
+    expect(out).toContain('TRIGGERS');
+    expect(out).toContain('  trg_emp_after_insert  AFTER INSERT');
   });
 });
 

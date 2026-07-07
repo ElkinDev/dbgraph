@@ -31,6 +31,7 @@ Commands:
   status    Show the current state of the graph index
   query     Search the graph index for a term
   explore   Explore a node and its neighbors in the graph
+  object    Show one object in full (columns, constraints, indexes, triggers)
   diff      Compare two snapshots of the graph index
   affected  Analyze DDL to show impacted objects (--json for machine output)
   install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)
