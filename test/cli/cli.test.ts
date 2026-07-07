@@ -137,6 +137,48 @@ describe('cli — USAGE_TEXT', () => {
     expect(objectIdx).toBe(exploreIdx + 1);
   });
 
+  // ── graph-viz task 3.4: the viz banner line, column-aligned + placed after object (Q4) ──
+
+  it('viz banner line is present with EXACTLY the pinned, column-aligned text (task 3.4)', () => {
+    // cli-config scenario "viz banner line is present with the exact aligned text":
+    // two leading spaces, `viz`, seven spaces — description aligned at character index 12,
+    // matching init/object/mcp/install. Dropping the viz/--mermaid/--out mention fails the pin.
+    const vizLine = USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('viz')) ?? '';
+    expect(vizLine).toBe(
+      '  viz       Export a self-contained interactive graph HTML (--mermaid ER, --out path, --full all nodes)',
+    );
+    // Description column is index 12 (same as every other command line).
+    expect(vizLine.indexOf('Export')).toBe(12);
+    expect(vizLine).toContain('--mermaid');
+    expect(vizLine).toContain('--out');
+  });
+
+  it('viz line is placed immediately AFTER the object line (Q4)', () => {
+    const lines = USAGE_TEXT.split('\n');
+    const objectIdx = lines.findIndex((l) => l.trimStart().startsWith('object'));
+    const vizIdx = lines.findIndex((l) => l.trimStart().startsWith('viz'));
+    expect(objectIdx).toBeGreaterThanOrEqual(0);
+    expect(vizIdx).toBe(objectIdx + 1);
+  });
+
+  it('adding the viz line leaves every existing command line byte-identical (Q4 insertion-only)', () => {
+    for (const line of [
+      '  init      Initialize the graph index for a database',
+      '  sync      Synchronize the graph index with the database',
+      '  status    Show the current state of the graph index',
+      '  query     Search the graph index for a term',
+      '  explore   Explore a node and its neighbors in the graph',
+      '  object    Show one object in full (columns, constraints, indexes, triggers)',
+      '  diff      Compare two snapshots of the graph index',
+      '  affected  Analyze DDL to show impacted objects (--json for machine output)',
+      '  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)',
+      '  doctor    Run a content-free connectivity self-test (safe to share)',
+      '  mcp       Serve the MCP tools over stdio (default) or Streamable HTTP (--http)',
+    ]) {
+      expect(USAGE_TEXT).toContain(line);
+    }
+  });
+
   it('adds ONLY the mcp line — every existing command line stays byte-identical (task 4.1)', () => {
     // cli-config scenario "Adding the mcp line leaves the other command lines unchanged":
     // init…doctor (incl. the pinned install line) are byte-identical to before.

@@ -23,6 +23,11 @@
 import { describe, it, expect } from 'vitest';
 import { planEntry } from '../../src/bin/sea-entry.js';
 import { ConfigError } from '../../src/index.js';
+import {
+  VIZ_TEMPLATE_HTML,
+  VIZ_VIEWER_JS,
+  VIZ_VENDOR_JS,
+} from '../../src/cli/commands/viz/assets/embedded.generated.js';
 
 // A SEA argv duplicates the executable path in argv[0] AND argv[1] (Batch 0.2).
 const EXE = 'C:\\opt\\dbgraph\\dbgraph-win-x64.exe';
@@ -68,6 +73,28 @@ describe('planEntry — SEA argv (offset = slice(2), Batch 0.2 correction)', () 
 
   it('SEA empty user args: [exe, exe] → cli []', () => {
     expect(planEntry([EXE, EXE], true)).toStrictEqual({ mode: 'cli', args: [] });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// graph-viz task 3.8: the viz client assets ship INSIDE the SEA blob (ADR-010).
+// They are embedded as string constants reachable from the SEA entry import graph
+// (sea-entry → cli → dispatch → viz → assets → embedded.generated), so esbuild
+// string-inlines them into build/sea/dbgraph.cjs — NOT read from disk at runtime.
+// This unit proves the constants carry real, inlinable content (the built-bundle
+// artifact scan is the release smoke). Closes OPEN-Q2 at the source level.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('viz assets are embedded for the SEA blob (task 3.8, OPEN-Q2)', () => {
+  it('the embedded viz assets are non-empty inlinable string constants', () => {
+    expect(VIZ_TEMPLATE_HTML.length).toBeGreaterThan(0);
+    expect(VIZ_VIEWER_JS.length).toBeGreaterThan(0);
+    expect(VIZ_VENDOR_JS.length).toBeGreaterThan(0);
+  });
+
+  it('the vendored constant carries the ISC d3-force engine (offline force layout in the binary)', () => {
+    expect(VIZ_VENDOR_JS).toContain('forceSimulation');
+    expect(VIZ_VENDOR_JS).toContain('Copyright 2010-2021 Mike Bostock');
   });
 });
 

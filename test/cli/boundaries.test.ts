@@ -139,6 +139,11 @@ describe('hexagonal boundary: src/cli must not import src/adapters, drivers, or 
     expect(cliFiles.length).toBeGreaterThan(0);
   });
 
+  it('the viz command source is among the scanned CLI files (graph-viz 3.7b)', () => {
+    // The viz assembly adapter must be covered by this boundary sweep (ADR-004).
+    expect(cliFiles.some((f) => f.replace(/\\/g, '/').endsWith('src/cli/commands/viz.ts'))).toBe(true);
+  });
+
   it('no CLI file imports from src/adapters/**, src/mcp/**, or DB drivers', () => {
     const violations: string[] = [];
 
