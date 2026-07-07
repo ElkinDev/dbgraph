@@ -185,7 +185,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   (a move is a HARD STOP — the shared branch fabricated a sqlite section); add the `docs/format-spec.md` §6 token-delta note
   for the new PARAMETERS section. Spec: sqlite-extraction "SQLite present/MCP goldens show zero drift" (SQ-2); mcp-server MCP-5
   (non-routine/unset negative). §6.
-- [ ] 2.7 GATE (Batch 2 — FINAL): RE-MEASURE baseline; `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0;
+- [x] 2.7 GATE (Batch 2 — FINAL): RE-MEASURE baseline; `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0;
   `npm test` FULL GREEN (baseline + ALL Batch 1 + Batch 2 suites) with EVERY re-blessed golden byte-identical on re-run;
   **sqlite + MCP goldens byte-identical (HARD STOP)**; engines write-verb scanner GREEN; ADR-004 read-only + ADR-008
   determinism green; leak-scan clean; confirm NOTHING pushed (no push/PR/gh/tag). Trace the DoD below. COMMIT
@@ -234,23 +234,23 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
 
 ## Definition of Done (tied to the proposal Success Criteria; 23 scenarios across 7 requirements / 7 deltas traced)
 
-- [ ] `RoutinePayload.parameters` / `RawParameter` carry `name`/`dataType`/`direction`/`ordinal`(+`hasDefault?`), ordinal-sorted,
+- [x] `RoutinePayload.parameters` / `RawParameter` carry `name`/`dataType`/`direction`/`ordinal`(+`hasDefault?`), ordinal-sorted,
   UNSET when no catalog (unknown ≠ known-zero), `declared` never `inferred`. — Batch 1 (1.1, 1.2) [graph-model GM-1/GM-2/GM-3;
   schema-extraction SE-1/SE-2]
-- [ ] `explore`/`object` render a PARAMETERS section (name/type/direction, `hasDefault` where sourced) for a routine focus on
+- [x] `explore`/`object` render a PARAMETERS section (name/type/direction, `hasDefault` where sourced) for a routine focus on
   mssql/pg/mysql — exact bytes (L-009), BYTE-IDENTICAL for CLI AND MCP, explore AND object. — Batch 2 (2.1, 2.2, 2.3, 2.4)
   [mcp-server MCP-1/MCP-2/MCP-3/MCP-4]
-- [ ] Parameter ORDER equals ordinal position, contiguous 1..N over emitted params, deterministically pinned (ADR-008). —
+- [x] Parameter ORDER equals ordinal position, contiguous 1..N over emitted params, deterministically pinned (ADR-008). —
   Batch 1 (1.2) + Batch 2 (2.1) [graph-model GM-1; mcp-server MCP-4] (D6)
-- [ ] sqlite HONESTLY renders NO parameters — `parameters` UNSET, `CapabilityMatrix` unchanged, present/MCP goldens ZERO
+- [x] sqlite HONESTLY renders NO parameters — `parameters` UNSET, `CapabilityMatrix` unchanged, present/MCP goldens ZERO
   drift (negative). — Batch 1 (1.6) + Batch 2 (2.6) [sqlite-extraction SQ-1/SQ-2; mcp-server MCP-5]
-- [ ] pg all-IN routine (NULL `proargmodes`) renders every param `in`; VARIADIC `v`→`in`; `t` TABLE EXCLUDED; typmod-less
+- [x] pg all-IN routine (NULL `proargmodes`) renders every param `in`; VARIADIC `v`→`in`; `t` TABLE EXCLUDED; typmod-less
   `dataType` (no fabricated precision) — exact per engine. — Batch 1 (1.4) [pg-extraction PG-2/PG-3/PG-4]
-- [ ] `hasDefault` reflects ONLY a real catalog flag — mssql `has_default_value`, pg trailing `pronargdefaults`; mysql OMITS
+- [x] `hasDefault` reflects ONLY a real catalog flag — mssql `has_default_value`, pg trailing `pronargdefaults`; mysql OMITS
   it entirely — no fabricated default (HONESTY). — Batch 1 (1.3, 1.4, 1.5) [mssql MS-1; pg PG-1; mysql MY-1/MY-2; graph-model GM-3]
-- [ ] Only mssql/pg/mysql raw-catalog/e2e + mssql dump goldens re-blessed — ONE deliberate inventoried commit, byte-identical
+- [x] Only mssql/pg/mysql raw-catalog/e2e + mssql dump goldens re-blessed — ONE deliberate inventoried commit, byte-identical
   on re-run; sqlite + MCP + untouched engines byte-identical at EVERY gate; engines write-verb scanner green. — Batch 2 (2.5,
   2.6) [mssql MS-3; pg PG-5; mysql MY-3; schema-extraction SE-2]
-- [ ] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new suites),
+- [x] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new suites),
   every golden byte-identical on re-run; ADR-004 read-only + ADR-008 determinism green; leak-scan clean; nothing pushed. —
   every batch GATE (1.7, 2.7)
