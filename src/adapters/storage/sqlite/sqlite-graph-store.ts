@@ -115,6 +115,8 @@ export class SqliteGraphStore implements GraphStore {
   private readonly stmtGetNodeByQName: StatementHandle;
   private readonly stmtGetEdgesFrom: StatementHandle;
   private readonly stmtGetEdgesTo: StatementHandle;
+  private readonly stmtGetAllNodes: StatementHandle;
+  private readonly stmtGetAllEdges: StatementHandle;
   private readonly stmtDeleteNodeEdges: StatementHandle;
   private readonly stmtDeleteNodeFts: StatementHandle;
   private readonly stmtDeleteNode: StatementHandle;
@@ -175,6 +177,12 @@ export class SqliteGraphStore implements GraphStore {
     // getEdgesFrom/To with optional kind filter handled via two statements each.
     this.stmtGetEdgesFrom = handle.prepare(`SELECT * FROM edges WHERE src_id = ? ORDER BY kind, dst_id, id`);
     this.stmtGetEdgesTo   = handle.prepare(`SELECT * FROM edges WHERE dst_id = ? ORDER BY kind, src_id, id`);
+
+    // Bulk read-only whole-graph seam (graph-viz) — ONE prepared statement each, read-only,
+    // deterministic ORDER BY. Extends the getEdgesFrom ordering to a full stable key so
+    // deterministic consumers (viz, mermaid) stay byte-reproducible (design Q2).
+    this.stmtGetAllNodes = handle.prepare(`SELECT * FROM nodes ORDER BY qname, id`);
+    this.stmtGetAllEdges = handle.prepare(`SELECT * FROM edges ORDER BY kind, src_id, dst_id, id`);
 
     this.stmtDeleteNodeEdges = handle.prepare(`
       DELETE FROM edges WHERE src_id = ? OR dst_id = ?
@@ -425,6 +433,26 @@ export class SqliteGraphStore implements GraphStore {
       return edges;
     } catch (e) {
       throw new StorageError('getEdgesTo failed', e);
+    }
+  }
+
+  // ─── bulk read-only whole-graph seam (graph-viz) ──────────────────────────────
+
+  async getAllNodes(): Promise<readonly GraphNode[]> {
+    try {
+      const rows = this.stmtGetAllNodes.all() as NodeRow[];
+      return rows.map(rowToNode);
+    } catch (e) {
+      throw new StorageError('getAllNodes failed', e);
+    }
+  }
+
+  async getAllEdges(): Promise<readonly GraphEdge[]> {
+    try {
+      const rows = this.stmtGetAllEdges.all() as EdgeRow[];
+      return rows.map(rowToEdge);
+    } catch (e) {
+      throw new StorageError('getAllEdges failed', e);
     }
   }
 

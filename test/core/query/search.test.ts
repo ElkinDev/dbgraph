@@ -56,6 +56,8 @@ function makeFakeStore(
       [...nodeMap.values()].find((n) => n.kind === kind && n.qname === qname) ?? null,
     getEdgesFrom: async () => [],
     getEdgesTo: async () => [],
+    getAllNodes: async () => [...nodeMap.values()],
+    getAllEdges: async () => [],
     searchFts: async (q, opts) => ftsResponder(q, opts),
     putSnapshot: async () => {},
     listSnapshots: async () => [],

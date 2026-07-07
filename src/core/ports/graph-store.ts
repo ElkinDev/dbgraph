@@ -127,6 +127,12 @@ export interface GraphStore {
   getEdgesFrom(nodeId: string, kinds?: readonly EdgeKind[]): Promise<readonly GraphEdge[]>;
   getEdgesTo(nodeId: string, kinds?: readonly EdgeKind[]): Promise<readonly GraphEdge[]>;
 
+  // bulk read-only whole-graph seam (graph-viz) — one bounded, deterministic pass each,
+  // strictly read-only, identical across drivers. Feeds deterministic consumers (viz,
+  // mermaid) without an N-per-node query storm.
+  getAllNodes(): Promise<readonly GraphNode[]>;   // ORDER BY qname, id
+  getAllEdges(): Promise<readonly GraphEdge[]>;   // ORDER BY kind, src_id, dst_id, id
+
   // FTS
   searchFts(
     query: string,

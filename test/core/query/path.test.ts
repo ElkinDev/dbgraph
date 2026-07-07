@@ -76,6 +76,8 @@ function makeFakeStore(
       if (kinds === undefined || kinds.length === 0) return all;
       return all.filter((e) => kinds.includes(e.kind));
     },
+    getAllNodes: async () => nodes,
+    getAllEdges: async () => [],
     searchFts: async () => ({ hits: [], total: 0 }),
     putSnapshot: async () => {},
     listSnapshots: async () => [],

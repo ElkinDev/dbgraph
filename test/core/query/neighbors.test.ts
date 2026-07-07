@@ -57,6 +57,8 @@ function makeFakeStore(
     getNodeByQName: async () => null,
     getEdgesFrom: async (id) => edgesFrom[id] ?? [],
     getEdgesTo: async (id) => edgesTo[id] ?? [],
+    getAllNodes: async () => nodes,
+    getAllEdges: async () => [],
     searchFts: async () => ({ hits: [], total: 0 }),
     putSnapshot: async () => {},
     listSnapshots: async () => [],

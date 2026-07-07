@@ -67,6 +67,8 @@ function makeFakeStore(
       const all = edgesTo[id] ?? [];
       return kinds === undefined ? all : all.filter((e) => kinds.includes(e.kind));
     },
+    getAllNodes: async () => nodes,
+    getAllEdges: async () => [],
     searchFts: async () => ({ hits: [], total: 0 }),
     putSnapshot: async () => {},
     listSnapshots: async () => [],
