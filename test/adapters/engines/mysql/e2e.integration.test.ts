@@ -235,6 +235,32 @@ describe.skipIf(!mysqlIntegrationEnabled())(
       expect(dstNode?.name).toBe('audit_log');
     });
 
+    // DOG-2 1.5 — INTEGRATION tier: L-009 exact-set parameter pins over the real materialized
+    // mysql torture catalog. Proves FULL DTD_IDENTIFIER types (varchar(20)), NULL function-mode
+    // ⇒ 'in', ORDINAL_POSITION=0 return row excluded, no fabricated hasDefault, empty [].
+    it('fn_audit_write parameters pinned exactly — FULL types, all in, no hasDefault (DOG-2 MY-2)', () => {
+      const fnNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_audit_write',
+      );
+      expect(fnNode).toBeDefined();
+      expect(fnNode!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'int', direction: 'in', ordinal: 1 },
+        { name: 'p_old_status', dataType: 'varchar(20)', direction: 'in', ordinal: 2 },
+        { name: 'p_new_status', dataType: 'varchar(20)', direction: 'in', ordinal: 3 },
+      ]);
+    });
+
+    it('proc_orchestrate / proc_step carry parameters:[] (real empty) (DOG-2 MY-1)', () => {
+      for (const name of ['proc_orchestrate', 'proc_step']) {
+        const node = normResult.graph.nodes.find(
+          (n) => n.kind === 'procedure' && n.name === name,
+        );
+        expect(node, name).toBeDefined();
+        // buildPayload elides an empty array → no parameters key (honest known-zero render).
+        expect(node!.payload['parameters']).toBeUndefined();
+      }
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // proc_dynamic_query: hasDynamicSql + ZERO edges (no fabricated edges)
     // ─────────────────────────────────────────────────────────────────────

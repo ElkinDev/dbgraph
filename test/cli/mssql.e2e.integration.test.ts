@@ -159,6 +159,45 @@ describe.skipIf(!mssqlIntegrationEnabled())(
       }
     });
 
+    // DOG-2 1.3 — INTEGRATION tier: the SAME L-009 exact-set parameter pins as the map-unit
+    // tier, proven end-to-end over the real materialized torture.sql catalog. Asserts the
+    // ordinal-sorted payload.parameters on the routine nodes — BARE mssql types (int /
+    // nvarchar / decimal, NEVER decimal(12,2)), direction 'in', no fabricated hasDefault,
+    // parameter_id=0 return row excluded. Proves extract → normalize copy → store payload.
+    it('routine parameters land on the node payload, BARE types, exact sets (DOG-2 L-009)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
+      const store = await createSqliteGraphStore({ path: storePath });
+      try {
+        const procs = await store.getNodesByKind('procedure');
+        const fns = await store.getNodesByKind('function');
+        const paramsOf = (
+          list: readonly { name: string; payload: Readonly<Record<string, unknown>> }[],
+          n: string,
+        ) => list.find((x) => x.name === n)?.payload['parameters'];
+
+        // usp_log_change(@order_id int, @new_status nvarchar(20)) → BARE nvarchar, both 'in'
+        expect(paramsOf(procs, 'usp_log_change')).toStrictEqual([
+          { name: '@order_id', dataType: 'int', direction: 'in', ordinal: 1 },
+          { name: '@new_status', dataType: 'nvarchar', direction: 'in', ordinal: 2 },
+        ]);
+        // usp_refresh_totals(@order_id int) → single 'in' param
+        expect(paramsOf(procs, 'usp_refresh_totals')).toStrictEqual([
+          { name: '@order_id', dataType: 'int', direction: 'in', ordinal: 1 },
+        ]);
+        // scalar fns: BARE decimal, parameter_id=0 return row EXCLUDED
+        expect(paramsOf(fns, 'fn_net_amount')).toStrictEqual([
+          { name: '@gross', dataType: 'decimal', direction: 'in', ordinal: 1 },
+        ]);
+        expect(paramsOf(fns, 'fn_round_money')).toStrictEqual([
+          { name: '@amount', dataType: 'decimal', direction: 'in', ordinal: 1 },
+        ]);
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
     // DOG-1 C.4 — INTEGRATION tier: the SAME C.1/C.2/C.3 traversal + render pins as the
     // synthetic default-CI tier, proven end-to-end over the real materialized torture.sql
     // catalog. Impact traverses `calls` as READ-impact; precheck surfaces the caller in

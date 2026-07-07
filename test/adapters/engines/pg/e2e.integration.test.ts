@@ -260,6 +260,45 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(dependencyEdges.length).toBe(0);
     });
 
+    // DOG-2 1.4 — INTEGRATION tier: L-009 exact-set parameter pins over the real materialized
+    // pg torture catalog (non-t/non-v routines only — the DOG-1 pg fixtures exercise neither).
+    // Proves the SQL regtype decode: all-IN routines render every arg 'in', typmod-less types,
+    // real empty signatures carry [], no fabricated out/inout/hasDefault.
+    it('fn_place_order NULL-modes → four in integer params, exact set (DOG-2 PG-2)', () => {
+      const node = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_place_order',
+      );
+      expect(node).toBeDefined();
+      expect(node!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'integer', direction: 'in', ordinal: 1 },
+        { name: 'p_customer_id', dataType: 'integer', direction: 'in', ordinal: 2 },
+        { name: 'p_product_id', dataType: 'integer', direction: 'in', ordinal: 3 },
+        { name: 'p_qty', dataType: 'integer', direction: 'in', ordinal: 4 },
+      ]);
+    });
+
+    it('fn_wrapper / fn_inner carry parameters:[] (real empty, not unset) (DOG-2 PG-1)', () => {
+      for (const name of ['fn_wrapper', 'fn_inner']) {
+        const node = normResult.graph.nodes.find(
+          (n) => n.kind === 'function' && n.name === name,
+        );
+        expect(node, name).toBeDefined();
+        // buildPayload elides an empty array, so a real no-arg routine has NO parameters key
+        // in the payload — the honest render of a known-zero signature (renderParameters → []).
+        expect(node!.payload['parameters']).toBeUndefined();
+      }
+    });
+
+    it('proc_cancel_order(p_order_id int) → single in integer param (DOG-2 PG-2)', () => {
+      const node = normResult.graph.nodes.find(
+        (n) => n.kind === 'procedure' && n.name === 'proc_cancel_order',
+      );
+      expect(node).toBeDefined();
+      expect(node!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'integer', direction: 'in', ordinal: 1 },
+      ]);
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // Query API: impact and path (L-009: pinned node+edge counts)
     // ─────────────────────────────────────────────────────────────────────

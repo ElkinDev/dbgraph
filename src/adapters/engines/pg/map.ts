@@ -32,6 +32,7 @@ import type {
   RawIndex,
   RawTriggerInfo,
   RawDependency,
+  RawParameter,
 } from '../../../core/model/catalog.js';
 import type { NodeKind } from '../../../core/model/node.js';
 import { tokenizePgBody } from './tokenizer.js';
@@ -150,6 +151,14 @@ export interface RoutineRow {
   readonly routine_kind: string;
   readonly routine_def: string | null;
   readonly comment: string | null;
+  // DOG-2 §4.2: argument arrays decoded inline on the pg_proc row (all index-aligned).
+  // OPTIONAL so pre-DOG-2 fixtures without them stay valid — when arg_type_names is absent
+  // the routine leaves parameters UNSET (unknown), NOT [] (known-zero). node-postgres parses
+  // text[]/regtype[]::text[] into JS arrays; proargnames may carry nulls for unnamed positions.
+  readonly arg_names?: readonly (string | null)[] | null;   // proargnames — NULL when all unnamed
+  readonly arg_modes?: readonly string[] | null;            // proargmodes::text[] — NULL ⇒ all IN
+  readonly arg_type_names?: readonly string[] | null;       // regtype[]::text[] — typmod-less
+  readonly num_defaults?: number | null;                    // pronargdefaults — trailing defaults
 }
 
 export interface TriggerRow {
@@ -536,6 +545,57 @@ function buildViews(
 // Routine extraction (functions + procedures)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Decodes pg_proc argument arrays (index-aligned) into ordinal-ordered RawParameter[].
+ * DOG-2 §4.2 / D5 / D6. Returns undefined when the row carries NO arg-type array (pre-DOG-2
+ * fixture / unknown) — honest absence, "unknown" ≠ "known-zero"; a real no-arg routine has an
+ * EMPTY arg_type_names array and yields [].
+ *
+ * Rules (per element i, aligned across arg_type_names / arg_modes / arg_names):
+ *   - mode: i→in, o→out, b→inout, v (VARIADIC)→in, t (RETURNS TABLE)→EXCLUDED (result column).
+ *     arg_modes NULL ⇒ EVERY arg is 'in' (the all-IN encoding) — NEVER fabricate out/inout.
+ *   - dataType: the regtype name VERBATIM (typmod-less; numeric, never numeric(10,2)).
+ *   - ordinal: contiguous 1..N over EMITTED args (after excluding any t-mode entry).
+ *   - hasDefault: only the TRAILING num_defaults INPUT-capable (non-out) emitted args — pg
+ *     exposes the count, not per-arg flags, so we never over-claim.
+ */
+function decodePgParameters(row: RoutineRow): readonly RawParameter[] | undefined {
+  const typeNames = row.arg_type_names;
+  if (typeNames === undefined || typeNames === null) return undefined; // unknown → UNSET
+
+  const modes = row.arg_modes ?? null; // null ⇒ all 'in'
+  const names = row.arg_names ?? null;
+
+  const params: RawParameter[] = [];
+  for (let i = 0; i < typeNames.length; i++) {
+    const mode = modes !== null ? modes[i] : 'i';
+    if (mode === 't') continue; // RETURNS TABLE result column — not a call parameter
+    const direction: RawParameter['direction'] =
+      mode === 'o' ? 'out' : mode === 'b' ? 'inout' : 'in'; // i / v / null / anything else → in
+    const rawName = names !== null ? names[i] : null;
+    params.push({
+      name: rawName ?? '',
+      dataType: typeNames[i] ?? '',
+      direction,
+      ordinal: params.length + 1,
+    });
+  }
+
+  // hasDefault: mark the trailing num_defaults INPUT-capable (direction !== 'out') emitted args.
+  const numDefaults = row.num_defaults ?? 0;
+  if (numDefaults > 0) {
+    const inputIdx = params
+      .map((p, idx) => ({ p, idx }))
+      .filter(({ p }) => p.direction !== 'out')
+      .map(({ idx }) => idx);
+    for (const idx of inputIdx.slice(Math.max(0, inputIdx.length - numDefaults))) {
+      params[idx] = { ...params[idx]!, hasDefault: true };
+    }
+  }
+
+  return params;
+}
+
 function buildRoutines(
   input: PgRowInput,
   scope: ExtractionScope,
@@ -597,6 +657,10 @@ function buildRoutines(
       }
     }
 
+    // DOG-2 §4.2/D6: decode inline pg_proc arg arrays into ordinal-ordered parameters.
+    // undefined (no arg arrays on the row) ⇒ leave the field UNSET (honest absence).
+    const parameters = decodePgParameters(row);
+
     const obj: RawObject = {
       kind,
       schema: row.schema_name,
@@ -604,6 +668,7 @@ function buildRoutines(
       ...(body !== undefined ? { body } : {}),
       ...(hasDynSql !== undefined ? { hasDynamicSql: hasDynSql } : {}),
       ...(dependencies !== undefined && dependencies.length > 0 ? { dependencies } : {}),
+      ...(parameters !== undefined ? { parameters } : {}),
       ...(row.comment !== null ? { comment: row.comment } : {}),
     };
     objects.push(obj);

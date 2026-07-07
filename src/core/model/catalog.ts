@@ -39,7 +39,25 @@ export interface RawObject {
   readonly trigger?: RawTriggerInfo;             // timing + events + target table
   readonly dependencies?: readonly RawDependency[]; // read/write hints (US-007)
   readonly comment?: string;                     // catalog comment/description
+  // Routines: ordinal-ordered call parameters (procedure/function only). OPTIONAL — an engine
+  // with a parameter catalog (mssql/pg/mysql) populates it; an engine without one (sqlite)
+  // leaves it UNSET (honest absence, "unknown" ≠ "known-zero"). DOG-2 §3.1 D2.
+  readonly parameters?: readonly RawParameter[];
   readonly extra?: Readonly<Record<string, unknown>>; // engine-specific passthrough → payload
+}
+
+/**
+ * A single routine call parameter — the durable adapter→core contract (mirrors the
+ * RoutineParameter accessor view in node.ts). DOG-2 §3.1 D2. dataType is the RAW engine
+ * type STRING, composed IDENTICALLY to the SAME engine's COLUMN dataType (NO cross-engine
+ * normalization). direction/hasDefault are sourced ONLY from a real catalog signal.
+ */
+export interface RawParameter {
+  readonly name: string;
+  readonly dataType: string;
+  readonly direction: 'in' | 'out' | 'inout';
+  readonly hasDefault?: boolean;                 // OMITTED where the catalog cannot express it
+  readonly ordinal: number;                      // 1-based, contiguous over emitted params
 }
 
 export interface RawColumn {

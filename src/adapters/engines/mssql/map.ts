@@ -24,6 +24,7 @@ import type {
   RawConstraint,
   RawIndex,
   RawTriggerInfo,
+  RawParameter,
 } from '../../../core/model/catalog.js';
 import type { NodeKind } from '../../../core/model/node.js';
 import { tokenizeModuleDeps } from './tokenizer.js';
@@ -144,6 +145,17 @@ export interface TriggerEventRow {
   readonly event_type: string; // 'INSERT' | 'UPDATE' | 'DELETE'
 }
 
+export interface ParameterRow {
+  readonly schema_name: string;
+  readonly object_name: string;
+  readonly object_id: number;
+  readonly parameter_id: number;   // 0 = scalar-function return row (excluded)
+  readonly parameter_name: string; // verbatim, keeps '@'
+  readonly data_type: string;      // BARE sys.types.name (int / nvarchar / decimal)
+  readonly is_output: boolean;     // 1 → 'out', 0 → 'in' (never 'inout')
+  readonly has_default_value: boolean;
+}
+
 export interface SequenceRow {
   readonly schema_name: string;
   readonly sequence_name: string;
@@ -192,6 +204,9 @@ export interface MssqlRowInput {
   readonly sequences: readonly SequenceRow[];
   readonly extendedProperties: readonly ExtendedPropRow[];
   readonly dependencies: readonly DepRow[];
+  // DOG-2: sys.parameters rows (one per parameter). OPTIONAL so existing callers/fixtures
+  // that predate DOG-2 stay valid and drift-free; buildModules treats absent as [].
+  readonly parameters?: readonly ParameterRow[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -512,6 +527,33 @@ function buildModules(
     }
   }
 
+  // DOG-2 §4.1/D6: build object_id → RawParameter[] from sys.parameters rows, attached to
+  // procedure/function RawObjects by object_id. Sorted by parameter_id and defensively
+  // filtered (parameter_id > 0 excludes the scalar-function return row); ordinal is the
+  // CONTIGUOUS 1..N position among emitted params (D6), not the raw parameter_id. dataType
+  // is the BARE sys.types.name (D5); direction from is_output (never inout); hasDefault only
+  // from a real has_default_value flag (never fabricated).
+  const paramMap = new Map<number, RawParameter[]>();
+  const paramRows = (input.parameters ?? [])
+    .filter((p) => p.parameter_id > 0)
+    .slice()
+    .sort((a, b) => a.parameter_id - b.parameter_id);
+  for (const p of paramRows) {
+    let list = paramMap.get(p.object_id);
+    if (list === undefined) {
+      list = [];
+      paramMap.set(p.object_id, list);
+    }
+    const rp: RawParameter = {
+      name: p.parameter_name,
+      dataType: p.data_type,
+      direction: p.is_output ? 'out' : 'in',
+      ordinal: list.length + 1,
+      ...(p.has_default_value ? { hasDefault: true } : {}),
+    };
+    list.push(rp);
+  }
+
   const objects: RawObject[] = [];
 
   for (const mod of input.modules) {
@@ -583,6 +625,10 @@ function buildModules(
       ...(dynamic ? { hasDynamicSql: true } : {}),
       ...(triggerInfo !== undefined ? { trigger: triggerInfo } : {}),
       ...(dependencies.length > 0 ? { dependencies } : {}),
+      // DOG-2: every procedure/function carries a parameters array — populated from
+      // sys.parameters, or [] for a real no-argument routine (known-zero, NOT unset).
+      // Views/triggers never get one (not in the SQL_MSSQL_PARAMETERS scope).
+      ...(sourceIsRoutine ? { parameters: paramMap.get(mod.object_id) ?? [] } : {}),
       ...(Object.keys(extra).length > 0 ? { extra } : {}),
       ...(comment !== undefined ? { comment } : {}),
     };

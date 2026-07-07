@@ -239,6 +239,48 @@ ORDER BY tr.name, te.type_desc
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Routine parameters (DOG-2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Routine (procedure / function) call parameters from sys.parameters.
+ * One row per parameter — a SEPARATE family joined to modules by object_id in map.ts
+ * (mirrors SQL_MSSQL_TRIGGER_EVENTS). DOG-2 §4.1.
+ *
+ * - is_output: 1 → 'out', 0 → 'in'. sys.parameters has NO explicit INOUT concept, so the
+ *   map NEVER emits 'inout' — honest to the catalog's expressiveness.
+ * - data_type = sys.types.name, the BARE type name (int / nvarchar / decimal — NOT
+ *   decimal(12,2)), composed IDENTICALLY to the mssql COLUMN dataType (queries.ts:53).
+ * - has_default_value (bit) → hasDefault.
+ * - parameter_id = 0 (scalar-function return value, empty name) is EXCLUDED here (WHERE
+ *   p.parameter_id > 0) — it is not a call parameter (the return is captured by `returns`).
+ *
+ * FOR JSON safety (§4.1 F-1..F-7): single top-level SELECT + top-level ORDER BY → the
+ * dump-emitter appends `FOR JSON PATH, INCLUDE_NULL_VALUES` unchanged. No subquery wrap,
+ * no nested FOR JSON, all columns nvarchar/int/bit (no sql_variant) → no coercion issue.
+ * Read-only catalog SELECT (US-031 write-verb scanner stays green).
+ */
+export const SQL_MSSQL_PARAMETERS = `
+SELECT
+  s.name                          AS schema_name,
+  o.name                          AS object_name,
+  o.object_id                     AS object_id,
+  p.parameter_id                  AS parameter_id,
+  p.name                          AS parameter_name,
+  tp.name                         AS data_type,
+  p.is_output                     AS is_output,
+  p.has_default_value             AS has_default_value
+FROM sys.parameters p
+JOIN sys.objects o ON o.object_id = p.object_id
+JOIN sys.schemas s ON s.schema_id = o.schema_id
+JOIN sys.types tp  ON tp.user_type_id = p.user_type_id
+WHERE o.is_ms_shipped = 0
+  AND o.type IN ('P', 'FN', 'IF', 'TF')
+  AND p.parameter_id > 0
+ORDER BY s.name, o.name, p.parameter_id
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Sequences
 // ─────────────────────────────────────────────────────────────────────────────
 

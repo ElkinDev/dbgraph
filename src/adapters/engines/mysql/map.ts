@@ -32,6 +32,7 @@ import type {
   RawIndex,
   RawTriggerInfo,
   RawDependency,
+  RawParameter,
 } from '../../../core/model/catalog.js';
 import type { NodeKind } from '../../../core/model/node.js';
 import { tokenizeMysqlBody } from './tokenizer.js';
@@ -157,6 +158,15 @@ export interface MysqlTriggerRow {
   readonly action_statement: string | null;
 }
 
+export interface MysqlParameterRow {
+  readonly routine_schema: string;
+  readonly routine_name: string;        // SPECIFIC_NAME — join key to the routine
+  readonly ordinal_position: number;    // 0 = FUNCTION return row (excluded)
+  readonly parameter_name: string | null; // NULL for the return row
+  readonly parameter_mode: string | null; // IN/OUT/INOUT; NULL for FUNCTION params ⇒ 'in'
+  readonly data_type: string;           // DTD_IDENTIFIER — FULL type (int, varchar(20))
+}
+
 /**
  * Full set of pre-fetched information_schema row arrays passed to buildMysqlRawCatalog.
  * In production: populated by the adapter from MysqlReadonlyDriver queries.
@@ -174,6 +184,9 @@ export interface MysqlRowInput {
   readonly views: readonly MysqlViewRow[];
   readonly routines: readonly MysqlRoutineRow[];
   readonly triggers: readonly MysqlTriggerRow[];
+  // DOG-2: information_schema.PARAMETERS rows. OPTIONAL so pre-DOG-2 callers/fixtures stay
+  // valid and drift-free; buildRoutines treats absent as [] (every routine → known-zero []).
+  readonly parameters?: readonly MysqlParameterRow[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -470,11 +483,50 @@ function buildViews(
 // Routine extraction (functions + procedures)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** DOG-2 §4.3: PARAMETER_MODE → direction. NULL (FUNCTION params) ⇒ 'in'. */
+function mysqlParamDirection(mode: string | null): RawParameter['direction'] {
+  switch ((mode ?? 'IN').toUpperCase()) {
+    case 'OUT':   return 'out';
+    case 'INOUT': return 'inout';
+    default:      return 'in'; // IN or NULL (function params, implicitly IN)
+  }
+}
+
+/**
+ * Builds a `schema.routine_name` → ordinal-ordered RawParameter[] map from
+ * information_schema.PARAMETERS rows. DOG-2 §4.3/D6: ORDINAL_POSITION=0 return row is filtered
+ * defensively; ordinal is the CONTIGUOUS 1..N position among emitted params. dataType is the
+ * FULL DTD_IDENTIFIER (D5); hasDefault is NEVER emitted (no default column — HONESTY).
+ */
+function buildMysqlParameterMap(rows: readonly MysqlParameterRow[]): Map<string, RawParameter[]> {
+  const map = new Map<string, RawParameter[]>();
+  const sorted = rows
+    .filter((p) => p.ordinal_position > 0)
+    .slice()
+    .sort((a, b) => a.ordinal_position - b.ordinal_position);
+  for (const p of sorted) {
+    const key = `${p.routine_schema}.${p.routine_name}`;
+    let list = map.get(key);
+    if (list === undefined) {
+      list = [];
+      map.set(key, list);
+    }
+    list.push({
+      name: p.parameter_name ?? '',
+      dataType: p.data_type,
+      direction: mysqlParamDirection(p.parameter_mode),
+      ordinal: list.length + 1,
+    });
+  }
+  return map;
+}
+
 function buildRoutines(
   input: MysqlRowInput,
   scope: ExtractionScope,
 ): RawObject[] {
   const objects: RawObject[] = [];
+  const paramMap = buildMysqlParameterMap(input.parameters ?? []);
 
   for (const row of input.routines) {
     const kind: NodeKind = row.routine_type === 'PROCEDURE' ? 'procedure' : 'function';
@@ -519,6 +571,10 @@ function buildRoutines(
       }
     }
 
+    // DOG-2 §4.3: every routine carries a parameters array — the mapped params, or [] for a
+    // real no-argument routine (known-zero, NOT unset; mysql always has a parameter catalog).
+    const parameters = paramMap.get(`${row.routine_schema}.${row.routine_name}`) ?? [];
+
     const obj: RawObject = {
       kind,
       schema: row.routine_schema,
@@ -526,6 +582,7 @@ function buildRoutines(
       ...(body !== undefined ? { body } : {}),
       ...(hasDynSql !== undefined ? { hasDynamicSql: hasDynSql } : {}),
       ...(dependencies !== undefined && dependencies.length > 0 ? { dependencies } : {}),
+      parameters,
       ...(row.routine_comment !== null && row.routine_comment !== '' ? { comment: row.routine_comment } : {}),
     };
     objects.push(obj);

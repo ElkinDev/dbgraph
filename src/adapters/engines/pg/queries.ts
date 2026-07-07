@@ -244,6 +244,15 @@ ORDER BY n.nspname, c.relname
  * pg_get_functiondef returns the full CREATE FUNCTION/PROCEDURE body.
  * prokind: 'f'=function, 'p'=procedure, 'a'=aggregate, 'w'=window (a/w excluded).
  * Optional $1 scopes to a single schema.
+ *
+ * DOG-2 §4.2: argument metadata lives INLINE on the pg_proc row, so this query is EXTENDED
+ * (not a second query). arg_type NAMES are decoded IN SQL via ::regtype[]::text[] — exact,
+ * verbatim (integer / numeric), no JS pg_type round-trip. NOTE regtype is TYPMOD-LESS for
+ * function args (numeric, NOT numeric(10,2)) — pg stores no per-argument typmod; the precision
+ * is physically absent and MUST NOT be fabricated. proargmodes is internally "char"[]; cast to
+ * text[] so node-postgres returns a parsed array ({i,o,b,v,t}) rather than a "{i,o}" string.
+ * proallargtypes (all args incl. OUT/INOUT/TABLE) is NULL when only IN args exist → COALESCE
+ * falls back to proargtypes (IN args only, decoded via string_to_array — the version-safe idiom).
  */
 export const SQL_PG_ROUTINES = `
 SELECT
@@ -251,7 +260,12 @@ SELECT
   p.proname                                         AS routine_name,
   p.prokind                                         AS routine_kind,
   pg_catalog.pg_get_functiondef(p.oid)              AS routine_def,
-  obj_description(p.oid, 'pg_proc')                AS comment
+  obj_description(p.oid, 'pg_proc')                AS comment,
+  p.proargnames                                     AS arg_names,
+  p.proargmodes::text[]                             AS arg_modes,
+  COALESCE(p.proallargtypes::oid[],
+           string_to_array(p.proargtypes::text, ' ')::oid[])::regtype[]::text[] AS arg_type_names,
+  p.pronargdefaults                                 AS num_defaults
 FROM pg_catalog.pg_proc p
 JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind IN ('f', 'p')

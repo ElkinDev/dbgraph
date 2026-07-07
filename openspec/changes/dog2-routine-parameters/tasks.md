@@ -78,20 +78,20 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
 > the TWO-TIER vehicle (map-unit L-009 + `DBGRAPH_INTEGRATION`-gated). NO renderer yet, NO aggregate golden touched — EVERY
 > committed default-CI golden (all engines) stays byte-identical; the single deliberate re-bless is Batch 2.
 
-- [ ] 1.1 **(vitest)** RED→GREEN `test/core/model/parameters.test.ts` (new) + `src/core/model/node.ts` + `catalog.ts`: add
+- [x] 1.1 **(vitest)** RED→GREEN `test/core/model/parameters.test.ts` (new) + `src/core/model/node.ts` + `catalog.ts`: add
   `RoutineParameter` (`name:string`, `dataType:string`, `direction:'in'|'out'|'inout'`, `ordinal:number`, `hasDefault?:boolean`)
   + `RoutinePayload.parameters?: readonly RoutineParameter[]` (node.ts:96); mirror `RawParameter` + `RawObject.parameters?:
   readonly RawParameter[]` (catalog.ts:23). Assert the shape compiles under strict TS; `hasDefault` is OPTIONAL (omit ≠ false);
   `parameters` is OPTIONAL (unset ≠ `[]`); `direction` is exactly the 3-member union. Spec: graph-model "parameter view carries
   name, raw type, direction and ordinal" (GM-1), "absent … leaves the field unset" (GM-2), "hasDefault only where sourced" (GM-3). D2.
-- [ ] 1.2 **(vitest)** RED→GREEN `test/core/normalize/parameters.test.ts` (new) + `src/core/normalize/normalize.ts`: in the
+- [x] 1.2 **(vitest)** RED→GREEN `test/core/normalize/parameters.test.ts` (new) + `src/core/normalize/normalize.ts`: in the
   `procedure||function` branch of `buildPayload` (lines 268-272), copy `obj.parameters` → `base['parameters']`
   ordinal-sorted, CONDITIONALLY (emit only when present AND non-empty — mirrors `signature`/`returns`). L-009: `RawObject`
   with out-of-order params → payload `parameters` sorted ascending `ordinal`; UNSET input → payload key ABSENT; empty array →
   key ELIDED; pure copy — NO edge, NO reference resolution, NO inference (`declared`, never `inferred`; US-008 untouched);
   derive twice → byte-identical. Spec: graph-model GM-1 (ordinal order, ADR-008), GM-2. D2/D6. **NO graph-normalization delta**
   (§10 — payload copy, not a shape change).
-- [ ] 1.3 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mssql/parameters.test.ts` (new) +
+- [x] 1.3 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mssql/parameters.test.ts` (new) +
   `src/adapters/engines/mssql/queries.ts` + `map.ts` + `mssql-schema-adapter.ts`: add `SQL_MSSQL_PARAMETERS` over
   `sys.parameters`⋈`sys.types`⋈`sys.objects`⋈`sys.schemas` (`WHERE type IN ('P','FN','IF','TF') AND parameter_id > 0`,
   top-level `ORDER BY … parameter_id` — FOR-JSON-safe per §4.1: single top-level SELECT, no subquery wrap, all
@@ -105,7 +105,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   `DBGRAPH_INTEGRATION`-gated `test/cli/mssql.e2e.integration.test.ts` (real container). Spec: mssql-extraction "Extract routine
   parameters from sys.parameters" (MS-1, MS-2); schema-extraction "An adapter with a parameter catalog populates parameters"
   (SE-1). D1/D5/D6.
-- [ ] 1.4 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/pg/parameters.test.ts` (new) +
+- [x] 1.4 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/pg/parameters.test.ts` (new) +
   `src/adapters/engines/pg/queries.ts` + `map.ts`: EXTEND `SQL_PG_ROUTINES` (queries.ts:248) with `proargnames`,
   `proargmodes::text[]`, `COALESCE(proallargtypes::oid[], string_to_array(proargtypes::text,' ')::oid[])::regtype[]::text[]`,
   `pronargdefaults` (§4.2 idiom — VERIFY the cast against the target pg version); `RoutineRow` (map.ts:146) gains the 4 fields;
@@ -119,7 +119,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   `numeric(10,2)` arg → `dataType:"numeric"` (no fabricated precision). ALSO add the non-`t`/`v` sets to the
   `DBGRAPH_INTEGRATION`-gated pg e2e suite. Spec: pg-extraction "Decode routine parameters from pg_proc arrays" (PG-1, PG-2,
   PG-3, PG-4); schema-extraction (SE-1). D1/D5/D6, §9 open-Q resolutions.
-- [ ] 1.5 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mysql/parameters.test.ts` (new) +
+- [x] 1.5 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mysql/parameters.test.ts` (new) +
   `src/adapters/engines/mysql/queries.ts` + `map.ts` + adapter fetch: add `SQL_MYSQL_PARAMETERS` over
   `information_schema.PARAMETERS` (`WHERE SPECIFIC_SCHEMA = DATABASE() AND ORDINAL_POSITION > 0`, `ORDER BY SPECIFIC_NAME,
   ORDINAL_POSITION`); `MysqlParameterRow` + `buildRoutines` (map.ts:473) builds a `routine_name → RawParameter[]` map and
@@ -130,7 +130,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   → EXACTLY `[{p_order_id,int,in,1},{p_old_status,varchar(20),in,2},{p_new_status,varchar(20),in,3}]`, ordinal-0 return
   EXCLUDED. ALSO add the sets to the `DBGRAPH_INTEGRATION`-gated mysql e2e suite. Spec: mysql-extraction "Extract routine
   parameters from information_schema.PARAMETERS" (MY-1, MY-2); schema-extraction (SE-1). D1/D5/D6.
-- [ ] 1.6 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/parameters-absence.test.ts` (new): pin HONEST ABSENCE over the
+- [x] 1.6 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/parameters-absence.test.ts` (new): pin HONEST ABSENCE over the
   EXISTING sqlite torture catalog — NO `RawObject` carries `parameters` (UNSET, NOT `[]`); the `CapabilityMatrix` still reports
   procedures + functions UNSUPPORTED; NO fixture object added; NO `sqlite/*` code change. Spec: sqlite-extraction "SQLite emits
   no routine parameters" (SQ-1); schema-extraction "An engine without a parameter catalog leaves the field unset" (SE-2, the

@@ -270,6 +270,14 @@ function buildPayload(
     if (obj.returns !== undefined) base['returns'] = obj.returns;
     if (levelResult.body !== undefined) base['body'] = levelResult.body;
     base['hasDynamicSql'] = obj.hasDynamicSql ?? false;
+    // DOG-2 §3.2/D2/D6: copy the durable RawParameter[] into the payload, ordinal-sorted
+    // defensively (deterministic regardless of adapter row order, ADR-008). Conditional
+    // emission mirrors signature/returns — emit ONLY when present AND non-empty, so an
+    // UNSET catalog leaves the key ABSENT ("unknown" ≠ "known-zero") and an empty array is
+    // elided. Pure copy — NO edge, NO reference resolution, NO inference (declared, US-008).
+    if (obj.parameters !== undefined && obj.parameters.length > 0) {
+      base['parameters'] = [...obj.parameters].sort((a, b) => a.ordinal - b.ordinal);
+    }
   } else if (obj.kind === 'trigger') {
     if (obj.trigger !== undefined) {
       base['timing'] = obj.trigger.timing;
