@@ -90,6 +90,9 @@ describe('Token budget: brief detail respects the measured ceiling (≤30-relati
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Token budget: normal detail respects the measured ceiling', () => {
+  // explore-payloads re-measure (B.8): explore now emits per-kind payload sections.
+  // RE-MEASURED on the torture fixture (ceil(chars/4)): explore normal = 342 tk
+  // (was ~73 pre-payload) — still within the 400 ceiling, unchanged.
   it('dbgraph_explore normal ≤ 400 tokens', () => {
     const text = readGolden('explore-normal.txt');
     expect(charToTokens(text.length)).toBeLessThanOrEqual(400);
@@ -131,9 +134,14 @@ describe('Token budget: normal detail respects the measured ceiling', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Token budget: full detail respects the measured ceiling', () => {
-  it('dbgraph_explore full ≤ 420 tokens', () => {
+  // explore-payloads re-measure (B.8): explore full now emits COLUMNS + CONSTRAINTS
+  // + INDEXES + TRIGGERS payload sections before the neighbor listing. RE-MEASURED
+  // on the torture fixture (ceil(chars/4)): explore full = 439 tk (was ~76 pre-payload)
+  // — this EXCEEDS the prior 420 ceiling, so the ceiling is WIDENED to 480 (≈9% headroom
+  // over the measured 439). Paired with a docs/format-spec.md §6 token-delta note.
+  it('dbgraph_explore full ≤ 480 tokens (re-measured after payload sections landed)', () => {
     const text = readGolden('explore-full.txt');
-    expect(charToTokens(text.length)).toBeLessThanOrEqual(420);
+    expect(charToTokens(text.length)).toBeLessThanOrEqual(480);
   });
 
   it('dbgraph_search full ≤ 400 tokens', () => {

@@ -61,6 +61,9 @@ export function deriveColumnAnnotations(
   const pk = new Set<string>();
   const fk = new Map<string, string>();
 
+  // Count FK constraints up front — the "only FK" reconstruction fallback (D8) needs it.
+  const fkCount = constraints.filter((e) => e.node.payload['type'] === 'FK').length;
+
   for (const entry of constraints) {
     const p = entry.node.payload;
     const ctype = p['type'] as string | undefined;
@@ -70,14 +73,46 @@ export function deriveColumnAnnotations(
     } else if (ctype === 'FK' && cols !== undefined) {
       const def = p['definition'] as string | undefined;
       if (def !== undefined) {
+        // D8 precedence 1: payload target present → render verbatim (column-level).
         for (const col of cols) fk.set(col, def);
+        continue;
       }
-      // Batch B (D8): else reconstruct the table-level target from `references`.
+      // D8 precedence 2: reconstruct the TABLE-level target from `references` edges,
+      // joined per-constraint via attrs.constraintName; unambiguous iff a single
+      // distinct target table results. Fall back to all references when this is the
+      // table's ONLY FK. Otherwise degrade (precedence 3) — never guess.
+      const target = reconstructFkTarget(entry.node.name, references, fkCount);
+      if (target !== undefined) {
+        for (const col of cols) fk.set(col, target);
+      }
     }
   }
 
-  void references; // Batch B (D8) extends the FK path to reconstruct from references edges.
   return { pk, fk };
+}
+
+/**
+ * Reconstructs an FK's table-level target qname from the `references` edges (D8).
+ * Returns the single distinct target qname when unambiguous, else undefined (degrade).
+ */
+function reconstructFkTarget(
+  constraintName: string,
+  references: readonly NeighborEntry[],
+  fkCount: number,
+): string | undefined {
+  const matched = references.filter((e) => e.edge?.attrs.constraintName === constraintName);
+  // Per-constraint join when several FKs exist; else fall back to all references when
+  // this is the table's ONLY FK (the references then unambiguously belong to it).
+  const candidates = matched.length > 0 ? matched : fkCount === 1 ? references : [];
+
+  const targets = new Set<string>();
+  for (const e of candidates) targets.add(e.node.qname);
+
+  if (targets.size === 1) {
+    const [only] = targets;
+    return only;
+  }
+  return undefined;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,4 +204,35 @@ export function renderTriggers(triggers: readonly NeighborEntry[]): string[] {
     lines.push(`  ${entry.node.name}  ${timing} ${events}`.trimEnd());
   }
   return lines;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// renderFocusPayload — explore NON-container focus (column/constraint/index/trigger)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EMPTY_ANNOTATIONS: ColumnAnnotations = { pk: new Set<string>(), fk: new Map<string, string>() };
+
+/**
+ * Renders a single non-container focus node's OWN per-kind payload line(s) using the
+ * SAME per-kind grammar as the section renderers (design D2). PK/FK markers appear on a
+ * column focus ONLY when parent-context annotations `a` are supplied; a bare column focus
+ * still shows type/nullable/default. Returns [] for a kind that has no focus payload line
+ * (e.g. a table/view — those render their full sections instead).
+ */
+export function renderFocusPayload(node: GraphNode, a?: ColumnAnnotations): string[] {
+  const ann = a ?? EMPTY_ANNOTATIONS;
+  const single: readonly NeighborEntry[] = [{ node }];
+  switch (node.kind) {
+    case 'column':
+    case 'field':
+      return renderColumns(single, ann);
+    case 'constraint':
+      return renderConstraints(single, ann);
+    case 'index':
+      return renderIndexes(single);
+    case 'trigger':
+      return renderTriggers(single);
+    default:
+      return [];
+  }
 }

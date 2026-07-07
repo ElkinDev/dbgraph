@@ -15,11 +15,12 @@ import {
   renderConstraints,
   renderIndexes,
   renderTriggers,
+  renderFocusPayload,
   deriveColumnAnnotations,
   type ColumnAnnotations,
   type NeighborEntry,
 } from '../../../src/core/present/payload.js';
-import type { GraphNode } from '../../../src/index.js';
+import type { GraphNode, GraphEdge } from '../../../src/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Fixture builders — synthetic GraphNodes mirroring the torture fixture facts.
@@ -80,6 +81,49 @@ function triggerNode(name: string, timing: string, events: readonly string[]): G
 }
 
 const entry = (node: GraphNode): NeighborEntry => ({ node });
+
+/** A target-table node identified by a schema-qualified qname. */
+function tableNode(qname: string): GraphNode {
+  const name = qname.includes('.') ? qname.slice(qname.indexOf('.') + 1) : qname;
+  const schema = qname.includes('.') ? qname.slice(0, qname.indexOf('.')) : null;
+  return {
+    id: `node-table-${qname}`,
+    kind: 'table',
+    schema,
+    name,
+    qname,
+    level: 'metadata',
+    missing: false,
+    excluded: false,
+    bodyHash: null,
+    payload: {},
+  };
+}
+
+/** A `references` outbound neighbor entry — target table node + edge carrying constraintName. */
+function refEntry(
+  targetQname: string,
+  constraintName: string,
+  opts: { aggregate?: boolean; srcColumn?: string; dstColumn?: string } = {},
+): NeighborEntry {
+  const node = tableNode(targetQname);
+  const attrs: GraphEdge['attrs'] = {
+    constraintName,
+    ...(opts.aggregate === true ? { aggregate: true } : {}),
+    ...(opts.srcColumn !== undefined ? { srcColumn: opts.srcColumn } : {}),
+    ...(opts.dstColumn !== undefined ? { dstColumn: opts.dstColumn } : {}),
+  };
+  const edge: GraphEdge = {
+    id: `edge-ref-${constraintName}-${opts.srcColumn ?? 'agg'}-${targetQname}`,
+    kind: 'references',
+    src: 'node-src-table',
+    dst: node.id,
+    confidence: 'declared',
+    score: null,
+    attrs,
+  };
+  return { node, edge };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // A.1 — renderColumns
@@ -278,9 +322,148 @@ describe('payload.deriveColumnAnnotations — payload-present path (A.3)', () =>
     expect([...ann.pk]).toStrictEqual(['project_id', 'emp_id', 'dept_id']);
   });
 
-  it('does NOT reconstruct an FK target in Batch A when the payload carries none (empty references)', () => {
+  it('does NOT reconstruct an FK target with empty references (nothing to reconstruct from)', () => {
     const empFk: NeighborEntry[] = [entry(constraintNode('fk_employees_0', 'FK', ['dept_id']))];
     const ann = deriveColumnAnnotations(empFk, []);
     expect(ann.fk.size).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.1 — deriveColumnAnnotations D8 RECONSTRUCT path (payload target absent)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('payload.deriveColumnAnnotations — D8 reconstruct (B.1)', () => {
+  it('reconstructs a single-column FK table-level target from the references edge (constraintName join)', () => {
+    const constraints: NeighborEntry[] = [entry(constraintNode('fk_employees_0', 'FK', ['dept_id']))];
+    const references: NeighborEntry[] = [
+      refEntry('main.departments', 'fk_employees_0', { srcColumn: 'dept_id', dstColumn: 'dept_id' }),
+      refEntry('main.departments', 'fk_employees_0', { aggregate: true }),
+    ];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.get('dept_id')).toBe('main.departments');
+
+    expect(renderColumns([entry(colNode('dept_id', 'INTEGER', false, 4))], ann)).toStrictEqual([
+      'COLUMNS',
+      '  dept_id  INTEGER  [FK→main.departments]  [NN]',
+    ]);
+    expect(renderConstraints(constraints, ann)).toStrictEqual([
+      'CONSTRAINTS',
+      '  [FK]  fk_employees_0  (dept_id → main.departments)',
+    ]);
+  });
+
+  it('reconstructs a composite FK target, mapping every member column to the one target table', () => {
+    const constraints: NeighborEntry[] = [entry(constraintNode('fk_assignments_0', 'FK', ['emp_id', 'dept_id']))];
+    const references: NeighborEntry[] = [
+      refEntry('main.employees', 'fk_assignments_0', { srcColumn: 'emp_id', dstColumn: 'emp_id' }),
+      refEntry('main.employees', 'fk_assignments_0', { srcColumn: 'dept_id', dstColumn: 'dept_id' }),
+      refEntry('main.employees', 'fk_assignments_0', { aggregate: true }),
+    ];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.get('emp_id')).toBe('main.employees');
+    expect(ann.fk.get('dept_id')).toBe('main.employees');
+    expect(renderConstraints(constraints, ann)).toStrictEqual([
+      'CONSTRAINTS',
+      '  [FK]  fk_assignments_0  (emp_id, dept_id → main.employees)',
+    ]);
+  });
+
+  it('reconstructs via the only-FK fallback when references carry no matching constraintName', () => {
+    const constraints: NeighborEntry[] = [entry(constraintNode('fk_solo', 'FK', ['dept_id']))];
+    const references: NeighborEntry[] = [refEntry('main.departments', '__unmatched__', { aggregate: true })];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.get('dept_id')).toBe('main.departments');
+  });
+
+  it('prefers the payload definition over reconstruction when both are available', () => {
+    const constraints: NeighborEntry[] = [
+      entry(constraintNode('FK_orders_customers', 'FK', ['customer_id'], 'dbo.customers.customer_id')),
+    ];
+    const references: NeighborEntry[] = [refEntry('dbo.customers', 'FK_orders_customers', { aggregate: true })];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.get('customer_id')).toBe('dbo.customers.customer_id');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.2 — deriveColumnAnnotations D8 DEGRADE path (ambiguous — never guess)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('payload.deriveColumnAnnotations — D8 degrade (B.2)', () => {
+  it('degrades to columns WITHOUT a target when references resolve to multiple tables', () => {
+    const constraints: NeighborEntry[] = [entry(constraintNode('fk_ambiguous', 'FK', ['ref_id']))];
+    const references: NeighborEntry[] = [
+      refEntry('main.alpha', 'fk_ambiguous', { aggregate: true }),
+      refEntry('main.beta', 'fk_ambiguous', { aggregate: true }),
+    ];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.has('ref_id')).toBe(false);
+
+    expect(renderColumns([entry(colNode('ref_id', 'INTEGER', false, 1))], ann)).toStrictEqual([
+      'COLUMNS',
+      '  ref_id  INTEGER  [NN]',
+    ]);
+    expect(renderConstraints(constraints, ann)).toStrictEqual([
+      'CONSTRAINTS',
+      '  [FK]  fk_ambiguous  (ref_id)',
+    ]);
+  });
+
+  it('degrades when several FKs cannot be joined to references by constraintName', () => {
+    const constraints: NeighborEntry[] = [
+      entry(constraintNode('fk_one', 'FK', ['a_id'])),
+      entry(constraintNode('fk_two', 'FK', ['b_id'])),
+    ];
+    const references: NeighborEntry[] = [refEntry('main.alpha', '__unmatched__', { aggregate: true })];
+    const ann = deriveColumnAnnotations(constraints, references);
+    expect(ann.fk.size).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.3 — renderFocusPayload (explore non-container focus, per-kind line grammar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('payload.renderFocusPayload (B.3)', () => {
+  it('renders a bare column focus with type/null/default and NO PK/FK markers', () => {
+    expect(renderFocusPayload(colNode('salary', 'REAL', false, 5, '0.0'))).toStrictEqual([
+      'COLUMNS',
+      '  salary  REAL  [NN]  DEFAULT 0.0',
+    ]);
+  });
+
+  it('renders a column focus WITH PK/FK markers when parent-context annotations are supplied', () => {
+    const a: ColumnAnnotations = { pk: new Set(), fk: new Map([['dept_id', 'main.departments']]) };
+    expect(renderFocusPayload(colNode('dept_id', 'INTEGER', false, 4), a)).toStrictEqual([
+      'COLUMNS',
+      '  dept_id  INTEGER  [FK→main.departments]  [NN]',
+    ]);
+  });
+
+  it('renders a constraint focus with ordered columns and FK target', () => {
+    const a: ColumnAnnotations = { pk: new Set(), fk: new Map([['dept_id', 'main.departments']]) };
+    expect(renderFocusPayload(constraintNode('fk_employees_0', 'FK', ['dept_id']), a)).toStrictEqual([
+      'CONSTRAINTS',
+      '  [FK]  fk_employees_0  (dept_id → main.departments)',
+    ]);
+  });
+
+  it('renders an index focus with unique + columns', () => {
+    expect(renderFocusPayload(indexNode('idx_emp_email', true, ['email']))).toStrictEqual([
+      'INDEXES',
+      '  idx_emp_email  UNIQUE (email)',
+    ]);
+  });
+
+  it('renders a trigger focus with timing + events', () => {
+    expect(renderFocusPayload(triggerNode('trg_emp_after_insert', 'AFTER', ['INSERT']))).toStrictEqual([
+      'TRIGGERS',
+      '  trg_emp_after_insert  AFTER INSERT',
+    ]);
+  });
+
+  it('returns [] for a container kind (table) that has no own focus payload line', () => {
+    expect(renderFocusPayload(tableNode('main.employees'))).toStrictEqual([]);
   });
 });

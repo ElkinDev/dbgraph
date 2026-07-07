@@ -71,34 +71,34 @@ nothing pushed; no CI).
 > goldens stay BYTE-IDENTICAL (green == transparency). NO golden re-bless in this batch — a changed object byte is a
 > FAILURE. `payload.ts` is the single source both formatters will consume, so it lands FIRST (D1).
 
-- [ ] A.1 (vitest) RED→GREEN `test/core/present/payload.test.ts` (new) + `src/core/present/payload.ts` (new):
+- [x] A.1 (vitest) RED→GREEN `test/core/present/payload.test.ts` (new) + `src/core/present/payload.ts` (new):
   `renderColumns(columns, a)` returns a `'COLUMNS'` header + one row per column (`  <name>  <TYPE>
   [PK]/[FK→…]/[NN]  DEFAULT …`), `[]` when none — body-only lines WITHOUT a leading blank (D1). RED first on
   torture-derived `NeighborEntry[]` fixtures: `main.employees` yields `  emp_id  INTEGER  [PK]` and
   `  salary  REAL  [NN]  DEFAULT 0.0`; empty → `[]`. Core types only, `string[]`→`string[]`, no I/O. Design D1.
   Done: `npm test payload`.
-- [ ] A.2 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `renderConstraints(constraints, a)` → `'CONSTRAINTS'`
+- [x] A.2 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `renderConstraints(constraints, a)` → `'CONSTRAINTS'`
   + rows (`  [PK]  <name>  (<cols>)`, `  [FK]  <name>  (<cols> → <target>)` via `a.fk`); `renderIndexes(indexes)`
   (`  <name>  UNIQUE (cols)` / method); `renderTriggers(triggers)` (timing + events from the `fires_on.in` group).
   Each returns `[]` when empty. RED on torture fixtures incl. `  idx_emp_email  UNIQUE (email)` and
   `  trg_emp_after_insert  AFTER INSERT`. Design D1. Done: `npm test payload`.
-- [ ] A.3 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `deriveColumnAnnotations(constraints, references)`
+- [x] A.3 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `deriveColumnAnnotations(constraints, references)`
   computes the `pk` set + `fk` colname→target map ONCE — in this batch the PAYLOAD-PRESENT path only: constraint
   payload `definition` target rendered VERBATIM at column level (the `dbo.orders` presenter fixture →
   `[FK→dbo.customers.customer_id]` and `(customer_id → dbo.customers.customer_id)`). Composite PK preserves DECLARED
   order, never re-sorted/alphabetized. RED: payload-present → column-level target; composite PK order preserved. (D8
   reconstruct/degrade paths are Batch B.) Design D1/D8. Done: `npm test payload`.
-- [ ] A.4 (golden — MUST NOT change) Refactor `src/core/present/object.ts` onto `payload.ts`: `formatObject` becomes
+- [x] A.4 (golden — MUST NOT change) Refactor `src/core/present/object.ts` onto `payload.ts`: `formatObject` becomes
   header → `push('')` + `...renderColumns()` → `push('')` + `...renderConstraints()` → gate → indexes/triggers/body,
   keeping the inter-section `push('')` cadence in the CALLER so today's bytes are reproduced EXACTLY (D1). The
   EXISTING object goldens — `test/mcp/golden/object-tool-{brief,normal,full}.txt` AND
   `test/core/present/golden/object-{brief,normal,full}.txt` — MUST stay BYTE-IDENTICAL. A changed byte here is a
   FAILURE, not a re-bless. Spec: mcp-server "object goldens are byte-identical after the refactor step". Done:
   `npm test object-format`; `npm test mcp/object` (both green, zero golden diff).
-- [ ] A.5 Re-export the `payload.ts` renderers + `ColumnAnnotations` type via `src/core/index.ts` (barrel); the core
+- [x] A.5 Re-export the `payload.ts` renderers + `ColumnAnnotations` type via `src/core/index.ts` (barrel); the core
   boundary holds (`src/core/present/**` imports ONLY core model/port types, ADR-004/008). Done: `npx tsc --noEmit`;
   `npm test barrel`; `npm test boundaries` (core scan green).
-- [ ] A.6 GATE (Batch A): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` green (baseline 3088 +
+- [x] A.6 GATE (Batch A): `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test` green (baseline 3088 +
   payload unit suites) with EVERY object golden byte-identical (transparency proof); cross-transport parity green;
   leak-scan clean. Commit `refactor(present): extract pure payload renderers, refactor formatObject onto them (US-036)`.
 
@@ -114,7 +114,7 @@ nothing pushed; no CI).
 > every byte change is DELIBERATE, §6-PAIRED (format-spec grammar/budget + token-delta note in the SAME commit),
 > reviewed diff summary in the commit body. NEVER silent.
 
-- [ ] B.1 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: extend `deriveColumnAnnotations` with the D8 RECONSTRUCT
+- [x] B.1 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: extend `deriveColumnAnnotations` with the D8 RECONSTRUCT
   path — when the constraint payload carries NO target, reconstruct the TABLE-level target from the node's
   `references` edges when UNAMBIGUOUS (exactly one outbound `references` edge OR this FK is the table's only FK,
   joined per-constraint via the edge `attrs.constraintName` when several exist); render the target's canonical
@@ -123,17 +123,17 @@ nothing pushed; no CI).
   `  [FK]  fk_employees_0  (dept_id → main.departments)`; composite `main.assignments` →
   `(emp_id, dept_id → main.employees)`. Spec: cli-config "FK target is RECONSTRUCTED from the references edge when the
   payload carries none". Design D8. Done: `npm test payload`.
-- [ ] B.2 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: D8 DEGRADE path — when the payload carries no target
+- [x] B.2 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: D8 DEGRADE path — when the payload carries no target
   AND the `references` edges do NOT resolve to a single unambiguous target table, render the FK columns WITHOUT a
   `→ target` (`  [FK]  <name>  (<cols>)`) and NO reconstructed `[FK→…]` on the column line. HONEST degradation, never
   a guess. RED: an ambiguous/multi-target fixture → no target rendered. Spec: cli-config "FK columns render WITHOUT a
   target when reconstruction is ambiguous". Design D8. Done: `npm test payload`.
-- [ ] B.3 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `renderFocusPayload(node, a?)` for an explore
+- [x] B.3 (vitest) RED→GREEN `payload.test.ts` + `payload.ts`: `renderFocusPayload(node, a?)` for an explore
   NON-container focus — column→`dataType`/nullable/default (+PK/FK markers ONLY when parent-context `a` is supplied; a
   bare column focus STILL shows type/null/default, meeting the success criterion); constraint→type + ordered columns
   + FK target; index→unique/columns/method; trigger→timing/events — SAME per-kind line grammar as the section
   renderers. RED per kind on torture fixtures. Design D2. Done: `npm test payload`.
-- [ ] B.4 (vitest) RED→GREEN `test/core/present/explore-format.test.ts` + `src/core/present/explore.ts`:
+- [x] B.4 (vitest) RED→GREEN `test/core/present/explore-format.test.ts` + `src/core/present/explore.ts`:
   `formatExplore` renders the focus node's payload via the shared helper, GATED identically to `object` — `brief` =
   header + neighbor-kind counts, NO payload; `normal` = + COLUMNS + CONSTRAINTS; `full` = + INDEXES + TRIGGERS (+
   body). A TABLE/VIEW focus renders the EXACT SAME sections as `formatObject` (byte-identical, same renderers, same
@@ -145,14 +145,14 @@ nothing pushed; no CI).
   "trigger timing and events render at full detail", "brief detail renders no payload lines", "explore renders the
   entity bundle at the requested detail", "explore formatter is the single source for the MCP tool"; mcp-server
   "explore and object render identical section bytes for the same node". Done: `npm test explore-format`.
-- [ ] B.5 (vitest) RED→GREEN D3 `[view]→[table]` resolution fix (prefer non-`missing`) on BOTH surfaces:
+- [x] B.5 (vitest) RED→GREEN D3 `[view]→[table]` resolution fix (prefer non-`missing`) on BOTH surfaces:
   `src/cli/commands/explore.ts` `runExplore` (collect ALL `NODE_KINDS` matches; `const real = matches.filter(n =>
   !n.missing); const effective = real.length ? real : matches;`; drop the first-match `break`, use `effective.find`)
   AND `src/mcp/tools/explore.ts` + `src/mcp/tools/object.ts` `resolveNode` (run single/candidates/notFound on
   `effective`). RED: a node set with a real `view` + phantom `table` stub for one qname resolves to the VIEW (CLI +
   MCP). NOT in normalize (true stub cause deferred). Spec: cli-config "view focus node is labeled [view] not [table]".
   Design D3. Done: `npm test explore` (CLI + MCP resolution).
-- [ ] B.6 (golden — DELIBERATE re-bless) Re-capture `test/mcp/golden/explore-{normal,full}.txt` with the payload
+- [x] B.6 (golden — DELIBERATE re-bless) Re-capture `test/mcp/golden/explore-{normal,full}.txt` with the payload
   sections + reconstructed FK; `explore-brief.txt` stays UNCHANGED (a pin — no payload at brief). CREATE the dedicated
   view golden `test/mcp/golden/explore-view.txt` for `main.active_departments` (header `[view]` + payload) — pins BOTH
   the D3 fix and payload rendering (ruling 5). Re-bless ONLY the `employees` FK column + constraint lines in
@@ -161,18 +161,18 @@ nothing pushed; no CI).
   golden-pinned"; mcp-server "the FK-reconstruction feature re-blesses ONLY the FK lines, in object and explore
   together", "Explore payload matches the CLI byte-for-byte", "Explore returns the compact neighborhood (golden)".
   Done: `npm test mcp/explore`; `npm test mcp/object`; `npm test object-format`; byte-identical re-run.
-- [ ] B.7 (golden — capture during apply, ruling 3) Capture the `main.assignments` COLUMNS/CONSTRAINTS golden lines
+- [x] B.7 (golden — capture during apply, ruling 3) Capture the `main.assignments` COLUMNS/CONSTRAINTS golden lines
   (explore + object) ONCE the real composite-FK constraint NAME is observed from the built torture graph — pin the
   reconstructed line `(emp_id, dept_id → main.employees)` and the declared-order PK `(project_id, emp_id, dept_id)`
   THEN, never a guessed generated name. Spec: cli-config "composite PK renders member columns in declared order".
   Design §Tasks-level note (ruling 3). Done: assignments goldens captured from the real graph and committed.
-- [ ] B.8 (vitest) RED→GREEN `test/core/present/budget.test.ts`: RE-MEASURE explore `normal`/`full` output on the
+- [x] B.8 (vitest) RED→GREEN `test/core/present/budget.test.ts`: RE-MEASURE explore `normal`/`full` output on the
   torture fixture (`ceil(chars/4)`) now that payload lines land; re-assert the ceilings. Ceiling POLICY + methodology
   UNCHANGED; widen the 400/420 ceiling ONLY if a fixture exceeds it, and ONLY with a §6 token-delta note (record the
   ceiling-policy OUTCOME either way). RED: updated ceilings asserted; `normal`/`full` within policy. Spec: mcp-server
   "Explore payload ceilings are re-measured and re-asserted", "Brief detail respects the measured token budget".
   Design D2/D6. Done: `npm test budget`.
-- [ ] B.9 (golden discipline — §6 PAIR, SAME commit as the re-bless) Update `docs/format-spec.md`: add the explore
+- [x] B.9 (golden discipline — §6 PAIR, SAME commit as the re-bless) Update `docs/format-spec.md`: add the explore
   per-kind PAYLOAD line grammar (column type/nullable/default; constraint kind + ORDERED columns + FK target mapping
   INCLUDING the reconstructed table-level form and the degraded no-target form; index unique/columns; trigger
   timing/events), update the explore `normal`/`full` per-detail budget rows to the B.8 re-measured numbers, and add a
@@ -180,7 +180,7 @@ nothing pushed; no CI).
   without this matching spec edit in the same commit. Spec: mcp-server "Compact format pinned by docs/format-spec.md
   authored first" (grammar now covers explore payload lines) + cli-config golden-discipline clause. Design D6. Done:
   format-spec grammar + budgets + §6 note present; every re-blessed golden has a paired spec edit.
-- [ ] B.10 GATE (Batch B): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (payload D8 +
+- [x] B.10 GATE (Batch B): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (payload D8 +
   `renderFocusPayload` + explore-format + resolution + budget suites) with the re-blessed goldens byte-identical on
   re-run; cross-transport parity (`test/mcp/http.test.ts`) green (reads the golden FILE — survives re-bless
   automatically); leak-scan clean. Commit `feat(explore): render focus payload via shared helper, reconstruct FK

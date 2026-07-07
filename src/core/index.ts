@@ -140,6 +140,7 @@ export {
   renderConstraints,
   renderIndexes,
   renderTriggers,
+  renderFocusPayload,
   type ColumnAnnotations,
   type NeighborEntry,
 } from './present/payload.js';

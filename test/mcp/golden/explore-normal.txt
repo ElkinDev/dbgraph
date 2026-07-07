@@ -1,6 +1,19 @@
 main.employees  [table]
 ───────────────────────
 
+COLUMNS
+  emp_id  INTEGER  [PK]
+  full_name  TEXT  [NN]
+  email  TEXT
+  dept_id  INTEGER  [FK→main.departments]  [NN]
+  salary  REAL  [NN]  DEFAULT 0.0
+  hire_date  TEXT
+
+CONSTRAINTS
+  [FK]  fk_employees_0  (dept_id → main.departments)
+  [UNIQUE]  idx_emp_email  (email)
+  [PK]  pk_employees  (emp_id)
+
   fires_on
     in:
       ← main.trg_emp_after_delete  [trigger]
