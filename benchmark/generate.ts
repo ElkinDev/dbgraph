@@ -25,14 +25,20 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createSqliteGraphStore } from '../dist/index.js';
+// Types come from src (erased at runtime) so `tsc --noEmit` never depends on a
+// built dist/ being present; the RUNTIME import below still consumes the built
+// artifact because `node --experimental-strip-types` cannot remap .js -> .ts.
 import type {
   GraphStore,
   GraphNode,
   ColumnPayload,
   ConstraintPayload,
   TriggerPayload,
-} from '../dist/index.js';
+} from '../src/index.js';
+
+const { createSqliteGraphStore } = (await import(
+  '../dist/index.js' as string
+)) as typeof import('../src/index.js');
 import type { Family, FkHop, TriggerTuple } from './scorer/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
