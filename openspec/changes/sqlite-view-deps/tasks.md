@@ -72,7 +72,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 > tokenizer" — the header-strip + presence-gate primitives, proven as PURE units before any `map.ts` wiring or graph
 > build. ALL **(vitest)**, NO graph change, NO golden drift → this batch's gate is fully green. Realizes D1/D2/D3.
 
-- [ ] B1.1 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/tokenizer.test.ts` (new) + `src/adapters/engines/sqlite/tokenizer.ts`
+- [x] B1.1 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/tokenizer.test.ts` (new) + `src/adapters/engines/sqlite/tokenizer.ts`
   (new): `sqliteCanonicalize(rawName: string): string` strips SQLite `[]` / `""` / backtick quoting to the bare identifier;
   `extractTriggerActionBlock(triggerSql: string): string` returns the `BEGIN…END` action body with the header REMOVED via
   mask-then-slice (D2). RED first on header-strip cases: an `INSTEAD OF INSERT ON active_departments … BEGIN … END` →
@@ -80,7 +80,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   `UPDATE OF salary`, the WHEN clause and `employees` are ALL absent from the output; a `BEGIN`/`END` token inside a
   MASKED string literal in a WHEN clause does NOT mis-slice. Pure `string`→`string`, no I/O. Spec: `sqlite-extraction`
   "Trigger header never leaks a `reads_from`/`writes_to` edge" (seam half). Design D2. Done: `npm test tokenizer`.
-- [ ] B1.2 **(vitest)** RED→GREEN `tokenizer.test.ts` + `tokenizer.ts`: `tokenizeSqliteBody(body, deps): readonly RawDependency[]`
+- [x] B1.2 **(vitest)** RED→GREEN `tokenizer.test.ts` + `tokenizer.ts`: `tokenizeSqliteBody(body, deps): readonly RawDependency[]`
   runs `maskDynamicStrings` → `bodyContainsRef` presence-gate (word-boundary) → `classifyAccess`, matching ONLY the
   supplied catalog candidates, each emitted `{ target:{schema,name}, access:'read'|'write', confidence:'parsed' }`. RED
   first (LEAK NEGATIVES): a `'employees'` STRING LITERAL yields NO edge; a `NEW.`/`OLD.` pseudo-column yields NO edge; a
@@ -88,7 +88,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   `access:'write'`, a `FROM`/`JOIN` target → `access:'read'`; every emitted edge carries `confidence:'parsed'`. Reuses
   `engines/_shared/tokenizer-core.ts` (NO re-implementation). Spec: `sqlite-extraction` "No self-edges and no phantom
   edges" + "edges carry confidence: 'parsed'" (seam half). Design D1/D3. Done: `npm test tokenizer`.
-- [ ] B1.3 GATE (Batch B1): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3162 + tokenizer unit
+- [x] B1.3 GATE (Batch B1): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3162 + tokenizer unit
   suite) — NO graph build, NO golden touched; cross-engine goldens untouched; leak-scan clean. Then COMMIT
   `feat(sqlite): add tokenizer seams — extractTriggerActionBlock + tokenizeSqliteBody over shared core`.
 
