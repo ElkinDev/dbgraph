@@ -77,7 +77,7 @@ fully reversible — nothing external was fired.
 
 - **RESOLVED (owner-confirmed, 2026-07-07):** `repository.url`
   (`git+https://github.com/ElkinDev/dbgraph.git`) is CORRECT — it points at the
-  actual repository. The npm scope (`@niklerk23`) differing from the GitHub owner
+  actual repository. The npm scope (`@elkindev`) differing from the GitHub owner
   (`ElkinDev`) is allowed and cosmetic: npm provenance linkage only applies to
   CI-based publishes, and Step U5 publishes manually from the owner's machine.
   `homepage` and `bugs` metadata were added so the npm page links resolve.
@@ -100,7 +100,7 @@ fully reversible — nothing external was fired.
 
 ### Step U5 — Publish to npm, removing `private: true` in the SAME step (USER-GATED)
 
-> ⚠️ **Irreversible version number.** `npm publish` makes `@niklerk23/dbgraph@1.0.0`
+> ⚠️ **Irreversible version number.** `npm publish` makes `@elkindev/dbgraph@1.0.0`
 > public. `npm unpublish` is allowed only within 72h and only if nothing depends
 > on it, and the version number can NEVER be reused. Publishing is a deliberate,
 > non-reusable act.
@@ -110,7 +110,7 @@ fully reversible — nothing external was fired.
   never earlier — so the package is not left publishable while unattended.
 - Order within this step: (1) remove `private: true`, (2) `npm publish --access public`,
   (3) if you abort before publishing, re-add `private: true`.
-- **`--access public` is REQUIRED**: scoped packages (`@niklerk23/...`) default to
+- **`--access public` is REQUIRED**: scoped packages (`@elkindev/...`) default to
   restricted, and restricted publishes fail on accounts without a paid plan. Omit
   it only if you deliberately want (and can pay for) a private npm package.
 
@@ -130,7 +130,7 @@ fully reversible — nothing external was fired.
 | Step | Abort action | Honest caveat |
 |------|--------------|---------------|
 | Tag pushed (U4) | `git tag -d v1.0.0 && git push origin :refs/tags/v1.0.0` | GitHub KEEPS the Actions run history; the Release and provenance attestation are NOT auto-deleted (`gh release delete` for the Release; the attestation is in the public transparency log — permanent). |
-| `npm publish` (U5) | `npm unpublish @niklerk23/dbgraph@1.0.0` | Allowed only < 72h AND if nothing depends on it; the version number can NEVER be reused. |
+| `npm publish` (U5) | `npm unpublish @elkindev/dbgraph@1.0.0` | Allowed only < 72h AND if nothing depends on it; the version number can NEVER be reused. |
 | `private: true` removed (U5) | Re-add `private: true` before publishing | Moot once published. |
 | Repository flipped public (U6) | Flip back to private | Clones / forks / caches made during the public window persist. |
 | This phase's LOCAL edits | Revert the two version literals + moved asserts to `0.0.0`; delete `CHANGELOG.md`, `docs/release.md`, and the two new tests | Fully reversible — nothing external was fired. |
@@ -142,7 +142,7 @@ Run these only after the gated steps above have been fired by the user.
 - [ ] **Release binary smoke.** Download the win-x64 and linux-x64 SEA binaries
       from the GitHub Release, verify each SHA256 against `SHA256SUMS`, and run
       `--version` → expect `1.0.0`.
-- [ ] **npm install smoke.** In a clean directory, `npm install @niklerk23/dbgraph`
+- [ ] **npm install smoke.** In a clean directory, `npm install @elkindev/dbgraph`
       and run `dbgraph --version` → expect `1.0.0`.
 - [ ] **macOS leg.** Record that the macOS build leg produced NO artifact this
       release (dormant / no-op); only win-x64 and linux-x64 binaries exist.
