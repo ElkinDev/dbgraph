@@ -14,6 +14,13 @@
 
 import type { GraphNode } from '../model/node.js';
 import type { NeighborGroups } from '../ports/graph-store.js';
+import {
+  deriveColumnAnnotations,
+  renderColumns,
+  renderConstraints,
+  renderIndexes,
+  renderTriggers,
+} from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -51,6 +58,7 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   const triggerGroup = view.neighbors['fires_on'];
   const constraintGroup = view.neighbors['has_constraint'];
   const columnGroup = view.neighbors['has_column'];
+  const referencesGroup = view.neighbors['references'];
 
   const indexCount = indexGroup ? indexGroup.out.length : 0;
   const triggerCount = triggerGroup ? triggerGroup.in.length : 0;
@@ -68,76 +76,26 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
     return lines.join('\n') + '\n';
   }
 
+  // ── Payload sections via the shared pure renderers (design D1) ─────────────
+  // Renderers return section-body lines WITHOUT a leading blank; the caller keeps
+  // the inter-section push('') cadence so today's bytes are reproduced exactly.
+  const columns = columnGroup ? columnGroup.out : [];
+  const constraints = constraintGroup ? constraintGroup.out : [];
+  const references = referencesGroup ? referencesGroup.out : [];
+  const annots = deriveColumnAnnotations(constraints, references);
+
   // ── COLUMNS section (normal + full) ───────────────────────────────────────
-  // Access payload fields via bracket notation (NodePayload is Readonly<Record<string,unknown>>).
-  // We guard each access with a runtime check, then cast to the expected type.
-  const columns = columnGroup
-    ? [...columnGroup.out].sort((a, b) => {
-        const aOrd = (a.node.payload['ordinal'] as number | undefined) ?? 0;
-        const bOrd = (b.node.payload['ordinal'] as number | undefined) ?? 0;
-        return aOrd - bOrd;
-      })
-    : [];
-
-  // Collect PK/FK columns for annotation
-  const pkColumns = new Set<string>();
-  const fkMap = new Map<string, string>(); // colname → target ref
-
-  if (constraintGroup) {
-    for (const entry of constraintGroup.out) {
-      const p = entry.node.payload;
-      const ctype = p['type'] as string | undefined;
-      const cols = p['columns'] as readonly string[] | undefined;
-      if (ctype === 'PK' && cols !== undefined) {
-        for (const col of cols) pkColumns.add(col);
-      } else if (ctype === 'FK' && cols !== undefined) {
-        const def = p['definition'] as string | undefined;
-        if (def !== undefined) {
-          for (const col of cols) fkMap.set(col, def);
-        }
-      }
-    }
-  }
-
-  if (columns.length > 0) {
+  const columnLines = renderColumns(columns, annots);
+  if (columnLines.length > 0) {
     lines.push('');
-    lines.push('COLUMNS');
-    for (const entry of columns) {
-      const p = entry.node.payload;
-      const dataType = (p['dataType'] as string | undefined) ?? 'unknown';
-      const nullable = p['nullable'] as boolean | undefined;
-      const defaultVal = p['default'] as string | undefined | null;
-
-      const parts: string[] = [`  ${entry.node.name}  ${dataType}`];
-
-      if (pkColumns.has(entry.node.name)) parts.push('[PK]');
-      if (fkMap.has(entry.node.name)) parts.push(`[FK→${fkMap.get(entry.node.name) ?? ''}]`);
-      if (nullable === false && !pkColumns.has(entry.node.name)) parts.push('[NN]');
-
-      if (defaultVal !== undefined && defaultVal !== null) {
-        parts.push(`DEFAULT ${defaultVal}`);
-      }
-
-      lines.push(parts.join('  '));
-    }
+    lines.push(...columnLines);
   }
 
   // ── CONSTRAINTS section (normal + full) ───────────────────────────────────
-  if (constraintGroup && constraintGroup.out.length > 0) {
-    const constraints = [...constraintGroup.out].sort((a, b) => a.node.name.localeCompare(b.node.name));
+  const constraintLines = renderConstraints(constraints, annots);
+  if (constraintLines.length > 0) {
     lines.push('');
-    lines.push('CONSTRAINTS');
-    for (const entry of constraints) {
-      const p = entry.node.payload;
-      const ctype = (p['type'] as string | undefined) ?? '';
-      const cols = (p['columns'] as readonly string[] | undefined) ?? [];
-      const def = p['definition'] as string | undefined;
-      if (ctype === 'FK' && def !== undefined) {
-        lines.push(`  [${ctype}]  ${entry.node.name}  (${cols.join(', ')} → ${def})`);
-      } else {
-        lines.push(`  [${ctype}]  ${entry.node.name}  (${cols.join(', ')})`);
-      }
-    }
+    lines.push(...constraintLines);
   }
 
   if (detail === 'normal') {
@@ -146,32 +104,17 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   }
 
   // ── INDEXES section (full only) ───────────────────────────────────────────
-  if (indexGroup && indexGroup.out.length > 0) {
-    const indexes = [...indexGroup.out].sort((a, b) => a.node.name.localeCompare(b.node.name));
+  const indexLines = renderIndexes(indexGroup ? indexGroup.out : []);
+  if (indexLines.length > 0) {
     lines.push('');
-    lines.push('INDEXES');
-    for (const entry of indexes) {
-      const p = entry.node.payload;
-      const unique = p['unique'] as boolean | undefined;
-      const cols = (p['columns'] as readonly string[] | undefined) ?? [];
-      const method = p['method'] as string | undefined;
-      const uniqueLabel = unique ? 'UNIQUE ' : '';
-      const methodStr = method ? ` [${method}]` : '';
-      lines.push(`  ${entry.node.name}  ${uniqueLabel}(${cols.join(', ')})${methodStr}`);
-    }
+    lines.push(...indexLines);
   }
 
   // ── TRIGGERS section (full only) ──────────────────────────────────────────
-  if (triggerGroup && triggerGroup.in.length > 0) {
-    const triggers = [...triggerGroup.in].sort((a, b) => a.node.name.localeCompare(b.node.name));
+  const triggerLines = renderTriggers(triggerGroup ? triggerGroup.in : []);
+  if (triggerLines.length > 0) {
     lines.push('');
-    lines.push('TRIGGERS');
-    for (const entry of triggers) {
-      const p = entry.node.payload;
-      const timing = (p['timing'] as string | undefined) ?? '';
-      const events = ((p['events'] as readonly string[] | undefined) ?? []).join(', ');
-      lines.push(`  ${entry.node.name}  ${timing} ${events}`.trimEnd());
-    }
+    lines.push(...triggerLines);
   }
 
   // ── Body section (full only, for modules at full level) ───────────────────

@@ -132,6 +132,18 @@ export {
   type ObjectView,
 } from './present/object.js';
 
+// Shared per-kind payload renderers backing both formatObject and formatExplore.
+// ADR-004: pure, core-types-only. Design D1/D8 (change explore-payloads).
+export {
+  deriveColumnAnnotations,
+  renderColumns,
+  renderConstraints,
+  renderIndexes,
+  renderTriggers,
+  type ColumnAnnotations,
+  type NeighborEntry,
+} from './present/payload.js';
+
 export {
   formatRelated,
   type RelatedDetail,
