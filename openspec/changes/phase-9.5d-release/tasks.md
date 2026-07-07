@@ -54,13 +54,13 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
 > whitelisted passes, S6 leak fails, S7 build precondition). CODE + STRICT TDD. The drift guard is the RED-first oracle
 > that pins the two literals together BEFORE they move.
 
-- [ ] B1.1 **(vitest, RED)** Create `test/bin/version-single-source.test.ts` (always-on, NO `skipIf`):
+- [x] B1.1 **(vitest, RED)** Create `test/bin/version-single-source.test.ts` (always-on, NO `skipIf`):
   `import { DBGRAPH_VERSION } from '../../src/index.js'`, `readFileSync` + `JSON.parse` the repo-root `package.json`,
   assert `pkg.version === DBGRAPH_VERSION` AND `DBGRAPH_VERSION === '1.0.0'` with EXACT `.toBe`. Run `npm test` and
   OBSERVE **RED** — equality holds (both `0.0.0`) but `=== '1.0.0'` fails. This is the two-source contract, asserted
   before the bump. Spec R1 S3 "Divergence guard fails when the two sources disagree". Design §"Drift guard". Done: the
   guard exists and is RED against the `0.0.0` state.
-- [ ] B1.2 **(vitest, GREEN — two-source bump + FIX-list asserts)** Move EXACTLY the current-app-version sites to
+- [x] B1.2 **(vitest, GREEN — two-source bump + FIX-list asserts)** Move EXACTLY the current-app-version sites to
   `1.0.0`, turning B1.1 GREEN; leave every STAY literal untouched:
 
   | Site | Line | Action |
@@ -79,12 +79,12 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
   Spec R1 S1 "npm dist channel prints 1.0.0 via the fallback constant", S2 "SEA channel prints 1.0.0 via the baked
   package.json version", S4 "Current-version asserts move; mechanism/historical sites stay". Design §"FIX / STAY
   inventory". Done: B1.1 GREEN; `npm test cli smoke` green; NO STAY literal moved.
-- [ ] B1.3 **(vitest, RED→GREEN — pack `files` unit, always-on)** Add to `test/bin/npm-pack-whitelist.test.ts` (new) a
+- [x] B1.3 **(vitest, RED→GREEN — pack `files` unit, always-on)** Add to `test/bin/npm-pack-whitelist.test.ts` (new) a
   fast always-on unit: `readFileSync` `package.json`, assert `pkg.files` `.toStrictEqual(['dist'])`. RED first (assert
   before trusting), then GREEN against the existing `files:["dist"]` (package.json:11). This is the instant tripwire
   when npm/dist are absent. Spec R2 S5 "Whitelisted tarball passes the gate" (unit backstop). Design §"npm-pack gate".
   Done: `npm test npm-pack-whitelist` green.
-- [ ] B1.4 **(vitest, spawn — real packer, `skipIf` cross-platform)** In `test/bin/npm-pack-whitelist.test.ts` add the
+- [x] B1.4 **(vitest, spawn — real packer, `skipIf` cross-platform)** In `test/bin/npm-pack-whitelist.test.ts` add the
   behavioural gate: PROBE npm (`--version`, status 0) via `process.env.npm_execpath` through `process.execPath`, else
   `spawnSync('npm', …, { shell: true })` (Windows `npm.cmd` ENOENT gotcha); `skipIf(!hasNpm)`. Build `dist/` first OR
   assert an explicit `npm run build` precondition (spec R2 S7). Spawn `npm pack --dry-run --json`, parse
@@ -93,7 +93,7 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
   spot-check), reporting any offender. Spec R2 S5 "Whitelisted tarball passes the gate", S6 "Any source/test/tooling
   leak fails the gate", S7 "Gate builds or documents its build precondition". Design §"Interfaces / Contracts". Done:
   gate green with `dist/` built; `skipIf`s cleanly (leaving B1.3 the always-on backstop) when npm absent.
-- [ ] B1.5 GATE (Batch B1): `npx tsc --noEmit` clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3246 +
+- [x] B1.5 GATE (Batch B1): `npx tsc --noEmit` clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3246 +
   drift guard + pack `files` unit; the `npm pack` spawn green with `dist/` built or `skipIf` clean); the drift guard is
   ALWAYS-ON (no `skipIf`); `esbuild-config`/`9.9.9`/`*.smoke`/benchmark records UNTOUCHED; `private:true` (package.json:7)
   UNTOUCHED; leak-scan clean. Then COMMIT `feat(9.5d): bump version to 1.0.0 across both sources behind a drift guard +
@@ -106,7 +106,7 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
 > gated-step warnings, S12 honesty guard, S13 repository.url surfaced). DOCS only — no vitest gate; the honesty contract
 > is the review oracle. Depends on B1 (the version is now truthfully `1.0.0`, which the runbook's phase-0 check asserts).
 
-- [ ] B2.1 **(doc)** Create `CHANGELOG.md` at the repo root, Keep-a-Changelog form, ONE `## [1.0.0] - 2026-07-07`
+- [x] B2.1 **(doc)** Create `CHANGELOG.md` at the repo root, Keep-a-Changelog form, ONE `## [1.0.0] - 2026-07-07`
   entry with `### Added` grouped by area from the design §"CHANGELOG source mapping" table: Graph core & storage;
   5 schema-extraction engines (sqlite, sqlserver, pg, mysql, mongodb); structural inference; CLI/config/UX; MCP stdio +
   HTTP; multi-agent install (6 agents); win/linux SEA binaries; public docs & `--project`; honest benchmark; resilient
@@ -114,7 +114,7 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
   claim (NO macOS binary as delivered, NOTHING published). Spec R3 S8 "v1.0.0 entry exists and covers every shipped
   area", S9 "Entry is truthful — no unshipped claims, accurate counts". Design §"Decision: CHANGELOG". Done: the entry
   names all shipped areas and every line maps to shipped work.
-- [ ] B2.2 **(doc)** Create `docs/release.md` per design §"Runbook structure": (1) **Phase-0 state check** — `npm test`
+- [x] B2.2 **(doc)** Create `docs/release.md` per design §"Runbook structure": (1) **Phase-0 state check** — `npm test`
   green, `git status` clean, on the intended branch, both version literals read `1.0.0`. (2) **LOCAL-done checklist**
   (pre-checked) — version bump, asserts moved, CHANGELOG, drift guard + pack gate green. (3) **USER-GATED ordered steps**,
   EACH with a ⚠️ cost/irreversibility banner: (a) merge `closeout` PR → `main`; (b) push `v1-prep` → PR → merge; (c) tag
@@ -131,7 +131,7 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
   fires an irreversible or CI action", S13 "repository.url mismatch is surfaced, not decided". Design §"Runbook
   structure" + §"Rollback / abort". Done: every step ordered + labeled; every gated step warned; `private` removal in
   the publish step; `repository.url` surfaced.
-- [ ] B2.3 GATE (Batch B2 — FINAL): `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` FULL GREEN
+- [x] B2.3 GATE (Batch B2 — FINAL): `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` FULL GREEN
   (baseline 3246 + drift guard + pack `files` unit; `npm pack` spawn green or `skipIf` clean); after `npm run build`,
   `node dist/cli.js --version` prints `1.0.0`; `package.json.version === DBGRAPH_VERSION === '1.0.0'`; the pack gate
   reports dist-only + package.json/README/LICENSE, no leaks; `CHANGELOG.md` + `docs/release.md` present and honest;
@@ -176,29 +176,29 @@ UNTOUCHED · `private:true` UNTOUCHED · leak-scan/denylist clean. Commit EACH b
 
 ## Definition of Done (tied to the proposal's Success Criteria; 13 spec scenarios across 4 requirements traced)
 
-- [ ] After `npm run build`, `node dist/cli.js --version` prints `1.0.0` via the `DBGRAPH_VERSION` fallback; the SEA
+- [x] After `npm run build`, `node dist/cli.js --version` prints `1.0.0` via the `DBGRAPH_VERSION` fallback; the SEA
   channel bakes `package.json.version`→`1.0.0`. — B1.2, B2.3 [R1 S1 "npm dist channel prints 1.0.0 via the fallback
   constant", S2 "SEA channel prints 1.0.0 via the baked package.json version"]
-- [ ] `package.json.version === DBGRAPH_VERSION === '1.0.0'`, pinned by an always-on guard that goes RED if either is
+- [x] `package.json.version === DBGRAPH_VERSION === '1.0.0'`, pinned by an always-on guard that goes RED if either is
   bumped without the other. — B1.1 (RED), B1.2 (GREEN) [R1 S3 "Divergence guard fails when the two sources disagree"]
-- [ ] ONLY the six current-app-version asserts move to `1.0.0`; the `9.9.9` override, `esbuild-config` define inputs,
+- [x] ONLY the six current-app-version asserts move to `1.0.0`; the `9.9.9` override, `esbuild-config` define inputs,
   dynamic `*.smoke` readers, and benchmark Environment rows STAY. — B1.2 [R1 S4 "Current-version asserts move;
   mechanism/historical sites stay"]
-- [ ] An `npm test`-resident gate runs `npm pack --dry-run --json` and asserts the tarball is EXACTLY `dist/**` +
+- [x] An `npm test`-resident gate runs `npm pack --dry-run --json` and asserts the tarball is EXACTLY `dist/**` +
   `package.json` + `README.md` + `LICENSE`, diffing the full list; any `benchmark/openspec/scripts/test/src` entry
   FAILS with the offender named; the gate builds `dist/` or documents `npm run build`; the `files===['dist']` unit is
   the always-on backstop. — B1.3, B1.4 [R2 S5 "Whitelisted tarball passes the gate", S6 "Any source/test/tooling leak
   fails the gate", S7 "Gate builds or documents its build precondition"]
-- [ ] `CHANGELOG.md` has ONE truthful Keep-a-Changelog `## [1.0.0] - 2026-07-07` covering all shipped areas (5 engines,
+- [x] `CHANGELOG.md` has ONE truthful Keep-a-Changelog `## [1.0.0] - 2026-07-07` covering all shipped areas (5 engines,
   inference, MCP stdio+HTTP, install for 6 agents, win/linux binaries, docs, benchmark) with accurate counts and NO
   unshipped claim. — B2.1 [R3 S8 "v1.0.0 entry exists and covers every shipped area", S9 "Entry is truthful — no
   unshipped claims, accurate counts"]
-- [ ] `docs/release.md` is an ordered checklist, EVERY step labeled LOCAL or USER-GATED, each gated step (tag push,
+- [x] `docs/release.md` is an ordered checklist, EVERY step labeled LOCAL or USER-GATED, each gated step (tag push,
   `npm publish`, `private` removal, visibility flip, PR merge) carrying an inline cost/irreversibility warning; NO LOCAL
   step fires a gated action (stated explicitly); `private` removal sits inside the publish step; the `repository.url`
   mismatch is surfaced pre-tag; ends with post-release verification. — B2.2 [R4 S10 "Every step is ordered and labeled
   LOCAL or USER-GATED", S11 "Every USER-GATED step carries an inline cost + irreversibility warning", S12 "No LOCAL step
   fires an irreversible or CI action", S13 "repository.url mismatch is surfaced, not decided"]
-- [ ] `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3246 + drift guard + pack unit);
+- [x] `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3246 + drift guard + pack unit);
   NO tag pushed, NOTHING published, repo visibility unchanged, `private:true` UNTOUCHED by agents; leak-scan clean —
   proven LOCALLY, nothing pushed past `closeout`. — every batch GATE (B1.5, B2.3)
