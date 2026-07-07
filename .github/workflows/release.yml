@@ -114,7 +114,12 @@ jobs:
           sha256sum dbgraph-* > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Attest build provenance for the binaries
+      # Best-effort: GitHub does not offer attestations for USER-OWNED PRIVATE repositories
+      # (the API answers "make this repository public"). While the repo is private this step
+      # fails harmlessly and the Release still publishes binaries + SHA256SUMS; once the repo
+      # goes public, provenance activates on the next release without edits.
+      - name: Attest build provenance for the binaries (best-effort on private repos)
+        continue-on-error: true
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: 'release/dbgraph-*'
