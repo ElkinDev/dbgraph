@@ -188,38 +188,38 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
 > neighbor section, then does the FINAL audit + minimal deliberate re-bless (default-CI mcp/present substrate is SQLite →
 > ZERO `calls` drift). Ends in the consolidated gate + DoD handoff to `sdd-verify`.
 
-- [ ] C.1 **(vitest)** RED→GREEN `test/core/query/impact-calls.test.ts` (new) + `src/core/query/impact.ts`:
+- [x] C.1 **(vitest)** RED→GREEN `test/core/query/impact-calls.test.ts` (new) + `src/core/query/impact.ts`:
   `IMPACT_EDGE_KINDS += 'calls'` (READ-impact, NOT in `WRITE_KINDS`). Synthetic in-memory mssql chain (`calls
   dbo.usp_refresh_totals → dbo.usp_log_change`) → `getImpact(dbo.usp_log_change)` READ impact EXACTLY
   `{dbo.usp_refresh_totals}` via the inbound `calls`; `dbo.usp_refresh_totals` in NO write-impact set; byte-identical on
   re-run. RED regressions GREEN: read/write separation, depth-truncation warning, cyclic visited-set, dynamic-SQL warning
   (S10–S13). Spec: graph-query "Depth-limited impact closure" (S14 + 4 regressions). D6.
-- [ ] C.2 **(vitest)** RED→GREEN `test/mcp/precheck.test.ts` (extend): synthetic mssql chain, `dbgraph_precheck({ ddl: ALTER
+- [x] C.2 **(vitest)** RED→GREEN `test/mcp/precheck.test.ts` (extend): synthetic mssql chain, `dbgraph_precheck({ ddl: ALTER
   dbo.usp_log_change })` → `whatToTest` EXACTLY `{dbo.usp_refresh_totals}` in the READ/what-to-test section (`calls` =
   read-impact, `confidence` preserved) — BYTE-CONSISTENT with C.1 (§Spec Coherence). Regressions GREEN: ALTER+DROP INDEX
   golden (S29), non-matchable unmatched (S30), SQLite column-drop dependents (S31). Spec: mcp-server "dbgraph_precheck
   aggregates DDL impact" (S29–S32). D6.
-- [ ] C.3 **(vitest / golden)** RED→GREEN `test/core/present/*` + `test/mcp/*`: over a SYNTHETIC `PresentView` (normalized
+- [x] C.3 **(vitest / golden)** RED→GREEN `test/core/present/*` + `test/mcp/*`: over a SYNTHETIC `PresentView` (normalized
   graph with the mssql routine chain) the shared formatter (`present/explore.ts`,`related.ts`,`object.ts` iterate
   `Object.keys(neighbors).sort()`) renders an OUTBOUND `calls` neighbor on `dbo.usp_refresh_totals` + the INBOUND `calls` on
   `dbo.usp_log_change`; `dbgraph_related({ kinds:['calls'] })` returns ONLY the `calls` neighbor annotated with direction; a
   routine with no invocations → EMPTY `calls` group, never fabricated. Add the synthetic present golden DELIBERATELY + a
   matching `docs/format-spec.md` note; CLI + MCP byte-identical (shared formatter). Spec: mcp-server "explore and related
   surface calls neighbors" (S33, S34). D6/§Present.
-- [ ] C.4 **(integration-gated)** Add the C.1/C.2/C.3 impact-through-calls + `whatToTest` + explore/related `calls`
+- [x] C.4 **(integration-gated)** Add the C.1/C.2/C.3 impact-through-calls + `whatToTest` + explore/related `calls`
   assertions to `test/cli/mssql.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated) over the container — end-to-end
   traversal + render. Spec: mcp-server (S32/S33/S34, integration tier).
-- [ ] C.5 **(audit — resolves Open Questions)** BEFORE regenerating: (a) re-CONFIRM no test byte-pins the `EDGE_KINDS` tuple
+- [x] C.5 **(audit — resolves Open Questions)** BEFORE regenerating: (a) re-CONFIRM no test byte-pins the `EDGE_KINDS` tuple
   (beyond A.1); (b) CLASSIFY present brief/summary edge-count goldens — torture-graph-derived (drift) vs synthetic
   `PresentView` (no drift); the SQLite-derived mcp/present goldens carry NO routines → ZERO `calls` drift EXPECTED; enumerate
   ANY mssql/pg/mysql-derived impact/explore golden that genuinely gains a `calls` section; (c) CONFIRM no mssql torture proc
   references a VIEW today (else proc→view drift — kind-preservation is OUT OF SCOPE, note for a future change). RECORD the
   exact drift inventory for the C.6 commit body. §Open Questions.
-- [ ] C.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless ONLY the goldens enumerated in C.5 that genuinely gain a
+- [x] C.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless ONLY the goldens enumerated in C.5 that genuinely gain a
   `calls` traversal/section (expected minimal: the C.3 synthetic present golden + any routine-bearing impact golden);
   SQLite-derived goldens MUST be byte-identical (HARD STOP if they move); byte-identical on re-run; per-golden inventory in
   the commit body. D5/D6.
-- [ ] C.7 GATE (Batch C — FINAL): RE-MEASURE baseline; `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0;
+- [x] C.7 GATE (Batch C — FINAL): RE-MEASURE baseline; `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0;
   `npm test` FULL GREEN (baseline + ALL A/B/C suites) with EVERY golden byte-identical on re-run; **sqlite goldens
   byte-identical (no routines → no `calls`)**; ADR-004 read-only boundary + ADR-008 determinism green; leak-scan clean;
   confirm NOTHING pushed (no push/PR/gh/tag). Trace the DoD below. COMMIT `feat(query,mcp): traverse calls as read-impact and render calls neighbors`.
@@ -278,20 +278,21 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
   (A.7, A.8) [graph-normalization S6; mssql S18]
 - [x] A routine touching only tables emits ZERO `calls` edges; an unresolved/builtin/dynamic-string invocation invents NO
   edge and NO stub (negatives). — A (A.2), B (B.1, B.2) [graph-normalization S7/S8/S9; mssql S17; pg S20/S21; mysql S24/S25]
-- [ ] SQLite emits ZERO `calls` edges, `CapabilityMatrix` unchanged, a function-like trigger token invents nothing. — A
-  (A.3) [graph-model S5; sqlite S27/S28]
-- [ ] `impact`/`affected`/`precheck` traverse `calls` as READ-impact: altering `dbo.usp_log_change` yields EXACTLY
+- [x] SQLite emits ZERO `calls` edges, `CapabilityMatrix` unchanged, a function-like trigger token invents nothing. — A
+  (A.3) [graph-model S5; sqlite S27/S28] (A.3-owned; RECONCILED — verified green in the C.7 FINAL gate: sqlite
+  calls-absence suite passes, sqlite goldens byte-identical)
+- [x] `impact`/`affected`/`precheck` traverse `calls` as READ-impact: altering `dbo.usp_log_change` yields EXACTLY
   `{dbo.usp_refresh_totals}` in BOTH the graph-query closure and mcp `whatToTest`, in NO write-impact set. — C (C.1, C.2)
   [graph-query S14; mcp S32]
-- [ ] `explore`/`related` render the `calls` neighbor section (outbound + inbound) for CLI AND MCP, byte-identical; empty
+- [x] `explore`/`related` render the `calls` neighbor section (outbound + inbound) for CLI AND MCP, byte-identical; empty
   group when none. — C (C.3) [mcp S33/S34]
-- [ ] Pre-existing behavior preserved: `fires_on` event, `inferred_reference` score, read/write separation, depth
+- [x] Pre-existing behavior preserved: `fires_on` event, `inferred_reference` score, read/write separation, depth
   truncation, cyclic termination, dynamic-SQL warning, ALTER+DROP INDEX golden, non-matchable unmatched, SQLite column-drop
   dependents. — A/C regressions [graph-model S2/S3; graph-query S10–S13; mcp S29/S30/S31]
-- [ ] Every re-blessed golden (mssql A.8, pg/mysql B.5, minimal C.6) is ONE DELIBERATE per-batch commit with a per-golden
+- [x] Every re-blessed golden (mssql A.8, pg/mysql B.5, minimal C.6) is ONE DELIBERATE per-batch commit with a per-golden
   inventory, byte-identical on re-run; cross-engine + sqlite goldens byte-identical at every gate; the two-tier mssql pins
   (synthetic + `DBGRAPH_INTEGRATION`-gated) both assert the same sets. — A (A.8, A.9), B (B.5, B.6), C (C.4, C.6)
   [mssql S18; pg S22; mysql S26; graph-query S14 determinism]
-- [ ] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new
+- [x] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new
   suites) every golden byte-identical on re-run; ADR-004 read-only + ADR-008 determinism green; leak-scan clean; nothing
   pushed. — every batch GATE (A.10, B.7, C.7)

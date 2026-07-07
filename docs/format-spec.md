@@ -301,6 +301,24 @@ views in READERS + WHAT TO TEST); plus `test/fixtures/sqlite/golden-{raw-catalog
   ceilings moved, and only because a fixture exceeded them. Cross-engine (pg/mssql/mysql) goldens are
   byte-identical (the fix's blast radius is SQLite-only) and `benchmark/questions.yaml` is untouched.
 
+**Golden change (change dog1-calls-edges, §C.3/C.6 note)**: routine→routine invocation now emits a
+`calls` edge (mssql `declared`; pg/mysql `parsed`), and the shared present formatters
+(`explore.ts`/`related.ts`/`object.ts`) render it AUTOMATICALLY — they iterate
+`Object.keys(neighbors).sort()` with NO edge-kind allowlist, so a `calls` group appears the moment the
+edge exists. Per §1.4 edge-line grammar it renders as a normal grouped neighbor: a calling routine shows
+an OUTBOUND `→ callee  [procedure|function]` line under a `calls` group; the invoked routine shows the
+INBOUND `← caller` line; a routine with no invocations renders NO `calls` group (never fabricated). CLI
+`explore` and the MCP tool share the formatter, so the `calls` rendering is byte-identical across both
+surfaces. ONE new deliberate synthetic golden is added — `test/core/present/golden/explore-calls.txt`
+(the caller's `normal` output over a synthetic `dbo.usp_refresh_totals --calls--> dbo.usp_log_change`
+routine chain, 195 chars→49 tk). NO existing golden is re-blessed: the default-CI mcp/present golden
+substrate is the routine-free SQLite torture fixture, which emits ZERO `calls` edges → zero drift; the
+mssql/pg/mysql `calls` render + impact traversal are proven in the synthetic unit tier and the
+`DBGRAPH_INTEGRATION`-gated container tier. Impact traversal adds `calls` as a READ-impact kind
+(`IMPACT_EDGE_KINDS`), so `dbgraph_impact`/`dbgraph_precheck` surface a called routine's CALLERS in the
+read / what-to-test sections without over-reporting writes; token ceilings are UNCHANGED (SQLite substrate
+is routine-free → no measured output moved).
+
 ---
 
 ## 6. Golden Discipline

@@ -38,6 +38,11 @@ import type { MssqlContainerHandle } from '../fixtures/mssql/container.js';
 import {
   createMssqlSchemaAdapter,
   createSqliteGraphStore,
+  getImpact,
+  getNeighbors,
+  formatExplore,
+  formatRelated,
+  runPrecheck,
 } from '../../src/index.js';
 import { runSync } from '../../src/cli/commands/sync.js';
 import { runQuery } from '../../src/cli/commands/query.js';
@@ -148,6 +153,66 @@ describe.skipIf(!mssqlIntegrationEnabled())(
 
         // REGRESSION: NO phantom [table] stub named usp_log_change exists
         expect(tables.some((t) => t.name === 'usp_log_change')).toBe(false);
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
+    // DOG-1 C.4 — INTEGRATION tier: the SAME C.1/C.2/C.3 traversal + render pins as the
+    // synthetic default-CI tier, proven end-to-end over the real materialized torture.sql
+    // catalog. Impact traverses `calls` as READ-impact; precheck surfaces the caller in
+    // whatToTest; explore/related render the `calls` neighbor with direction.
+    it('impact/precheck/explore traverse and render calls end-to-end (L-009)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
+      const store = await createSqliteGraphStore({ path: storePath });
+      try {
+        const procs = await store.getNodesByKind('procedure');
+        const refresh = procs.find((x) => x.name === 'usp_refresh_totals');
+        const logChange = procs.find((x) => x.name === 'usp_log_change');
+        expect(refresh, 'usp_refresh_totals node').toBeDefined();
+        expect(logChange, 'usp_log_change node').toBeDefined();
+
+        // ── C.1: impact of the called routine reaches its caller through inbound calls ──
+        const impact = await getImpact(store, { nodeId: logChange!.id });
+        const readNodeIds = new Set(impact.readImpact.flatMap((c) => c.nodes.slice(1)));
+        expect(readNodeIds.has(refresh!.id)).toBe(true);
+        // the caller is reached SPECIFICALLY through a `calls` edge
+        const callerChain = impact.readImpact.find((c) => c.nodes.at(-1) === refresh!.id);
+        expect(callerChain).toBeDefined();
+        expect(callerChain!.edges).toContain('calls');
+        // NEGATIVE: the caller is NOT in any write-impact set (a calls edge is READ-impact)
+        const writeNodeIds = new Set(impact.writeImpact.flatMap((c) => c.nodes));
+        expect(writeNodeIds.has(refresh!.id)).toBe(false);
+
+        // ── C.2: precheck whatToTest surfaces the caller through the calls chain ──
+        const view = await runPrecheck(store, 'ALTER TABLE dbo.usp_log_change ADD COLUMN reviewed BIT;');
+        expect(view.impact.whatToTest).toContain('dbo.usp_refresh_totals');
+        expect(view.impact.readers).toContainEqual(
+          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+        );
+        expect(view.impact.writers).not.toContainEqual(
+          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+        );
+
+        // ── C.3: explore renders the calls neighbor (outbound on caller, inbound on callee) ──
+        const refreshNeighbors = await getNeighbors(store, { nodeId: refresh!.id });
+        const refreshExplore = formatExplore({ node: refresh!, neighbors: refreshNeighbors }, 'normal');
+        expect(refreshExplore).toContain('calls');
+        expect(refreshExplore).toContain('→ dbo.usp_log_change  [procedure]');
+
+        const logNeighbors = await getNeighbors(store, { nodeId: logChange!.id });
+        const logExplore = formatExplore({ node: logChange!, neighbors: logNeighbors }, 'normal');
+        expect(logExplore).toContain('calls');
+        expect(logExplore).toContain('← dbo.usp_refresh_totals  [procedure]');
+
+        // ── C.3: related filtered to kinds:['calls'] returns ONLY the calls neighbor ──
+        const callsOnly = await getNeighbors(store, { nodeId: refresh!.id, kinds: ['calls'] });
+        expect(Object.keys(callsOnly)).toStrictEqual(['calls']);
+        const relatedText = formatRelated({ node: refresh!, neighbors: callsOnly }, 'normal');
+        expect(relatedText).toContain('→ dbo.usp_log_change  [procedure]');
+        expect(relatedText).not.toContain('writes_to');
       } finally {
         await adapter.close();
         await store.close();

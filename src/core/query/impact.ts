@@ -17,12 +17,19 @@ const WRITE_KINDS = new Set<EdgeKind>(['writes_to']);
 /** Default BFS depth cap (design §6.2). */
 const DEFAULT_DEPTH = 3;
 
-/** All edge kinds traversed for impact (union of read + write). */
+/**
+ * All edge kinds traversed for impact (union of read + write).
+ * `calls` is a READ-impact kind (DOG-1 D6): it is NOT in `WRITE_KINDS`, so a caller
+ * depends on its callee like a read — altering a called routine reaches its CALLERS
+ * through inbound `calls` edges, while WRITE impact stays `writes_to`-only (a call is
+ * not a mutation). SQLite/mongodb emit no `calls` edges → zero traversal drift there.
+ */
 const IMPACT_EDGE_KINDS: readonly EdgeKind[] = [
   'writes_to',
   'reads_from',
   'depends_on',
   'references',
+  'calls',
 ];
 
 /**

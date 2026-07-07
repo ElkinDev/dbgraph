@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createDbgraphServer } from '../../src/mcp/server.js';
 import { runPrecheck } from '../../src/index.js';
+import type { GraphStore, GraphNode, GraphEdge } from '../../src/index.js';
 import { createHarness, type McpTestHarness } from './harness.js';
 import { openFixtureStore, type FixtureStore } from './fixture.js';
 
@@ -232,5 +233,145 @@ describe('dbgraph_precheck — SQLite departments.dept_id column-drop (L-009 exa
     ]) {
       expect(text).toContain(qname);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-1 C.2 — precheck CONSUMES the `calls` READ-impact traversal (mcp S32).
+//
+// Spec `mcp-server` "Altering a called routine surfaces its callers through the calls
+// chain": over the mssql routine chain `calls dbo.usp_refresh_totals → dbo.usp_log_change`,
+// a DDL touching `dbo.usp_log_change` yields `whatToTest` EXACTLY `{dbo.usp_refresh_totals}`
+// (the caller reached through the INBOUND `calls` edge) in the READ / what-to-test section
+// — a `calls` edge is READ-impact, not write. BYTE-CONSISTENT with the graph-query C.1 pin.
+//
+// This is the DEFAULT-CI synthetic tier (design §Testing Q2 = BOTH): an in-memory routine
+// chain, NO container. The precheck identifier extractor is kind-AGNOSTIC (it pulls the
+// qualified name and the graph resolves the kind), so `ALTER TABLE dbo.usp_log_change`
+// resolves the identifier to the PROCEDURE node exactly as the SQLite test above resolves
+// `main.departments` to a table. STRICT TDD: RED before `IMPACT_EDGE_KINDS += 'calls'`
+// (no calls traversal → empty whatToTest). L-009 EXACT-set + explicit negatives.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function callsChainNode(id: string, qname: string): GraphNode {
+  return {
+    id,
+    kind: 'procedure',
+    schema: 'dbo',
+    name: qname.split('.').pop() ?? qname,
+    qname,
+    level: 'metadata',
+    missing: false,
+    excluded: false,
+    bodyHash: null,
+    payload: {},
+  };
+}
+
+function callsChainTable(id: string, qname: string): GraphNode {
+  return { ...callsChainNode(id, qname), kind: 'table' };
+}
+
+function callsChainEdge(
+  id: string,
+  kind: GraphEdge['kind'],
+  src: string,
+  dst: string,
+  confidence: GraphEdge['confidence'],
+): GraphEdge {
+  return { id, kind, src, dst, confidence, score: null, attrs: {} };
+}
+
+/**
+ * In-memory mssql routine chain store:
+ *   dbo.usp_refresh_totals --calls--> dbo.usp_log_change (declared)
+ *   dbo.usp_refresh_totals --writes_to--> dbo.order_totals (parsed)
+ *   dbo.usp_log_change --writes_to--> dbo.audit_log (parsed)
+ * getImpact walks INBOUND edges (getEdgesTo), keyed on the target.
+ */
+function buildRoutineChainStore(): GraphStore {
+  const refresh = callsChainNode('n-refresh', 'dbo.usp_refresh_totals');
+  const log = callsChainNode('n-log', 'dbo.usp_log_change');
+  const totals = callsChainTable('n-totals', 'dbo.order_totals');
+  const audit = callsChainTable('n-audit', 'dbo.audit_log');
+  const nodes: GraphNode[] = [refresh, log, totals, audit];
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+  const edgesTo: Record<string, GraphEdge[]> = {
+    'n-log': [callsChainEdge('e-calls', 'calls', 'n-refresh', 'n-log', 'declared')],
+    'n-totals': [callsChainEdge('e-w1', 'writes_to', 'n-refresh', 'n-totals', 'parsed')],
+    'n-audit': [callsChainEdge('e-w2', 'writes_to', 'n-log', 'n-audit', 'parsed')],
+    'n-refresh': [],
+  };
+
+  return {
+    close: async () => {},
+    schemaVersion: async () => 1,
+    upsertGraph: async () => ({ nodes: 0, edges: 0 }),
+    deleteNodes: async () => 0,
+    getNode: async (id) => nodeById.get(id) ?? null,
+    getNodesByKind: async (kind) => nodes.filter((n) => n.kind === kind),
+    getNodeByQName: async (kind, qname) =>
+      nodes.find((n) => n.kind === kind && n.qname === qname) ?? null,
+    getEdgesFrom: async () => [],
+    getEdgesTo: async (id, kinds) => {
+      const all = edgesTo[id] ?? [];
+      return kinds === undefined ? all : all.filter((e) => kinds.includes(e.kind));
+    },
+    searchFts: async () => ({ hits: [], total: 0 }),
+    putSnapshot: async () => {},
+    listSnapshots: async () => [],
+    getSnapshotObjects: async () => [],
+    getMeta: async () => null,
+    setMeta: async () => {},
+  };
+}
+
+describe('dbgraph_precheck — calls chain surfaces the caller in whatToTest (DOG-1 C.2, L-009)', () => {
+  // Kind-agnostic identifier extraction: the ALTER TABLE clause makes the extractor emit
+  // `dbo.usp_log_change`, which the graph resolves to the PROCEDURE node.
+  const ALTER_LOG_DDL = 'ALTER TABLE dbo.usp_log_change ADD COLUMN reviewed BIT;';
+
+  it('whatToTest is EXACTLY {dbo.usp_refresh_totals} (the caller via the inbound calls edge)', async () => {
+    const store = buildRoutineChainStore();
+    const view = await runPrecheck(store, ALTER_LOG_DDL);
+    expect(view.impact.whatToTest).toStrictEqual(['dbo.usp_refresh_totals']);
+  });
+
+  it('READERS is EXACTLY the calling routine, confidence:parsed (calls = read-impact)', async () => {
+    const store = buildRoutineChainStore();
+    const view = await runPrecheck(store, ALTER_LOG_DDL);
+    expect(view.impact.readers).toStrictEqual([
+      { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+    ]);
+  });
+
+  it('NEGATIVE: the caller appears in NO write section — a calls edge is never write-impact', async () => {
+    const store = buildRoutineChainStore();
+    const view = await runPrecheck(store, ALTER_LOG_DDL);
+    expect(view.impact.writers).toStrictEqual([]);
+    expect(view.impact.triggers).toStrictEqual([]);
+    expect(view.impact.constraintsAndIndexes).toStrictEqual([]);
+    // the caller is not mis-classified as a writer
+    expect(view.impact.writers).not.toContainEqual(
+      { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+    );
+    // whatToTest never lists the pivot itself
+    expect(view.impact.whatToTest).not.toContain('dbo.usp_log_change');
+  });
+
+  it('the pivot resolves to the PROCEDURE node (kind-agnostic identifier match)', async () => {
+    const store = buildRoutineChainStore();
+    const view = await runPrecheck(store, ALTER_LOG_DDL);
+    expect(view.matchedObjects).toStrictEqual([
+      { qname: 'dbo.usp_log_change', kind: 'procedure', confidence: 'parsed' },
+    ]);
+  });
+
+  it('byte-consistent whatToTest on re-run (ADR-008)', async () => {
+    const store = buildRoutineChainStore();
+    const r1 = await runPrecheck(store, ALTER_LOG_DDL);
+    const r2 = await runPrecheck(store, ALTER_LOG_DDL);
+    expect(JSON.stringify(r1)).toBe(JSON.stringify(r2));
   });
 });
