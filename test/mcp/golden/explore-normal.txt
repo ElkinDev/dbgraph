@@ -14,6 +14,11 @@ CONSTRAINTS
   [UNIQUE]  idx_emp_email  (email)
   [PK]  pk_employees  (emp_id)
 
+  depends_on
+    in:
+      ← main.active_departments  [view]
+      ← main.employee_summary  [view]
+
   fires_on
     in:
       ← main.trg_emp_after_delete  [trigger]

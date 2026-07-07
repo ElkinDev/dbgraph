@@ -123,9 +123,14 @@ describe('Token budget: normal detail respects the measured ceiling', () => {
     expect(charToTokens(text.length)).toBeLessThanOrEqual(250);
   });
 
-  it('dbgraph_precheck normal ≤ 65 tokens', () => {
+  // sqlite-view-deps re-measure: precheck normal now lists the dependent views
+  // (main.active_departments, main.employee_summary) surfaced by the new view
+  // `depends_on` edges. RE-MEASURED on the torture fixture (ceil(chars/4)):
+  // precheck normal = 73 tk (was ≤ 65) — the ceiling is WIDENED to 85 (~16% headroom
+  // over the measured 73). Paired with the docs/format-spec.md §5 token-delta note.
+  it('dbgraph_precheck normal ≤ 85 tokens (re-measured after view dependents surfaced)', () => {
     const text = readGolden('precheck-tool-normal.txt');
-    expect(charToTokens(text.length)).toBeLessThanOrEqual(65);
+    expect(charToTokens(text.length)).toBeLessThanOrEqual(85);
   });
 });
 
@@ -169,8 +174,12 @@ describe('Token budget: full detail respects the measured ceiling', () => {
     expect(charToTokens(text.length)).toBeLessThanOrEqual(265);
   });
 
-  it('dbgraph_precheck full ≤ 110 tokens', () => {
+  // sqlite-view-deps re-measure: precheck full adds the dependent views to both the
+  // READERS section and WHAT TO TEST. RE-MEASURED on the torture fixture (ceil(chars/4)):
+  // precheck full = 120 tk (was ≤ 110) — the ceiling is WIDENED to 140 (~17% headroom
+  // over the measured 120). Paired with the docs/format-spec.md §5 token-delta note.
+  it('dbgraph_precheck full ≤ 140 tokens (re-measured after view dependents surfaced)', () => {
     const text = readGolden('precheck-tool-full.txt');
-    expect(charToTokens(text.length)).toBeLessThanOrEqual(110);
+    expect(charToTokens(text.length)).toBeLessThanOrEqual(140);
   });
 });

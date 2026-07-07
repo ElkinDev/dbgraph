@@ -2,7 +2,9 @@ IMPACT: main.employees  [table]
 ─────────────────────────────
 
 READ IMPACT
+  main.employees → main.active_departments
   main.employees → main.assignments
+  main.employees → main.employee_summary
 
 WRITE IMPACT
   (none)

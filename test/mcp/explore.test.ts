@@ -169,7 +169,10 @@ describe('dbgraph_explore — D3 [view] resolution (explore-payloads B.5)', () =
   it('resolves main.active_departments to the VIEW (not the phantom table stub, not ambiguous)', async () => {
     const text = await harness.callTool('dbgraph_explore', { target: 'main.active_departments' });
     expect(text).toContain('main.active_departments  [view]');
-    expect(text).not.toContain('[table]');
+    // The PIVOT must resolve to the view, never the phantom `[table]` stub. Neighbor
+    // tables surfaced by the new view `depends_on` edges (main.departments/main.employees
+    // as `[table]`) are legitimate, so the negative is scoped to the pivot qname only.
+    expect(text).not.toContain('main.active_departments  [table]');
     expect(text).not.toContain('Ambiguous');
   });
 });

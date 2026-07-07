@@ -1,6 +1,11 @@
 RELATED: main.employees  [table]
 ───────────────────────────────
 
+  depends_on
+    in:
+      ← main.active_departments  [view]
+      ← main.employee_summary  [view]
+
   fires_on
     in:
       ← main.trg_emp_after_delete  [trigger]

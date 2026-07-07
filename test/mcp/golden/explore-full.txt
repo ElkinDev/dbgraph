@@ -27,6 +27,11 @@ TRIGGERS
   trg_emp_before_update  BEFORE UPDATE
   trg_emp_salary_update  BEFORE UPDATE
 
+  depends_on
+    in:
+      ← main.active_departments  [view]
+      ← main.employee_summary  [view]
+
   fires_on
     in:
       ← main.trg_emp_after_delete  [trigger]

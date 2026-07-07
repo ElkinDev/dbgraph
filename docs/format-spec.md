@@ -224,7 +224,7 @@ Measured raw values and headroom ceilings:
 | `dbgraph_impact`  | 29 chars→8 tk / 50       | 34 chars→9 tk / 55        | 34 chars→9 tk / 55      |
 | `dbgraph_path`    | 62 chars→16 tk / 80      | 62 chars→16 tk / 80       | 62 chars→16 tk / 80     |
 | `dbgraph_status`  | 44 chars→11 tk / 65      | 190 chars→48 tk / 250     | 198 chars→50 tk / 265   |
-| `dbgraph_precheck`| 25 chars→7 tk / 40       | 43 chars→11 tk / 65       | 79 chars→20 tk / 110    |
+| `dbgraph_precheck`| 25 chars→7 tk / 40       | 290 chars→73 tk / 85      | 479 chars→120 tk / 140  |
 
 Simplified ceiling table (tokens — use these for budget assertions):
 
@@ -237,7 +237,7 @@ Simplified ceiling table (tokens — use these for budget assertions):
 | `dbgraph_impact`  | 50               | 55                | 55              |
 | `dbgraph_path`    | 80               | 80                | 80              |
 | `dbgraph_status`  | 65               | 250               | 265             |
-| `dbgraph_precheck`| 40               | 65                | 110             |
+| `dbgraph_precheck`| 40               | 85                | 140             |
 
 Note: `dbgraph_path` only has found/no-route variants, not brief/normal/full; the ceiling uses the
 larger no-route output. `dbgraph_status` includes a non-deterministic ISO timestamp
@@ -278,6 +278,28 @@ fix). `explore-brief.txt` and `object-tool-brief.txt` are UNCHANGED (no payload 
 The composite-FK reconstruction for `main.assignments` (`(emp_id, dept_id → main.employees)`, declared-order
 PK `(project_id, emp_id, dept_id)`) is pinned from the REAL built graph in the object/explore tool tests
 (the generated constraint name `fk_assignments_0` was captured, not guessed).
+
+**Golden change (change sqlite-view-deps, §5 token-delta note)**: the SQLite adapter now derives view
+`depends_on` edges (view bodies) and trigger `writes_to` edges (trigger action bodies) via the shared
+presence-gate tokenizer, and `buildFiresOnEdges` resolves a trigger's `fires_on` target to the real node
+kind (killing the phantom `[table] active_departments` stub). The new edges surface dependent views/triggers
+across the neighbor-bearing tool goldens. Re-captured goldens: `test/mcp/golden/explore-{brief,normal,full}.txt`
+(`main.employees` gains 2 inbound `depends_on` neighbors — the views), `explore-view.txt`
+(`main.active_departments` now shows its `depends_on` OUT targets + `fires_on` trigger), `impact-tool-*.txt`,
+`related-tool-*.txt`, and `precheck-tool-{normal,full}.txt` (the employees DDL now surfaces the dependent
+views in READERS + WHAT TO TEST); plus `test/fixtures/sqlite/golden-{raw-catalog,e2e}.json`
+(`edgeCount 54→64`, `nodeCount 54→53`, `stubCount 1→0`). Token delta (re-measured on the torture fixture,
+`ceil(chars/4)`):
+- `dbgraph_precheck` normal: was ≤ 65 tk → now 290 chars→73 tk; this EXCEEDS the prior 65 ceiling, so the
+  normal ceiling is WIDENED **65 → 85** (≈16% headroom over the measured 73).
+- `dbgraph_precheck` full: was ≤ 110 tk → now 479 chars→120 tk; this EXCEEDS the prior 110 ceiling, so the
+  full ceiling is WIDENED **110 → 140** (≈17% headroom over the measured 120).
+- `dbgraph_impact` normal/full: 219 chars→55 tk (within the 55 ceiling — UNCHANGED).
+- `dbgraph_related` normal/full: 1179 chars→295 tk (within the 400 ceiling — UNCHANGED).
+- `dbgraph_explore` normal/full: 1465 chars→367 tk / 1856 chars→464 tk (within the 400 / 480 ceilings —
+  UNCHANGED). The ceiling POLICY and `ceil(chars/4)` methodology are UNCHANGED — only the two precheck
+  ceilings moved, and only because a fixture exceeded them. Cross-engine (pg/mssql/mysql) goldens are
+  byte-identical (the fix's blast radius is SQLite-only) and `benchmark/questions.yaml` is untouched.
 
 ---
 

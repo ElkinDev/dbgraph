@@ -1,5 +1,6 @@
 main.employees  [table]
 ───────────────────────
+  depends_on             2 in
   fires_on               5 in
   has_column             6 out
   has_constraint         3 out
