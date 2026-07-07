@@ -268,25 +268,25 @@ nothing pushed; no CI).
 > (design D-benchmark / D7); honesty is enforced by the standing `docs/benchmarks.md` contract and re-checked by
 > verify, NOT by a test.
 
-- [ ] R.1 (orchestrator) Build the graph from the committed fixture: `dbgraph init` / `sync` against
+- [x] R.1 (orchestrator) Build the graph from the committed fixture: `dbgraph init` / `sync` against
   `test/fixtures/sqlite/torture.sql` → `.dbgraph/dbgraph.db` in an isolated working dir. READ-ONLY throughout; the
   frozen harness is UNTOUCHED. Spec: benchmark "The re-run's WITH surface is the unchanged four commands" (setup).
-- [ ] R.2 (orchestrator) `node --experimental-strip-types benchmark/generate.ts` then `… benchmark/build-packets.ts`
+- [x] R.2 (orchestrator) `node --experimental-strip-types benchmark/generate.ts` then `… benchmark/build-packets.ts`
   against the SAME committed pre-registered set — CONFIRM ZERO packet drift (the 4-command list + questions + ground
   truth are PINNED; regenerating must reproduce them byte-identically). Spec: benchmark "The re-run's WITH surface is
   the unchanged four commands". Design D-benchmark.
-- [ ] R.3 (orchestrator) For EACH question launch TWO isolated sub-agents (WITH: read-only CLI limited to
+- [x] R.3 (orchestrator) For EACH question launch TWO isolated sub-agents (WITH: read-only CLI limited to
   `query`/`explore`/`affected`/`status` with `--json`, FORBIDDEN from reading any `.sql`/DDL file; WITHOUT: DDL dump
   only, no tools) with the IDENTICAL pinned framing + question + `ANSWER FORMAT` spec — run-id
   `explore-payloads-2026-MM-DD`. Save each to `benchmark/runs/<run-id>/raw/<qid>.<condition>.json` + transcript. Spec:
   benchmark "The re-run's WITH surface is the unchanged four commands".
-- [ ] R.4 (orchestrator) `node --experimental-strip-types benchmark/score.ts runs/<run-id>` (BLIND to condition) →
+- [x] R.4 (orchestrator) `node --experimental-strip-types benchmark/score.ts runs/<run-id>` (BLIND to condition) →
   `scored/`; `render.ts` → the SECOND `docs/benchmarks.md` results table. FILL the labeled table (D.1 scaffold) +
   per-question DELTAS + Environment (model id, run-id, date, commit) FAITHFULLY — report EVERY per-question outcome
   INCLUDING no-improvement or REGRESSION versus the first run; NO extrapolation, scoped to this
   fixture/question-set/model. Spec: benchmark "A second results table is labeled with its code version", "An
   unfavorable second run is reported, not suppressed".
-- [ ] R.5 (orchestrator) Commit the filled second table (`runs/` stays git-ignored): `docs(benchmark): record
+- [x] R.5 (orchestrator) Commit the filled second table (`runs/` stays git-ignored): `docs(benchmark): record
   explore-payloads re-run on the torture fixture (US-035)`. Hand off to verify.
 
 ## Apply Batch Grouping (one sub-agent session each)
@@ -359,11 +359,11 @@ nothing pushed; no CI).
   B.9), Batch D (D.2) [scenarios: explore deterministic and golden-pinned, Explore payload matches CLI byte-for-byte,
   Explore compact neighborhood golden, ambiguous target disambiguation, ceilings re-measured, brief budget respected,
   format spec grammar/levels/budget methodology, output byte-identical on re-run]
-- [ ] `docs/benchmarks.md` carries a SECOND results table LABELED with the code version, framed honestly (same
+- [x] `docs/benchmarks.md` carries a SECOND results table LABELED with the code version, framed honestly (same
   fixture/questions/model, tool surface only; unfavorable results reported, no extrapolation). — Batch D (D.1), Batch
   R (R.4) [scenarios: second table labeled with its code version, re-run WITH surface is the unchanged four commands,
   unfavorable second run reported not suppressed]
-- [ ] Target DB stays strictly READ-ONLY; the ADR-004 core/CLI boundary tests are green. — Batch C (C.3), Batch D
+- [x] Target DB stays strictly READ-ONLY; the ADR-004 core/CLI boundary tests are green. — Batch C (C.3), Batch D
   (D.3), Batch R (R.1)
 - [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` green (baseline 3088 + new suites)
   with every golden byte-identical on re-run; leak-scan clean — proven LOCALLY (no CI), nothing pushed. — every batch

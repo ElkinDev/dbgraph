@@ -129,7 +129,7 @@ Every figure above is scoped to *this fixture, this question set, this model*. U
 per-question outcomes (dbgraph no-better or worse) MUST be reported here, not softened or omitted —
 suppression is a spec violation.
 
-## Results — Run 2 (`explore-payloads-2026-MM-DD`)
+## Results — Run 2 (`explore-payloads-2026-07-06`)
 
 > **SCAFFOLD — awaiting the re-run.** This SECOND results table is LABELED with its code version /
 > run-id and is intentionally left with empty (`_pending_`) cells. The coordinating session FILLS it
@@ -149,33 +149,51 @@ change); the fixture, questions, ground truth, model family, and scoring rules a
 | Field | Value |
 |-------|-------|
 | Model family | Claude (single family — no cross-model claim) |
-| Model id / version | _pending (Batch R)_ |
-| Run date | _pending (Batch R)_ |
-| Run id | `explore-payloads-2026-MM-DD` |
-| dbgraph version / commit | _pending (Batch R — the explore-payloads commit under test)_ |
+| Model id / version | claude-fable-5 (all 10 condition agents; orchestrated sub-agents, fresh context each — same as Run 1) |
+| Run date | 2026-07-06 |
+| Run id | `explore-payloads-2026-07-06` |
+| dbgraph version / commit | 0.0.0 — explore-payloads feature commits `5b867f0`+`2f0cec1` (code under test built from `98bb169`) |
 | Primary substrate | SQLite torture fixture (`test/fixtures/sqlite/torture.sql`, committed — UNCHANGED) |
 
-### Results (Run 2 — `explore-payloads-2026-MM-DD`)
+### Results (Run 2 — `explore-payloads-2026-07-06`)
 
 | Family | WITH accuracy | WITHOUT accuracy | WITH tokens (actual) | WITHOUT tokens (actual) |
 |--------|---------------|------------------|----------------------|-------------------------|
-| fk-path | _pending_ | _pending_ | _pending_ | _pending_ |
-| column-type (control) | _pending_ | _pending_ | _pending_ | _pending_ |
-| impact | _pending_ | _pending_ | _pending_ | _pending_ |
-| trigger-inventory | _pending_ | _pending_ | _pending_ | _pending_ |
-| constraint-semantics | _pending_ | _pending_ | _pending_ | _pending_ |
-| **Overall** | **_pending_** | **_pending_** | _pending_ | _pending_ |
+| fk-path | 100% (1/1) | 100% (1/1) | 34607 | 26697 |
+| column-type (control) | 100% (1/1) | 100% (1/1) | 29073 | 26688 |
+| impact | 0% (0/1) | 0% (0/1) | 55885 | 26694 |
+| trigger-inventory | 100% (1/1) | 100% (1/1) | 31178 | 26698 |
+| constraint-semantics | 100% (1/1) | 100% (1/1) | 29630 | 26665 |
+| **Overall** | **80% (4/5)** | **80% (4/5)** | 180373 | 133442 |
+
+**Run 2 vs Run 1, same frozen protocol: WITH accuracy 40% → 80%; WITH tokens 293325 → 180373
+(−38.5%); WITH tool calls 157 → 42 (−73%). WITH now TIES WITHOUT on accuracy on this fixture.**
+Scoped to *this fixture, this question set, this model* — no generalized claim.
 
 Per-question appendix (Run 2) — Batch R fills the answers AND the per-question DELTA versus
 `torture-2026-07-06`; the `key` column is FROZEN (byte-identical to Run 1, never re-derived):
 
 | qid | key | WITH answer | WITHOUT answer | Δ vs Run 1 |
 |-----|-----|-------------|----------------|------------|
-| column-type-assignments.dept_id | `INTEGER\|NOT NULL` | _pending_ | _pending_ | _pending_ |
-| constraint-semantics-assignments | `project_id, emp_id, dept_id` | _pending_ | _pending_ | _pending_ |
-| fk-path-assignments-employees | both atoms (`emp_id`, `dept_id`) | _pending_ | _pending_ | _pending_ |
-| impact-departments | `assignments, employees` | _pending_ | _pending_ | _pending_ |
-| trigger-inventory-active_departments | `trg_active_dept_instead_insert:INSTEAD OF:INSERT` | _pending_ | _pending_ | _pending_ |
+| column-type-assignments.dept_id | `INTEGER\|NOT NULL` | `INTEGER\|NOT NULL` ✓ (3 tool calls — read directly from the rendered column payload; Run 1: ✗ after 49 calls) | `INTEGER\|NOT NULL` ✓ | WITH ✗→✓ |
+| constraint-semantics-assignments | `project_id, emp_id, dept_id` | ✓ (3 calls — `[PK] pk_assignments (project_id, emp_id, dept_id)` rendered verbatim; Run 1: ✗ after 69 calls) | ✓ | WITH ✗→✓ |
+| fk-path-assignments-employees | both atoms (`emp_id`, `dept_id`) | ✓ (9 calls — `[FK] fk_assignments_0 (emp_id, dept_id → main.employees)` rendered via D8 reconstruction; Run 1: ✗) | ✓ | WITH ✗→✓ |
+| impact-departments | `assignments, employees` | `active_departments, assignments, employees, trg_active_dept_instead_insert` ✗ vs the mechanical key — see note below | `active_departments, employee_summary, employees, trg_active_dept_instead_insert` ✗ (same class as Run 1) | WITH ✓→✗ (circularity artifact, see note) |
+| trigger-inventory-active_departments | `trg_active_dept_instead_insert:INSTEAD OF:INSERT` | ✓ (7 calls — timing/events now rendered as `INSTEAD OF INSERT`; Run 1 inferred them from the trigger NAME) | ✓ | ✓→✓ (evidence quality improved) |
+
+**Impact-family note (the circularity limitation, live in both directions).** The mechanical key IS
+dbgraph's own view-blind `affected --json whatToTest` (SQLite `supportsDependencyHints=false`). In
+Run 1 the WITH agent scored ✓ by REPEATING the tool's output; in Run 2, with the richer explore
+surface (and FTS evidence that trigger bodies reference `dept_id`), the agent trusted its own
+semantic analysis, named the view + trigger that genuinely break — and scored ✗ against the
+circular key. Both conditions now converge on semantically defensible answers the key cannot
+credit. This is not a regression of the tool; it is the strongest evidence yet that the impact
+family measures agreement-with-the-tool, and that SQLite view-dependency extraction (the next
+planned change) is what both `affected` and this family need.
+
+**WITHOUT totals curiosity:** the Run 2 WITHOUT sum (133442) coincidentally equals Run 1's — the
+five per-agent values differ slightly (±10 tokens each) but sum identically; the WITHOUT condition
+is dominated by the fixed prompt+DDL size, so its cost is effectively constant across runs.
 
 ### Run 2 honesty framing (standing contract — binds before the numbers exist)
 
@@ -200,7 +218,13 @@ One boundary, applied IDENTICALLY to both conditions:
 
 The `chars/4` figure is an approximation, never presented as an exact token count.
 
-**What THIS run used (torture-2026-07-06):** the per-agent transcripts were not persisted by the
+**What Run 2 used (explore-payloads-2026-07-06):** the SAME actual-usage boundary as Run 1 (below),
+identically applied — actual runtime token usage per condition agent, including the fixed per-agent
+harness overhead (≈26.7k, identical on both sides; the WITHOUT agents measure it directly), so the
+DELTA between conditions and BETWEEN RUNS is the meaningful quantity. Zero packet drift vs Run 1 was
+verified before launching (byte-diff of all 10 regenerated packets).
+
+**What Run 1 used (torture-2026-07-06):** the per-agent transcripts were not persisted by the
 runtime, so the schema-bearing-only `chars/4` figure was NOT computable after the fact. The table
 reports **ACTUAL runtime token usage per condition agent** (the spec-preferred boundary), applied
 identically to both conditions. Caveat, stated plainly: this figure includes a fixed per-agent
