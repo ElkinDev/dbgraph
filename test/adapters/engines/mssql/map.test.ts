@@ -35,6 +35,7 @@ interface FkRow { schema_name: string; table_name: string; constraint_name: stri
 interface CheckRow { schema_name: string; table_name: string; constraint_name: string; definition: string }
 interface IndexRow { schema_name: string; table_name: string; index_name: string; is_unique: boolean; is_primary_key: boolean; is_unique_constraint: boolean; type_desc: string; filter_definition: string | null; column_name: string; key_ordinal: number; index_column_id: number; is_included_column: boolean }
 interface ModuleRow { schema_name: string; object_name: string; object_type: string; object_id: number; definition: string | null }
+interface ParameterRow { schema_name: string; object_name: string; object_id: number; parameter_id: number; parameter_name: string; data_type: string; is_output: boolean; has_default_value: boolean }
 interface TriggerEventRow { trigger_id: number; trigger_name: string; parent_object_id: number; is_instead_of_trigger: boolean; event_type: string }
 interface SequenceRow { schema_name: string; sequence_name: string; data_type: string; start_value: string; increment: string; minimum_value: string; maximum_value: string; is_cycling: boolean }
 interface ExtendedPropRow { schema_name: string; object_name: string; column_id: number; column_name: string | null; description: string }
@@ -86,6 +87,7 @@ const fixtureInput = {
   indexes: loadFixture<IndexRow[]>('indexes.json'),
   modules: loadFixture<ModuleRow[]>('modules.json'),
   triggerEvents: loadFixture<TriggerEventRow[]>('trigger-events.json'),
+  parameters: loadFixture<ParameterRow[]>('parameters.json'),
   sequences: loadFixture<SequenceRow[]>('sequences.json'),
   extendedProperties: loadFixture<ExtendedPropRow[]>('extended-properties.json'),
   dependencies: loadFixture<DepRow[]>('dependencies.json'),
@@ -333,6 +335,25 @@ describe('buildMssqlRawCatalog — procedures', () => {
       (o) => o.kind === 'procedure' && o.name === 'usp_process_order',
     );
     expect(proc).toBeUndefined();
+  });
+
+  // DOG-2: recorded rows/parameters.json flows through buildMssqlRawCatalog (BARE types, D5/D6).
+  it('routine parameters are attached from the recorded parameter rows (L-009)', () => {
+    const catalog = buildMssqlRawCatalog(fixtureInput, FULL_SCOPE);
+    const logChange = catalog.objects.find(
+      (o) => o.kind === 'procedure' && o.name === 'usp_log_change',
+    );
+    expect(logChange!.parameters).toStrictEqual([
+      { name: '@order_id', dataType: 'int', direction: 'in', ordinal: 1 },
+      { name: '@new_status', dataType: 'nvarchar', direction: 'in', ordinal: 2 },
+    ]);
+    const netAmount = catalog.objects.find(
+      (o) => o.kind === 'function' && o.name === 'fn_net_amount',
+    );
+    // BARE decimal (never decimal(12,2)); parameter_id=0 return row absent from the recording.
+    expect(netAmount!.parameters).toStrictEqual([
+      { name: '@gross', dataType: 'decimal', direction: 'in', ordinal: 1 },
+    ]);
   });
 });
 

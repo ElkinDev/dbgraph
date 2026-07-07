@@ -135,7 +135,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   procedures + functions UNSUPPORTED; NO fixture object added; NO `sqlite/*` code change. Spec: sqlite-extraction "SQLite emits
   no routine parameters" (SQ-1); schema-extraction "An engine without a parameter catalog leaves the field unset" (SE-2, the
   unset half). D5.
-- [ ] 1.7 GATE (Batch 1): RE-MEASURE baseline FIRST; `npx tsc --noEmit` strict clean (no `any`, `exactOptionalPropertyTypes`);
+- [x] 1.7 GATE (Batch 1): RE-MEASURE baseline FIRST; `npx tsc --noEmit` strict clean (no `any`, `exactOptionalPropertyTypes`);
   `npm run lint` 0/0; `npm test` GREEN (baseline + 1.1–1.6 suites); engines write-verb scanner GREEN (new queries are catalog
   `SELECT` only); **EVERY aggregate golden byte-identical — ALL engines, HARD STOP on ANY drift** (extraction proved via
   map-unit + integration tiers only; nothing re-blessed here); leak-scan clean; confirm nothing pushed. COMMIT
@@ -147,31 +147,31 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
 > and the SINGLE deliberate aggregate re-bless (mssql/pg/mysql raw-catalog + e2e + mssql dump — inventoried). sqlite + MCP
 > goldens MUST show ZERO drift. Ends in the consolidated gate + DoD handoff to `sdd-verify`.
 
-- [ ] 2.1 **(vitest)** RED→GREEN `test/core/present/parameters.test.ts` (new) + `src/core/present/payload.ts`: add the pure
+- [x] 2.1 **(vitest)** RED→GREEN `test/core/present/parameters.test.ts` (new) + `src/core/present/payload.ts`: add the pure
   `renderParameters(node): string[]` — empty/unset `parameters` → `[]` (no section); else header `PARAMETERS` then, ascending
   `ordinal`, `  <name>  <dataType>` (2-space indent, double-space gaps, mirrors `renderColumns`) + UPPERCASE markers
   `[OUT]`/`[INOUT]`/`[DEFAULT]` double-space-joined; `in` renders NO marker; `[DEFAULT]` is PRESENCE-only (never the value).
   L-009 grammar unit: out/inout/in/hasDefault mixed set → exact lines with UPPERCASE markers and `in` unmarked; out-of-order
   input → rendered ascending `ordinal`; unset → `[]`. Spec: mcp-server "direction and default markers are UPPERCASE; `in` is
   unmarked" (MCP-2), "parameter order follows ordinal" (MCP-4). D3.
-- [ ] 2.2 **(vitest)** RED→GREEN `test/core/present/explore.test.ts` (extend) + `src/core/present/explore.ts` /
+- [x] 2.2 **(vitest)** RED→GREEN `test/core/present/explore.test.ts` (extend) + `src/core/present/explore.ts` /
   `payload.ts`: add `case 'procedure': case 'function': return renderParameters(node);` to `renderFocusPayload`
   (payload.ts:222) — `present/explore.ts:116` already routes non-container focus through it, so `explore` (+ MCP
   `dbgraph_explore`) gets the section for FREE; gated at non-brief. L-009 over a synthetic routine `PresentView`: `normal`
   emits the exact PARAMETERS lines; `brief` emits none. Spec: mcp-server "Routine focus renders a PARAMETERS section via the
   shared payload helper" (MCP-1 explore side), "detail-gated to normal and full, absent at brief" (MCP-3). D3.
-- [ ] 2.3 **(vitest)** RED→GREEN `test/core/present/object.test.ts` (extend) + `src/core/present/object.ts`: insert a
+- [x] 2.3 **(vitest)** RED→GREEN `test/core/present/object.test.ts` (extend) + `src/core/present/object.ts`: insert a
   PARAMETERS block into `formatObject` calling the SAME `renderParameters(view.node)`, AFTER the CONSTRAINTS section and
   BEFORE the `if (detail === 'normal') return` early-return (object.ts:101) so it renders at `normal` AND `full`, NOT `brief`
   — this is the design §9 understatement (object does NOT call `renderFocusPayload`; without this, object/MCP-object silently
   omit parameters). L-009: BOTH `explore` and `object` emit BYTE-IDENTICAL PARAMETERS lines for the same node (shared source,
   no per-surface branch); `object` brief omits. Spec: mcp-server MCP-1 (byte-identical across surfaces), MCP-3. D3.
-- [ ] 2.4 **(golden — DELIBERATE, part of the single re-bless)** Add the NEW `parameter-render` present golden family
+- [x] 2.4 **(golden — DELIBERATE, part of the single re-bless)** Add the NEW `parameter-render` present golden family
   (`test/golden/present/*`, routine focus — explore + object, `normal`) pinning the mssql `usp_log_change` exact lines
   `PARAMETERS` / `  @order_id  int` / `  @new_status  nvarchar` and a mixed out/inout/default set; add the negative:
   non-routine (TABLE) focus + UNSET-parameters routine → NO PARAMETERS section. Spec: mcp-server MCP-1 (exact lines), MCP-5
   (negative). D3/§6.
-- [ ] 2.5 **(golden — THE SINGLE DELIBERATE RE-BLESS, inventoried)** In ONE commit, re-record the golden-generating parameter
+- [x] 2.5 **(golden — THE SINGLE DELIBERATE RE-BLESS, inventoried)** In ONE commit, re-record the golden-generating parameter
   rows (mssql `test/fixtures/mssql/rows/parameters.json` NEW; pg `rows/routines.json` +arg arrays; mysql `rows/parameters.json`
   NEW — transcribing the DOG-1 signatures accurately, leak-scan neutral) and re-bless the aggregates: mssql/pg/mysql
   `golden-raw-catalog.json` (routine objects gain `parameters`) + `golden-e2e.json` (routine payloads gain `parameters`) +
@@ -180,7 +180,7 @@ Design §9 Open Questions RESOLVED as task decisions (audit during apply, do not
   re-run (ADR-008); commit body = per-golden INVENTORY. Extend `queries-for-json.integration.test.ts` + `dump-emitter.test.ts`
   for the new family. Spec: mssql-extraction "mssql goldens gain parameters deliberately, scanner stays green" (MS-3);
   pg-extraction (PG-5); mysql-extraction (MY-3); schema-extraction "non-participating engines byte-identical" (SE-2). D5/§6.
-- [ ] 2.6 **(vitest / golden — freeze guard)** ASSERT ZERO drift on the non-participating surfaces: the existing
+- [x] 2.6 **(vitest / golden — freeze guard)** ASSERT ZERO drift on the non-participating surfaces: the existing
   sqlite-substrate explore/object goldens (TABLE focus `main.employees`) + the MCP explore/object goldens are BYTE-IDENTICAL
   (a move is a HARD STOP — the shared branch fabricated a sqlite section); add the `docs/format-spec.md` §6 token-delta note
   for the new PARAMETERS section. Spec: sqlite-extraction "SQLite present/MCP goldens show zero drift" (SQ-2); mcp-server MCP-5

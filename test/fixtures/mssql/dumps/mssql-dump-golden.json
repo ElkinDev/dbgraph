@@ -95,6 +95,7 @@
     }
   ],
   "triggerEvents": [],
+  "parameters": [],
   "sequences": [
     {
       "schema_name": "app", "sequence_name": "seq_account_id",

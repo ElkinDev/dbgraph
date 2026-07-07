@@ -319,6 +319,25 @@ mssql/pg/mysql `calls` render + impact traversal are proven in the synthetic uni
 read / what-to-test sections without over-reporting writes; token ceilings are UNCHANGED (SQLite substrate
 is routine-free → no measured output moved).
 
+**Golden change (change dog2-routine-parameters, §6 token-delta note)**: a routine FOCUS node
+(`procedure`/`function`) now renders a `PARAMETERS` section via the ONE shared `renderParameters` helper
+in `present/payload.ts`, wired into BOTH `renderFocusPayload` (explore) AND `formatObject` (object), so the
+section bytes are byte-identical across CLI/MCP × explore/object (no per-surface branch). Grammar mirrors
+`COLUMNS`: each line is `  <name>  <dataType>` (2-space indent, double-space gaps) then UPPERCASE bracket
+markers `[OUT]` / `[INOUT]` / `[DEFAULT]` joined by two spaces — an `in` parameter carries NO direction
+marker (the default, exactly as a nullable column shows no `[NN]`), and `[DEFAULT]` is a PRESENCE marker
+only (the default VALUE is never rendered). Detail-gated to `normal` and `full`, absent at `brief` (the
+COLUMNS analog). A routine whose `parameters` is UNSET or empty renders NO section (honest absence). ONE
+new deliberate synthetic golden family is added — `test/core/present/golden/param-render-explore-normal.txt`
+and `param-render-object-normal.txt` (a `dbo.usp_mixed` routine focus exercising every marker,
+in/[OUT]/[INOUT]/[DEFAULT]). NO existing mcp/present golden is re-blessed: the default-CI mcp/present golden
+substrate is the routine-free SQLite torture fixture (TABLE focus `main.employees`), which has no routine
+node and therefore emits ZERO `PARAMETERS` sections → the `test/mcp/golden/*` and existing
+`test/core/present/golden/*` goldens are byte-identical (a move would be a HARD STOP). The mssql/pg/mysql
+`golden-raw-catalog.json` aggregates gain `parameters` arrays DELIBERATELY in the `DBGRAPH_INTEGRATION`-gated
+tier (every other byte unchanged); the summary-shaped `golden-e2e.json` files carry no node payloads so they
+are unchanged. Token ceilings are UNCHANGED (SQLite substrate is routine-free → no measured MCP output moved).
+
 ---
 
 ## 6. Golden Discipline

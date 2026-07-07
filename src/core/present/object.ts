@@ -20,6 +20,7 @@ import {
   renderConstraints,
   renderIndexes,
   renderTriggers,
+  renderParameters,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,6 +97,17 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   if (constraintLines.length > 0) {
     lines.push('');
     lines.push(...constraintLines);
+  }
+
+  // ── PARAMETERS section (normal + full) — DOG-2 §3.4 D3 ─────────────────────
+  // formatObject does NOT call renderFocusPayload, so it needs its OWN block calling the SAME
+  // shared renderParameters (design §9 understatement — task 2.3). Placed AFTER CONSTRAINTS and
+  // BEFORE the normal early-return so it renders at normal AND full (never brief) — the identical
+  // detail gating explore uses. The shared helper guarantees byte-identical bytes across surfaces.
+  const parameterLines = renderParameters(view.node);
+  if (parameterLines.length > 0) {
+    lines.push('');
+    lines.push(...parameterLines);
   }
 
   if (detail === 'normal') {

@@ -47,6 +47,7 @@ import type {
   IndexRow,
   ModuleRow,
   TriggerEventRow,
+  ParameterRow,
   SequenceRow,
   ExtendedPropRow,
   DepRow,
@@ -194,6 +195,8 @@ export interface RawJsonInput {
   indexes: unknown;
   modules: unknown;
   triggerEvents: unknown;
+  // DOG-2: OPTIONAL so pre-DOG-2 dumps (no parameters family) still parse — absent ⇒ [].
+  parameters?: unknown;
   sequences: unknown;
   extendedProperties: unknown;
   dependencies: unknown;
@@ -452,6 +455,24 @@ function coerceModuleRow(raw: unknown, idx: number): ModuleRow {
   }
 }
 
+/** DOG-2: sys.parameters row → ParameterRow (is_output/has_default_value are BIT 0/1). */
+function coerceParameterRow(raw: unknown, idx: number): ParameterRow {
+  try {
+    return {
+      schema_name: requireString(getField(raw, 'schema_name'), 'schema_name'),
+      object_name: requireString(getField(raw, 'object_name'), 'object_name'),
+      object_id: coerceNumber(getField(raw, 'object_id'), 'object_id'),
+      parameter_id: coerceNumber(getField(raw, 'parameter_id'), 'parameter_id'),
+      parameter_name: requireString(getField(raw, 'parameter_name'), 'parameter_name'),
+      data_type: requireString(getField(raw, 'data_type'), 'data_type'),
+      is_output: coerceBit(getField(raw, 'is_output'), 'is_output'),
+      has_default_value: coerceBit(getField(raw, 'has_default_value'), 'has_default_value'),
+    };
+  } catch (e) {
+    throw new Error(`json-rows: ParameterRow[${idx}]: ${(e as Error).message}`, { cause: e });
+  }
+}
+
 function coerceTriggerEventRow(raw: unknown, idx: number): TriggerEventRow {
   try {
     return {
@@ -538,6 +559,12 @@ export function parseJsonRows(input: RawJsonInput): MssqlRowInput {
   const indexes = requireArray(input.indexes, 'indexes').map(coerceIndexRow);
   const modules = requireArray(input.modules, 'modules').map(coerceModuleRow);
   const triggerEvents = requireArray(input.triggerEvents, 'triggerEvents').map(coerceTriggerEventRow);
+  // DOG-2: the parameters family is OPTIONAL — a pre-DOG-2 dump without it parses to []
+  // (routines then carry an empty known-zero array). A dump that includes it is coerced.
+  const parameters =
+    input.parameters !== undefined
+      ? requireArray(input.parameters, 'parameters').map(coerceParameterRow)
+      : [];
   const sequences = requireArray(input.sequences, 'sequences').map(coerceSequenceRow);
   const extendedProperties = requireArray(input.extendedProperties, 'extendedProperties').map(coerceExtendedPropRow);
   const dependencies = requireArray(input.dependencies, 'dependencies').map(coerceDepRow);
@@ -551,6 +578,7 @@ export function parseJsonRows(input: RawJsonInput): MssqlRowInput {
     indexes,
     modules,
     triggerEvents,
+    parameters,
     sequences,
     extendedProperties,
     dependencies,

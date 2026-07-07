@@ -36,6 +36,7 @@ import {
   SQL_MSSQL_INDEXES,
   SQL_MSSQL_MODULES,
   SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_PARAMETERS,
   SQL_MSSQL_SEQUENCES,
   SQL_MSSQL_EXTENDED_PROPERTIES,
   SQL_MSSQL_DEPENDENCIES,
@@ -70,6 +71,7 @@ export const CATALOG_FAMILY_KEYS: readonly string[] = [
   'indexes',
   'modules',
   'triggerEvents',
+  'parameters',
   'sequences',
   'extendedProperties',
   'dependencies',
@@ -88,6 +90,7 @@ const CATALOG_FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
   { key: 'indexes',            sql: SQL_MSSQL_INDEXES },
   { key: 'modules',            sql: SQL_MSSQL_MODULES },
   { key: 'triggerEvents',      sql: SQL_MSSQL_TRIGGER_EVENTS },
+  { key: 'parameters',         sql: SQL_MSSQL_PARAMETERS },
   { key: 'sequences',          sql: SQL_MSSQL_SEQUENCES },
   { key: 'extendedProperties', sql: SQL_MSSQL_EXTENDED_PROPERTIES },
   { key: 'dependencies',       sql: SQL_MSSQL_DEPENDENCIES },
@@ -124,7 +127,7 @@ function wrapFamily(key: string, sql: string): string {
 
 /**
  * Composes and returns a single deterministic runnable SQL script that extracts
- * all 11 catalog families from a SQL Server instance.
+ * all 12 catalog families from a SQL Server instance.
  *
  * The operator runs this script (e.g. via sqlcmd -E or SSMS) against the target
  * database and saves the output as ${DUMP_DIR}/${DUMP_FILE} (a combined JSON
@@ -157,7 +160,7 @@ export function emitDumpScript(): string {
     `--   The output file (${DUMP_DIR}/) is gitignored — it contains sensitive`,
     '--   schema and stored procedure source. DO NOT commit it.',
     '--',
-    '-- CATALOG FAMILIES (11 total):',
+    '-- CATALOG FAMILIES (12 total):',
     ...CATALOG_FAMILIES.map(({ key }) => `--   ${key}`),
     '',
   ].join('\n'));

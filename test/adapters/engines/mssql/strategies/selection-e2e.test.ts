@@ -129,13 +129,13 @@ const EMPTY_JSON = JSON.stringify([]);
  * Builds a mocked SpawnSyncFn for SqlcmdStrategy that:
  *   - Returns status: 0 + WHERE-found stdout for the first call (detect → available).
  *   - Returns status: 0 for the second call (canConnect → true).
- *   - Returns golden catalog JSON for each of the 11 catalog families (runCatalog).
+ *   - Returns golden catalog JSON for each of the 12 catalog families (runCatalog).
  */
 function makeSqlcmdSpawnSync(): SpawnSyncFn {
   // Order of calls inside SqlcmdStrategy when used in the full E2E flow:
   //   Call 1: detect() → where/which sqlcmd
   //   Call 2: canConnect() → sqlcmd -E -S ... SELECT 1
-  //   Calls 3–13: runCatalog → 11 catalog families (tables, columns, …, dependencies)
+  //   Calls 3–14: runCatalog → 12 catalog families (tables, columns, …, parameters, …, dependencies)
   const catalogResponses = [
     GOLDEN_TABLES,    // tables
     GOLDEN_COLUMNS,   // columns
@@ -145,6 +145,7 @@ function makeSqlcmdSpawnSync(): SpawnSyncFn {
     EMPTY_JSON,       // indexes
     EMPTY_JSON,       // modules
     EMPTY_JSON,       // triggerEvents
+    EMPTY_JSON,       // parameters (DOG-2)
     EMPTY_JSON,       // sequences
     EMPTY_JSON,       // extendedProperties
     EMPTY_JSON,       // dependencies

@@ -21,7 +21,7 @@
  * ADR-008: deterministic — same input → byte-identical string[]. No Date/env/random/I/O.
  */
 
-import type { GraphNode } from '../model/node.js';
+import type { GraphNode, RoutineParameter } from '../model/node.js';
 import type { GraphEdge } from '../model/edge.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +190,31 @@ export function renderIndexes(indexes: readonly NeighborEntry[]): string[] {
   return lines;
 }
 
+/**
+ * PARAMETERS section: one row per routine parameter, ascending ordinal (DOG-2 §3.3 D3).
+ * Grammar mirrors renderColumns exactly — `  <name>  <dataType>` (2-space indent, double-space
+ * gap) then UPPERCASE bracket markers joined by two spaces, matching the COLUMNS convention
+ * [PK]/[FK→]/[NN]. An `in` parameter renders NO direction marker (the default, like a nullable
+ * column shows no [NN]). [DEFAULT] is a PRESENCE marker only — the parameter default VALUE is
+ * out of scope, so parameters expose only the flag (unlike COLUMNS' DEFAULT <value>). Returns []
+ * when parameters is UNSET or EMPTY → honest absence, no section (SQLite renders nothing).
+ */
+export function renderParameters(node: GraphNode): string[] {
+  const params = node.payload['parameters'] as readonly RoutineParameter[] | undefined;
+  if (params === undefined || params.length === 0) return [];
+
+  const sorted = [...params].sort((a, b) => a.ordinal - b.ordinal);
+  const lines: string[] = ['PARAMETERS'];
+  for (const p of sorted) {
+    const parts: string[] = [`  ${p.name}  ${p.dataType}`];
+    if (p.direction === 'out') parts.push('[OUT]');
+    else if (p.direction === 'inout') parts.push('[INOUT]');
+    if (p.hasDefault === true) parts.push('[DEFAULT]');
+    lines.push(parts.join('  '));
+  }
+  return lines;
+}
+
 /** TRIGGERS section: one row per trigger with timing + events (from the fires_on.in group). */
 export function renderTriggers(triggers: readonly NeighborEntry[]): string[] {
   if (triggers.length === 0) return [];
@@ -232,6 +257,12 @@ export function renderFocusPayload(node: GraphNode, a?: ColumnAnnotations): stri
       return renderIndexes(single);
     case 'trigger':
       return renderTriggers(single);
+    case 'procedure':
+    case 'function':
+      // DOG-2 §3.4 D3: a routine focus renders its PARAMETERS section via the ONE shared
+      // helper — explore (+ MCP dbgraph_explore) inherits it here for free (explore.ts routes
+      // non-container focus through renderFocusPayload). formatObject wires the SAME helper.
+      return renderParameters(node);
     default:
       return [];
   }

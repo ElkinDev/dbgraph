@@ -38,6 +38,7 @@ import {
   SQL_MSSQL_INDEXES,
   SQL_MSSQL_MODULES,
   SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_PARAMETERS,
   SQL_MSSQL_SEQUENCES,
   SQL_MSSQL_EXTENDED_PROPERTIES,
   SQL_MSSQL_DEPENDENCIES,
@@ -60,6 +61,7 @@ const CATALOG_FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
   { key: 'indexes',            sql: SQL_MSSQL_INDEXES },
   { key: 'modules',            sql: SQL_MSSQL_MODULES },
   { key: 'triggerEvents',      sql: SQL_MSSQL_TRIGGER_EVENTS },
+  { key: 'parameters',         sql: SQL_MSSQL_PARAMETERS },
   { key: 'sequences',          sql: SQL_MSSQL_SEQUENCES },
   { key: 'extendedProperties', sql: SQL_MSSQL_EXTENDED_PROPERTIES },
   { key: 'dependencies',       sql: SQL_MSSQL_DEPENDENCIES },
@@ -160,6 +162,26 @@ describe.skipIf(!mssqlIntegrationEnabled())(
         expect(Array.isArray(parsed)).toBe(true);
       });
     }
+
+    // ── DOG-2: the parameters family carries real rows through FOR JSON PATH ──
+    it('parameters: FOR JSON PATH returns the routine parameter rows with BARE types (no Msg 1033)', async () => {
+      const forJsonSql = `${SQL_MSSQL_PARAMETERS}\nFOR JSON PATH, INCLUDE_NULL_VALUES`;
+      const result = await pool.request().query(forJsonSql);
+      const firstRow = result.recordset[0] as Record<string, unknown> | undefined;
+      expect(firstRow).toBeDefined();
+      const jsonValue = Object.values(firstRow!)[0] as string;
+      const rows = JSON.parse(jsonValue) as Array<Record<string, unknown>>;
+
+      // The torture catalog has parametrized routines → non-empty, and the return row
+      // (parameter_id = 0) is filtered out by the query's WHERE.
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every((r) => (r['parameter_id'] as number) > 0)).toBe(true);
+
+      // usp_log_change carries @order_id (int) and @new_status (BARE nvarchar, not nvarchar(20)).
+      const logChange = rows.filter((r) => r['object_name'] === 'usp_log_change');
+      expect(logChange.map((r) => r['parameter_name'])).toEqual(['@order_id', '@new_status']);
+      expect(logChange.map((r) => r['data_type'])).toEqual(['int', 'nvarchar']);
+    });
 
     // ── fingerprint (WITHOUT_ARRAY_WRAPPER) ──────────────────────────────────
 
