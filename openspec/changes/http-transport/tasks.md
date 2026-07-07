@@ -188,14 +188,14 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 > its load-bearing nuances, the no-auth-v1 + reverse-proxy-TLS + loopback-default posture. No auto-wiring (proposal ruling);
 > the matrix feeds DOCS only.
 
-- [ ] 4.1 **(vitest)** RED→GREEN `test/cli/cli.test.ts` (extend) + `src/cli/cli.ts` `USAGE_TEXT`: add EXACTLY
+- [x] 4.1 **(vitest)** RED→GREEN `test/cli/cli.test.ts` (extend) + `src/cli/cli.ts` `USAGE_TEXT`: add EXACTLY
   `  mcp       Serve the MCP tools over stdio (default) or Streamable HTTP (--http)` (two leading spaces, `mcp`, seven
   spaces — description aligned at character index 12, matching `init`/`affected`/`doctor`/`install`). RED first: pin this
   exact line so dropping the `--http` mention fails the build; assert EVERY existing command line (`init`…`doctor`,
   including the pinned `install` line) is byte-identical and ONLY the `mcp` line is added. Spec: cli-config S "mcp banner
   line is present with the exact aligned text" / "Adding the mcp line leaves the other command lines unchanged". Done:
   `npm test cli`.
-- [ ] 4.2 **(doc)** Author the `docs/**` MCP-over-HTTP section: `dbgraph mcp --http [--port N] [--host H]`, the
+- [x] 4.2 **(doc)** Author the `docs/**` MCP-over-HTTP section: `dbgraph mcp --http [--port N] [--host H]`, the
   loopback-default + **no auth in v1** posture, the **reverse-proxy (nginx/Caddy) TLS** model for non-loopback, the pinned
   `--host 0.0.0.0` warning; and the VERIFIED **6/6 per-agent HTTP config matrix** (Claude Code / Cursor / VS Code / Gemini
   CLI / opencode / Codex CLI) with EXACT shapes. Carry the LOAD-BEARING nuances wherever example configs appear: Gemini
@@ -203,11 +203,11 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
   opencode `type:"remote"` (no over-claim of wire protocol), Codex `experimental_use_rmcp_client` caveat for old installs.
   Spec: mcp-http-transport §Honest v1 boundaries; design §Per-Agent HTTP Config Matrix + DOCS HONESTY. Done: section exists;
   every documented Gemini example uses `httpUrl`; leak-scan clean.
-- [ ] 4.3 **(doc)** README touch: add a short "Serve over HTTP" note (`dbgraph mcp --http`, the 8-tool endpoint at
+- [x] 4.3 **(doc)** README touch: add a short "Serve over HTTP" note (`dbgraph mcp --http`, the 8-tool endpoint at
   `http://127.0.0.1:7423/mcp`, loopback default + no-auth-v1) linking to the 4.2 docs section; ensure any example config in
   the README carries the Gemini `httpUrl` / Cursor no-`type` nuances (else users silently get SSE/misconfig). Spec:
   design §DOCS HONESTY. Done: README updated; nuances present.
-- [ ] 4.4 GATE (Batch 4 — FINAL): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + the http
+- [x] 4.4 GATE (Batch 4 — FINAL): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + the http
   unit/E2E suites + the banner test); `git diff --exit-code test/mcp/golden/` EMPTY; ADR-004 `src/mcp/**` boundary scan
   green; confirm NO new `package.json` runtime dependency (`node:http`/`node:crypto` + pinned SDK only); confirm bare STDIO
   byte-identical on BOTH seams and NO listener off-flag; FINAL leak-scan/denylist clean across ALL new files; confirm
@@ -244,24 +244,24 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 
 ## Definition of Done (tied to the proposal's Success Criteria)
 
-- [ ] `dbgraph mcp --http` serves all 8 tools over Streamable HTTP; a client can `initialize`, list tools, call a tool, and
+- [x] `dbgraph mcp --http` serves all 8 tools over Streamable HTTP; a client can `initialize`, list tools, call a tool, and
   terminate its session. — Batch 2 (2.4), Batch 3 (3.1, 3.3)
-- [ ] Bare `dbgraph mcp` (SEA + npm bin) is byte-identical STDIO — regression proves no drift. — Batch 1 (1.2, 1.3, 1.4)
-- [ ] Default bind is `127.0.0.1`; `--host`/`--port` override; non-loopback prints the pinned security warning. — Batch 1
+- [x] Bare `dbgraph mcp` (SEA + npm bin) is byte-identical STDIO — regression proves no drift. — Batch 1 (1.2, 1.3, 1.4)
+- [x] Default bind is `127.0.0.1`; `--host`/`--port` override; non-loopback prints the pinned security warning. — Batch 1
   (1.1), Batch 2 (2.3, 2.4), Batch 3 (3.2)
-- [ ] Sessions are created/keyed/terminated correctly; graceful shutdown drains sessions and closes the listener with no
+- [x] Sessions are created/keyed/terminated correctly; graceful shutdown drains sessions and closes the listener with no
   dangling handles. — Batch 2 (2.2, 2.4), Batch 3 (3.1, 3.4)
-- [ ] Origin/Host validation rejects disallowed requests with HTTP 403 before any tool handler; allowed requests proceed. —
+- [x] Origin/Host validation rejects disallowed requests with HTTP 403 before any tool handler; allowed requests proceed. —
   Batch 2 (2.1), Batch 3 (3.2)
-- [ ] HTTP adds no write path (read-only preserved) and diagnostics are content-free (no schema name / connection string /
+- [x] HTTP adds no write path (read-only preserved) and diagnostics are content-free (no schema name / connection string /
   secret). — Batch 2 (2.3), Batch 3 (3.4)
-- [ ] Docs state "no auth in v1", the reverse-proxy TLS model, the loopback-default posture, and the VERIFIED 6/6 agent
+- [x] Docs state "no auth in v1", the reverse-proxy TLS model, the loopback-default posture, and the VERIFIED 6/6 agent
   matrix with its Gemini `httpUrl` / Cursor no-`type` / opencode / Codex nuances; the USAGE banner documents `mcp --http`. —
   Batch 4 (4.1, 4.2, 4.3)
-- [ ] No new runtime dependency added; `node:http` + `node:crypto` builtins + pinned SDK only; ADR-004 `src/mcp/**` boundary
+- [x] No new runtime dependency added; `node:http` + `node:crypto` builtins + pinned SDK only; ADR-004 `src/mcp/**` boundary
   lint clean. — Batch 2 (2.5), Batch 4 (4.4)
-- [ ] The unresolved SDK `handleRequest` body contract is confirmed against the installed 1.29.0 and recorded in `design.md`
+- [x] The unresolved SDK `handleRequest` body contract is confirmed against the installed 1.29.0 and recorded in `design.md`
   before any router wiring. — Batch 0 (0.1)
-- [ ] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + http suites, no
+- [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + http suites, no
   network beyond loopback, deterministic); `git diff test/mcp/golden/` EMPTY — all proven LOCALLY, nothing pushed past
   `closeout`. — Batch 1 (1.5), Batch 2 (2.5), Batch 3 (3.7), Batch 4 (4.4)

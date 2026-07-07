@@ -35,6 +35,7 @@ Commands:
   affected  Analyze DDL to show impacted objects (--json for machine output)
   install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)
   doctor    Run a content-free connectivity self-test (safe to share)
+  mcp       Serve the MCP tools over stdio (default) or Streamable HTTP (--http)
 
 Options:
   --help, -h       Show this help text

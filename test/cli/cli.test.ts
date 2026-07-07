@@ -98,6 +98,40 @@ describe('cli — USAGE_TEXT', () => {
     expect(installLine).toContain('--remove');
     expect(installLine).not.toContain('Claude Desktop');
   });
+
+  // ── http-transport task 4.1: the mcp banner line documents the --http surface ──
+
+  it('mcp banner line is present with EXACTLY the pinned, column-aligned text (task 4.1)', () => {
+    // cli-config scenario "mcp banner line is present with the exact aligned text":
+    // two leading spaces, `mcp`, seven spaces — description aligned at character index 12,
+    // matching init/affected/doctor/install. A single-character drift fails the build.
+    const mcpLine = USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('mcp')) ?? '';
+    expect(mcpLine).toBe(
+      '  mcp       Serve the MCP tools over stdio (default) or Streamable HTTP (--http)',
+    );
+    // The description column is index 12 (same as every other command line).
+    expect(mcpLine.indexOf('Serve')).toBe(12);
+    // Dropping the --http mention must fail the build (silent-SSE/misconfig guard).
+    expect(mcpLine).toContain('--http');
+  });
+
+  it('adds ONLY the mcp line — every existing command line stays byte-identical (task 4.1)', () => {
+    // cli-config scenario "Adding the mcp line leaves the other command lines unchanged":
+    // init…doctor (incl. the pinned install line) are byte-identical to before.
+    for (const line of [
+      '  init      Initialize the graph index for a database',
+      '  sync      Synchronize the graph index with the database',
+      '  status    Show the current state of the graph index',
+      '  query     Search the graph index for a term',
+      '  explore   Explore a node and its neighbors in the graph',
+      '  diff      Compare two snapshots of the graph index',
+      '  affected  Analyze DDL to show impacted objects (--json for machine output)',
+      '  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)',
+      '  doctor    Run a content-free connectivity self-test (safe to share)',
+    ]) {
+      expect(USAGE_TEXT).toContain(line);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
