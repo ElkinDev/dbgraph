@@ -26,5 +26,19 @@
     "routine_kind": "p",
     "routine_def": "CREATE OR REPLACE PROCEDURE app.sync_products()\n LANGUAGE plpgsql\nAS $procedure$\nBEGIN\n  INSERT INTO audit.audit_log (table_name, action) VALUES ('products', 'synced');\nEND;\n$procedure$",
     "comment": "Procedure to sync products"
+  },
+  {
+    "schema_name": "app",
+    "routine_name": "fn_inner",
+    "routine_kind": "f",
+    "routine_def": "CREATE OR REPLACE FUNCTION app.fn_inner()\n RETURNS bigint\n LANGUAGE sql\nAS $function$\n  SELECT count(*) FROM app.orders;\n$function$",
+    "comment": "DOG-1 callee: reads app.orders only"
+  },
+  {
+    "schema_name": "app",
+    "routine_name": "fn_wrapper",
+    "routine_kind": "f",
+    "routine_def": "CREATE OR REPLACE FUNCTION app.fn_wrapper()\n RETURNS bigint\n LANGUAGE sql\nAS $function$\n  SELECT app.fn_inner();\n$function$",
+    "comment": "DOG-1 caller: invokes app.fn_inner (routine-calls-routine)"
   }
 ]

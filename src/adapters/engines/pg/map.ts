@@ -564,9 +564,23 @@ function buildRoutines(
       // We need to know what objects this routine might reference.
       // No catalog-supplied deps are available (supportsDependencyHints=false),
       // we pass known objects as potential deps and let the tokenizer classify them.
+      //
+      // DOG-1 (D3/D4): the candidate list is EXTENDED with ROUTINE nodes (carrying `kind`)
+      // so a `SELECT fn()` / `PERFORM fn()` / `CALL proc()` resolves to a `calls` edge.
+      // The current routine is EXPLICITLY self-excluded — `pg_get_functiondef` emits the
+      // full `CREATE FUNCTION app.fn_x(...)` header, so the body contains its OWN qname;
+      // without this filter a routine would `calls` itself.
+      const routineCandidates = input.routines
+        .filter((r) => !(r.schema_name === row.schema_name && r.routine_name === row.routine_name))
+        .map((r) => ({
+          schema: r.schema_name,
+          name: r.routine_name,
+          kind: (r.routine_kind === 'p' ? 'procedure' : 'function') as 'procedure' | 'function',
+        }));
       const potentialDeps = [
         ...input.tables.map((t) => ({ schema: t.schema_name, name: t.table_name })),
         ...input.views.map((v) => ({ schema: v.schema_name, name: v.view_name })),
+        ...routineCandidates,
       ];
       const result = tokenizePgBody(body, potentialDeps);
       // WARNING-1 FIX: static edges SURVIVE even when hasDynamicSql is true.

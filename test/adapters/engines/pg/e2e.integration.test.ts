@@ -376,6 +376,47 @@ describe.skipIf(!pgIntegrationEnabled())(
     });
 
     // ─────────────────────────────────────────────────────────────────────
+    // DOG-1: fn_wrapper → fn_inner body-parsed `calls` edge (L-009 exact, no self)
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('fn_wrapper calls fn_inner EXACTLY once at confidence parsed (no read/write, no self) [DOG-1 B.6]', () => {
+      const wrapper = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_wrapper',
+      );
+      expect(wrapper).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === wrapper!.id,
+      );
+      expect(callEdges.length).toBe(1);
+      expect(callEdges[0]!.confidence).toBe('parsed');
+      const dst = normResult.graph.nodes.find((n) => n.id === callEdges[0]!.dst);
+      expect(dst?.kind).toBe('function');
+      expect(dst?.qname).toBe('app.fn_inner');
+      // The call is NOT a read/write edge to the callee.
+      const rw = normResult.graph.edges.filter(
+        (e) => (e.kind === 'reads_from' || e.kind === 'writes_to') && e.src === wrapper!.id && e.dst === callEdges[0]!.dst,
+      );
+      expect(rw.length).toBe(0);
+      // No self-`calls` despite the pg_get_functiondef header naming fn_wrapper.
+      expect(callEdges.find((e) => e.dst === wrapper!.id)).toBeUndefined();
+    });
+
+    it('fn_inner emits ZERO calls edges and reads app.orders [DOG-1 B.6]', () => {
+      const inner = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_inner',
+      );
+      expect(inner).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === inner!.id,
+      );
+      expect(callEdges.length).toBe(0);
+      const readDst = normResult.graph.edges
+        .filter((e) => e.kind === 'reads_from' && e.src === inner!.id)
+        .map((e) => normResult.graph.nodes.find((n) => n.id === e.dst)?.qname);
+      expect(readDst).toContain('app.orders');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
     // Golden: byte-identical on second run (ADR-008)
     // ─────────────────────────────────────────────────────────────────────
 

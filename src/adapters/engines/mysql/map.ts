@@ -494,9 +494,21 @@ function buildRoutines(
     let hasDynSql: boolean | undefined;
 
     if (includeBody && body !== undefined) {
+      // DOG-1 (D3/D4): extend the candidate list with ROUTINE names (carrying `kind`) so a
+      // `CALL proc()` / `SELECT fn()` resolves to a `calls` edge. Self-exclusion is applied
+      // UNIFORMLY (mirrors pg, D4) for determinism — mysql `ROUTINE_DEFINITION` is body-only,
+      // but the filter guarantees a routine never `calls` itself.
+      const routineCandidates = input.routines
+        .filter((r) => !(r.routine_schema === row.routine_schema && r.routine_name === row.routine_name))
+        .map((r) => ({
+          schema: r.routine_schema,
+          name: r.routine_name,
+          kind: (r.routine_type === 'PROCEDURE' ? 'procedure' : 'function') as 'procedure' | 'function',
+        }));
       const potentialDeps = [
         ...input.tables.map((t) => ({ schema: t.table_schema, name: t.table_name })),
         ...input.views.map((v) => ({ schema: v.table_schema, name: v.table_name })),
+        ...routineCandidates,
       ];
       const result = tokenizeMysqlBody(body, potentialDeps);
       if (result.hasDynamicSql) {

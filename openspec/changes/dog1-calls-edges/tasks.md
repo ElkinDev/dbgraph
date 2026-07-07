@@ -150,35 +150,35 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
 > the `parsed` L-009 sets. pg/* and mysql/* files are INDEPENDENT → parallel-safe WITHIN the batch. mssql/sqlite goldens
 > MUST stay byte-identical.
 
-- [ ] B.1 **(vitest)** RED→GREEN `test/adapters/engines/pg/*` + `src/adapters/engines/pg/tokenizer.ts` + `map.ts`: `DepRef`
+- [x] B.1 **(vitest)** RED→GREEN `test/adapters/engines/pg/*` + `src/adapters/engines/pg/tokenizer.ts` + `map.ts`: `DepRef`
   gains optional `kind:'procedure'|'function'` carried to `target.kind`; `buildRoutines` candidate list += ROUTINE nodes
   (with kind), EXPLICITLY self-excluded (D4 — `pg_get_functiondef` header self-ref). RED: builtin-only body
   (`now()`,`count()`) → ZERO `calls` (S20); routine name only in a masked dynamic `EXECUTE` string → `hasDynamicSql:true`,
   ZERO `calls` (S21); self-header → NO self-`calls`; routines only ADD candidates — existing table deps UNCHANGED. Spec:
   pg-extraction "Body-parsed calls edges" + negatives. D3/D4.
-- [ ] B.2 **(vitest)** RED→GREEN `test/adapters/engines/mysql/*` + `src/adapters/engines/mysql/tokenizer.ts` + `map.ts`:
+- [x] B.2 **(vitest)** RED→GREEN `test/adapters/engines/mysql/*` + `src/adapters/engines/mysql/tokenizer.ts` + `map.ts`:
   same seam as pg — candidate list += routines (kind), self-excluded UNIFORMLY (determinism), presence-gate over masked
   `ROUTINE_DEFINITION`. RED: table-only proc → ZERO `calls` (S24); `CALL` name only in a masked `PREPARE`/`EXECUTE` string →
   `hasDynamicSql:true`, ZERO `calls` (S25); NO self-edge; table deps UNCHANGED. Spec: mysql-extraction "Body-parsed calls
   edges … no phantom or self edges". D3/D4.
-- [ ] B.3 **(vitest, fixtures)** Add NEUTRAL routine pairs: pg `app.fn_wrapper` (`SELECT app.fn_inner()`) + `app.fn_inner`
+- [x] B.3 **(vitest, fixtures)** Add NEUTRAL routine pairs: pg `app.fn_wrapper` (`SELECT app.fn_inner()`) + `app.fn_inner`
   (`SELECT … FROM app.orders`) to `test/fixtures/pg/torture.sql`; mysql `app.proc_orchestrate` (`CALL app.proc_step()`) +
   `app.proc_step` (`INSERT app.audit_log`) to `test/fixtures/mysql/torture.sql`; re-record any offline row fixtures.
   Fixture-form: pg `SELECT fn()` + mysql `CALL proc()` (no dynamic `EXECUTE` → no `hasDynamicSql`). Leak-scan neutral. Spec:
   pg/mysql "torture fixture exercises routine-calls-routine". §Open-Q fixture form.
-- [ ] B.4 **(vitest)** RED→GREEN `test/adapters/engines/{pg,mysql}/calls-edges.test.ts` (new) — L-009 exact-set over the
+- [x] B.4 **(vitest)** RED→GREEN `test/adapters/engines/{pg,mysql}/calls-edges.test.ts` (new) — L-009 exact-set over the
   BUILT torture graphs: pg `app.fn_wrapper` = EXACTLY one `calls app.fn_inner (parsed)`, NO read/write to `fn_inner`;
   `app.fn_inner` = `{reads_from app.orders (parsed)}`, ZERO `calls`; `stubCount:0`; no self-edge (S19/S22). mysql
   `app.proc_orchestrate` = EXACTLY one `calls app.proc_step (parsed)`; `app.proc_step` = `{writes_to app.audit_log
   (parsed)}`, ZERO `calls`; `stubCount:0`; no self-edge (S23/S26). Extract twice → byte-identical (ADR-008). Spec:
   pg (S19), mysql (S23), graph-model "pg/mysql calls is parsed" (S4 parsed side). §Testing.
-- [ ] B.5 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless pg `golden-raw-catalog.json`/`golden-e2e.json`
+- [x] B.5 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless pg `golden-raw-catalog.json`/`golden-e2e.json`
   (+`calls app.fn_wrapper→app.fn_inner`, `stubCount:0`) and mysql goldens (+`calls app.proc_orchestrate→app.proc_step`,
   `stubCount:0`); every byte traces to a `calls` edge; byte-identical on re-run. mssql+sqlite goldens byte-identical (HARD
   STOP). Commit body = per-golden inventory. Spec: pg (S22), mysql (S26). D5.
-- [ ] B.6 **(integration-gated)** Add the B.4 pg + mysql L-009 assertions to the `DBGRAPH_INTEGRATION`-gated pg/mysql e2e
+- [x] B.6 **(integration-gated)** Add the B.4 pg + mysql L-009 assertions to the `DBGRAPH_INTEGRATION`-gated pg/mysql e2e
   suites over the real containers. Spec: pg/mysql fixture scenarios, integration tier.
-- [ ] B.7 GATE (Batch B): RE-MEASURE baseline; `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline +
+- [x] B.7 GATE (Batch B): RE-MEASURE baseline; `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (baseline +
   A+B suites) with pg/mysql goldens byte-identical on re-run; **mssql + sqlite goldens byte-identical (HARD STOP)**;
   leak-scan clean. COMMIT `feat(pg,mysql): body-parsed calls edges via self-excluded routine candidate list`.
 
@@ -271,12 +271,12 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
 
 ## Definition of Done (tied to the proposal Success Criteria; 34 scenarios across 13 requirements / 8 deltas traced)
 
-- [ ] A proc calling a proc yields EXACTLY one `calls` edge with the engine's confidence (mssql `declared`; pg/mysql
+- [x] A proc calling a proc yields EXACTLY one `calls` edge with the engine's confidence (mssql `declared`; pg/mysql
   `parsed`) — exact `src+dst+kind+confidence` (L-009). — A (A.2, A.7), B (B.4) [graph-model S1/S4; graph-normalization S6;
   mssql S15/S16; pg S19; mysql S23]
 - [x] The mssql proc→proc fixture produces NO spurious `missing` `[table]` stub (regression golden, `stubCount` −1). — A
   (A.7, A.8) [graph-normalization S6; mssql S18]
-- [ ] A routine touching only tables emits ZERO `calls` edges; an unresolved/builtin/dynamic-string invocation invents NO
+- [x] A routine touching only tables emits ZERO `calls` edges; an unresolved/builtin/dynamic-string invocation invents NO
   edge and NO stub (negatives). — A (A.2), B (B.1, B.2) [graph-normalization S7/S8/S9; mssql S17; pg S20/S21; mysql S24/S25]
 - [ ] SQLite emits ZERO `calls` edges, `CapabilityMatrix` unchanged, a function-like trigger token invents nothing. — A
   (A.3) [graph-model S5; sqlite S27/S28]

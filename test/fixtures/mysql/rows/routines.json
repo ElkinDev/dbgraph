@@ -19,5 +19,19 @@
     "routine_type": "PROCEDURE",
     "routine_definition": "BEGIN\n  DECLARE v_sql VARCHAR(500);\n  SET v_sql = 'SELECT * FROM audit_log WHERE audit_id = 1';\n  PREPARE stmt FROM v_sql;\n  EXECUTE stmt;\n  DEALLOCATE PREPARE stmt;\nEND",
     "routine_comment": ""
+  },
+  {
+    "routine_schema": "app",
+    "routine_name": "proc_step",
+    "routine_type": "PROCEDURE",
+    "routine_definition": "BEGIN\n  INSERT INTO app.audit_log (order_id, old_status, new_status) VALUES (0, 'a', 'b');\nEND",
+    "routine_comment": "DOG-1 callee: writes app.audit_log only"
+  },
+  {
+    "routine_schema": "app",
+    "routine_name": "proc_orchestrate",
+    "routine_type": "PROCEDURE",
+    "routine_definition": "BEGIN\n  CALL app.proc_step();\nEND",
+    "routine_comment": "DOG-1 caller: invokes app.proc_step (routine-calls-routine)"
   }
 ]
