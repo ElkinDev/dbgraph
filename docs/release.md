@@ -75,12 +75,12 @@ fully reversible — nothing external was fired.
 > ⚠️ **Resolve BEFORE tagging.** This is a verification item, not an automated
 > edit. Do NOT auto-change either value.
 
-- `package.json` `repository.url` points at `github.com/ElkinDev/dbgraph`, while
-  the npm publish scope is `@niklerk23/dbgraph`. These do not match, which can
-  break provenance / release linkage.
-- **Surfaced, not decided:** confirm the canonical repository and npm scope with
-  the owner and align them by hand before tagging. This runbook changes neither
-  value automatically.
+- **RESOLVED (owner-confirmed, 2026-07-07):** `repository.url`
+  (`git+https://github.com/ElkinDev/dbgraph.git`) is CORRECT — it points at the
+  actual repository. The npm scope (`@niklerk23`) differing from the GitHub owner
+  (`ElkinDev`) is allowed and cosmetic: npm provenance linkage only applies to
+  CI-based publishes, and Step U5 publishes manually from the owner's machine.
+  `homepage` and `bugs` metadata were added so the npm page links resolve.
 
 ### Step U4 — Tag `v1.0.0` from `main` (USER-GATED)
 
@@ -108,8 +108,11 @@ fully reversible — nothing external was fired.
 - npm refuses to publish a package with `private: true`. Remove `private: true`
   from `package.json` **in this same step**, immediately before `npm publish` —
   never earlier — so the package is not left publishable while unattended.
-- Order within this step: (1) remove `private: true`, (2) `npm publish`,
+- Order within this step: (1) remove `private: true`, (2) `npm publish --access public`,
   (3) if you abort before publishing, re-add `private: true`.
+- **`--access public` is REQUIRED**: scoped packages (`@niklerk23/...`) default to
+  restricted, and restricted publishes fail on accounts without a paid plan. Omit
+  it only if you deliberately want (and can pay for) a private npm package.
 
 ### Step U6 — Flip the repository public (USER-GATED, deferred)
 

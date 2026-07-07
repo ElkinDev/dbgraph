@@ -42,6 +42,10 @@
     "type": "git",
     "url": "git+https://github.com/ElkinDev/dbgraph.git"
   },
+  "homepage": "https://github.com/ElkinDev/dbgraph#readme",
+  "bugs": {
+    "url": "https://github.com/ElkinDev/dbgraph/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "12.11.1"
