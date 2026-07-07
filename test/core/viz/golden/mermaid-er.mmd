@@ -1,0 +1,15 @@
+erDiagram
+    "main.assignments" {
+    }
+    "main.audit_log" {
+    }
+    "main.counters" {
+    }
+    "main.departments" {
+    }
+    "main.employees" {
+    }
+    "main.projects" {
+    }
+    "main.departments" ||--o{ "main.employees" : references
+    "main.employees" ||--o{ "main.assignments" : references

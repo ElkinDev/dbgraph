@@ -109,6 +109,37 @@ describe('src/core/index.ts — formatExplore (task 5.1)', () => {
   });
 });
 
+describe('src/core/index.ts — viz public surface (graph-viz task 1.7)', () => {
+  it('exports buildVizData as a function', () => {
+    expect(typeof CoreBarrel.buildVizData).toBe('function');
+  });
+
+  it('exports emitMermaidER as a function', () => {
+    expect(typeof CoreBarrel.emitMermaidER).toBe('function');
+  });
+
+  it('re-exports the same viz functions from the package root barrel', () => {
+    expect(RootBarrel.buildVizData).toBe(CoreBarrel.buildVizData);
+    expect(RootBarrel.emitMermaidER).toBe(CoreBarrel.emitMermaidER);
+  });
+
+  it('pins the viz public TYPE surface (compile-time)', () => {
+    // Type-only usage: these fail tsc --noEmit if the barrel drops a type export.
+    type _Opts = CoreBarrel.VizOptions;
+    type _Node = CoreBarrel.VizNode;
+    type _Edge = CoreBarrel.VizEdge;
+    type _Data = CoreBarrel.VizGraphData;
+    type _Info = CoreBarrel.CommunityInfo;
+    const opts: _Opts = { full: false };
+    const info: _Info = { id: 0, name: 'x', count: 1 };
+    const edge: _Edge = { s: 0, t: 1, kind: 'references' };
+    const node: _Node = { i: 0, label: 'x', kind: 'table', community: 0, degree: 0, detail: '' };
+    const data: _Data = { nodes: [node], edges: [edge], communities: [info] };
+    expect(opts.full).toBe(false);
+    expect(data.nodes[0]?.label).toBe('x');
+  });
+});
+
 describe('src/index.ts — package root exports', () => {
   it('exports DBGRAPH_VERSION', () => {
     expect(typeof RootBarrel.DBGRAPH_VERSION).toBe('string');

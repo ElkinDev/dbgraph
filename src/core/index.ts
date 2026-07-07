@@ -151,6 +151,19 @@ export {
   type RelatedView,
 } from './present/related.js';
 
+// ── Viz (graph-viz) — pure deterministic data block + Mermaid ER emitter ─────
+// ADR-004: viz/ imports ONLY core model/port types + the shared present/ formatter.
+// ADR-008: buildVizData / emitMermaidER are byte-reproducible (golden-pinned).
+export {
+  buildVizData,
+  emitMermaidER,
+  type VizOptions,
+  type VizNode,
+  type VizEdge,
+  type VizGraphData,
+  type CommunityInfo,
+} from './viz/index.js';
+
 export {
   formatImpact,
   type ImpactDetail,
