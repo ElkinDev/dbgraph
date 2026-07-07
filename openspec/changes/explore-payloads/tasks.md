@@ -238,7 +238,7 @@ nothing pushed; no CI).
 > consistency pass — + benchmark "Multiple runs are reported as code-version-labeled tables" (scaffold the labeled
 > second table + honesty framing so Batch R only FILLS numbers). DOCS + the final consolidated gate. No product code.
 
-- [ ] D.1 (docs) Scaffold the SECOND, code-version-LABELED results table in `docs/benchmarks.md` for the
+- [x] D.1 (docs) Scaffold the SECOND, code-version-LABELED results table in `docs/benchmarks.md` for the
   explore-payloads re-run: a labeled placeholder table (run-id `explore-payloads-2026-MM-DD`) leaving the first
   `torture-2026-07-06` table INTACT, reusing the EXISTING anti-extrapolation / honesty framing (same
   fixture/questions/model, tool surface ONLY; unfavorable results reported, no extrapolation). The WITH-surface note
@@ -247,13 +247,13 @@ nothing pushed; no CI).
   labeled scaffold + framing. Spec: benchmark "A second results table is labeled with its code version", "The re-run's
   WITH surface is the unchanged four commands". Done: labeled placeholder table + framing present; first table
   untouched.
-- [ ] D.2 (docs) Final `docs/format-spec.md` consistency pass: confirm the explore payload GRAMMAR (incl. the
+- [x] D.2 (docs) Final `docs/format-spec.md` consistency pass: confirm the explore payload GRAMMAR (incl. the
   reconstructed FK table-level form + the degraded no-target form), the re-measured `normal`/`full` budget rows, and
   the §6 token-delta note authored in Batch B are complete and consistent with the re-blessed goldens; methodology
   (`ceil(chars/4)`, measured numbers, spec-edit-plus-token-delta on every golden change) UNCHANGED. Spec: mcp-server
   "Format spec exists with grammar, levels and budget methodology", "Output is produced by a pure formatter and is
   byte-identical on re-run". Done: no gap between the format-spec grammar and the re-blessed goldens.
-- [ ] D.3 GATE (Batch D — final apply): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (FULL suite:
+- [x] D.3 GATE (Batch D — final apply): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` green (FULL suite:
   baseline 3088 + all payload/explore/parseDetail/object/banner/parity/budget suites) with EVERY golden byte-identical
   on re-run; cross-transport parity green; DOCS-verify — format-spec grammar+budgets+§6 note consistent,
   `docs/benchmarks.md` carries the labeled second-table scaffold with honesty framing and the first table intact;
@@ -340,21 +340,21 @@ nothing pushed; no CI).
 
 ## Definition of Done (tied to the proposal's Success Criteria; 29 spec scenarios across 7 requirements traced)
 
-- [ ] `explore <column>` shows dataType + nullability, `explore <table>` shows ordered PK columns + column types, and
+- [x] `explore <column>` shows dataType + nullability, `explore <table>` shows ordered PK columns + column types, and
   `explore <fk-constraint>` shows the FK column→target mapping — each in ONE call. — Batch B (B.1, B.2, B.3, B.4)
   [scenarios: normal renders focus column types/PK/NN, composite PK declared order, FK payload-present mapping, FK
   reconstructed, FK degraded, trigger timing/events at full, brief no payload]
-- [ ] `formatExplore` and `formatObject` render payload facts through ONE shared pure helper (no duplicated per-kind
+- [x] `formatExplore` and `formatObject` render payload facts through ONE shared pure helper (no duplicated per-kind
   logic, no drift). — Batch A (A.1–A.4), Batch B (B.4) [scenarios: object goldens byte-identical after refactor,
   explore and object render identical section bytes, the FK-reconstruction re-blesses ONLY the FK lines in object and
   explore together]
-- [ ] A CLI `object` command exists and its output is BYTE-IDENTICAL to `dbgraph_object` (same-source-same-golden),
+- [x] A CLI `object` command exists and its output is BYTE-IDENTICAL to `dbgraph_object` (same-source-same-golden),
   importing only the barrel + Node builtins. — Batch C (C.3, C.4, C.5, C.6) [scenarios: object full detail
   byte-identical, object honors the CLI import boundary, usage banner alignment]
-- [ ] `explore --detail bogus` (and `object`/`affected`) fails with a `ConfigError` naming the value (exit 2); the
+- [x] `explore --detail bogus` (and `object`/`affected`) fails with a `ConfigError` naming the value (exit 2); the
   explore header labels a view as `[view]`. — Batch B (B.5), Batch C (C.1, C.2) [scenarios: unknown --detail exits 2,
   valid --detail unaffected, view focus labeled [view] not [table]]
-- [ ] Explore goldens re-blessed DELIBERATELY with a matching `docs/format-spec.md` grammar + token-delta note (§6);
+- [x] Explore goldens re-blessed DELIBERATELY with a matching `docs/format-spec.md` grammar + token-delta note (§6);
   budget assertions pass on the re-measured ceilings; the cross-transport parity test is green. — Batch B (B.6, B.8,
   B.9), Batch D (D.2) [scenarios: explore deterministic and golden-pinned, Explore payload matches CLI byte-for-byte,
   Explore compact neighborhood golden, ambiguous target disambiguation, ceilings re-measured, brief budget respected,
@@ -365,6 +365,6 @@ nothing pushed; no CI).
   unfavorable second run reported not suppressed]
 - [ ] Target DB stays strictly READ-ONLY; the ADR-004 core/CLI boundary tests are green. — Batch C (C.3), Batch D
   (D.3), Batch R (R.1)
-- [ ] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` green (baseline 3088 + new suites)
+- [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` green (baseline 3088 + new suites)
   with every golden byte-identical on re-run; leak-scan clean — proven LOCALLY (no CI), nothing pushed. — every batch
   GATE (A.6, B.10, C.7, D.3)

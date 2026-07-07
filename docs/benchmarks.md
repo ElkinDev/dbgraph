@@ -129,6 +129,64 @@ Every figure above is scoped to *this fixture, this question set, this model*. U
 per-question outcomes (dbgraph no-better or worse) MUST be reported here, not softened or omitted —
 suppression is a spec violation.
 
+## Results — Run 2 (`explore-payloads-2026-MM-DD`)
+
+> **SCAFFOLD — awaiting the re-run.** This SECOND results table is LABELED with its code version /
+> run-id and is intentionally left with empty (`_pending_`) cells. The coordinating session FILLS it
+> in Batch R, after building the graph from the SAME committed fixture and running the FROZEN harness;
+> **no number here is invented ahead of the run.** The first `torture-2026-07-06` table above stays
+> INTACT and is never overwritten — the two runs are never conflated.
+
+The re-run uses the FROZEN methodology UNCHANGED: the SAME pre-registered question set and
+separately-held ground-truth key, the SAME deterministic blind scorer, and the SAME single
+token-accounting boundary. **The re-run's WITH surface grants EXACTLY `query`, `explore`, `affected`,
+`status` (each with `--json`) — byte-identical to the first run's protocol, with NO command added,
+removed, or altered.** Only the dbgraph code under test differs (the explore-payloads rendering
+change); the fixture, questions, ground truth, model family, and scoring rules are identical.
+
+### Environment (Run 2)
+
+| Field | Value |
+|-------|-------|
+| Model family | Claude (single family — no cross-model claim) |
+| Model id / version | _pending (Batch R)_ |
+| Run date | _pending (Batch R)_ |
+| Run id | `explore-payloads-2026-MM-DD` |
+| dbgraph version / commit | _pending (Batch R — the explore-payloads commit under test)_ |
+| Primary substrate | SQLite torture fixture (`test/fixtures/sqlite/torture.sql`, committed — UNCHANGED) |
+
+### Results (Run 2 — `explore-payloads-2026-MM-DD`)
+
+| Family | WITH accuracy | WITHOUT accuracy | WITH tokens (actual) | WITHOUT tokens (actual) |
+|--------|---------------|------------------|----------------------|-------------------------|
+| fk-path | _pending_ | _pending_ | _pending_ | _pending_ |
+| column-type (control) | _pending_ | _pending_ | _pending_ | _pending_ |
+| impact | _pending_ | _pending_ | _pending_ | _pending_ |
+| trigger-inventory | _pending_ | _pending_ | _pending_ | _pending_ |
+| constraint-semantics | _pending_ | _pending_ | _pending_ | _pending_ |
+| **Overall** | **_pending_** | **_pending_** | _pending_ | _pending_ |
+
+Per-question appendix (Run 2) — Batch R fills the answers AND the per-question DELTA versus
+`torture-2026-07-06`; the `key` column is FROZEN (byte-identical to Run 1, never re-derived):
+
+| qid | key | WITH answer | WITHOUT answer | Δ vs Run 1 |
+|-----|-----|-------------|----------------|------------|
+| column-type-assignments.dept_id | `INTEGER\|NOT NULL` | _pending_ | _pending_ | _pending_ |
+| constraint-semantics-assignments | `project_id, emp_id, dept_id` | _pending_ | _pending_ | _pending_ |
+| fk-path-assignments-employees | both atoms (`emp_id`, `dept_id`) | _pending_ | _pending_ | _pending_ |
+| impact-departments | `assignments, employees` | _pending_ | _pending_ | _pending_ |
+| trigger-inventory-active_departments | `trg_active_dept_instead_insert:INSTEAD OF:INSERT` | _pending_ | _pending_ | _pending_ |
+
+### Run 2 honesty framing (standing contract — binds before the numbers exist)
+
+Whatever the re-run shows — **including no improvement or a REGRESSION versus
+`torture-2026-07-06`** — MUST be reported here faithfully, scoped to *this fixture, this question set,
+this model*, with NO suppression and NO extrapolation. Omitting or softening an unfavorable
+per-question outcome is a SPEC VIOLATION. The explore-payloads change renders the node payloads the
+graph ALREADY stored (column types/nullability, PK/FK column membership, trigger timing/events) that
+Run 1 found unreachable through the CLI; this re-run measures ONLY whether that presentation change
+moves the WITH outcomes on this frozen substrate — it licenses NO generalized superiority claim.
+
 ## Token accounting
 
 One boundary, applied IDENTICALLY to both conditions:
