@@ -70,7 +70,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
 > both conditions, non-empty mismatching hash fails loudly, empty raw hash stamped with honest attestation, stamp is
 > additive). CODE + STRICT TDD. The pure module is the ONLY new logic `npm test` exercises; the stages import it.
 
-- [ ] B1.1 **(vitest)** RED→GREEN `test/benchmark/harness-checks.test.ts` (new) + `benchmark/harness-checks.ts` (new):
+- [x] B1.1 **(vitest)** RED→GREEN `test/benchmark/harness-checks.test.ts` (new) + `benchmark/harness-checks.ts` (new):
   `deriveCoverageTargets(qid, family, gt): readonly CoverageTarget[]` (`{kind:'table'|'view'|'trigger', name}`). RED
   first with INLINE minimal GT literals mirroring `benchmark/ground-truth/*.json`: `fk-path` → `{table,'assignments'}`
   + `{table,'employees'}` from `hops[]`; `trigger-inventory` → `{trigger,'trg_active_dept_instead_insert'}`; `impact`
@@ -78,7 +78,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   qid `column-type-assignments.dept_id` → `{table,'assignments'}`; `constraint-semantics-assignments` →
   `{table,'assignments'}`. Assert qid parsing anchors on `qid.slice(family.length + 1)`. EXACT `.toStrictEqual`. Spec
   scenario "Targets derived per family by pinned rule". Design D2/D2-shape. Done: `npm test harness-checks`.
-- [ ] B1.2 **(vitest)** RED→GREEN `harness-checks.test.ts` + `harness-checks.ts`: `verifyDumpCoverage(ddlDump, targets):
+- [x] B1.2 **(vitest)** RED→GREEN `harness-checks.test.ts` + `harness-checks.ts`: `verifyDumpCoverage(ddlDump, targets):
   readonly CoverageTarget[]` returns the targets NOT DEFINED (empty ⇒ full coverage). RED first on INLINE mini-dump
   strings: HIT — a dump defining `CREATE TABLE assignments (...)` etc. returns `[]`; MISS — a POISONED dump (wrong-DB
   in unit form) omitting `assignments` returns `[{table,'assignments'}]`; quoted `CREATE TABLE "Assignments"` and
@@ -86,7 +86,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   (case-insensitive, schema/quote-stripped, D3); a mere `REFERENCES assignments` (no CREATE) does NOT cover.
   `.toStrictEqual`. Spec scenarios "Correct dump covers every target" + "Wrong-DB dump missing a target — LOUD exit 1"
   (pure MISS half). Design D3. Done: `npm test harness-checks`.
-- [ ] B1.3 **(vitest)** RED→GREEN `harness-checks.test.ts` + `harness-checks.ts`: `joinManifestHashes(manifest, raw):
+- [x] B1.3 **(vitest)** RED→GREEN `harness-checks.test.ts` + `harness-checks.ts`: `joinManifestHashes(manifest, raw):
   readonly HashJoinResult[]` — pure, NO throw; status ∈ `ok|mismatch|empty-raw|missing-in-manifest`. RED first on
   INLINE manifest + raw literals: matching non-empty raw → `ok` + `authoritativePromptSha256` from manifest;
   non-empty raw ≠ manifest → `mismatch`; empty/absent raw → `empty-raw` with `rawPromptSha256:''`;
@@ -95,7 +95,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   Spec scenarios "Scored output carries the manifest hash" + "Non-empty mismatching hash fails loudly" +
   "Empty raw hash is stamped" (join half) + "Failure output leaks no key VALUE" (pin). Design D4/OQ1. Done:
   `npm test harness-checks`.
-- [ ] B1.4 **(stage wiring — self-checked, NOT vitest)** Modify `benchmark/build-packets.ts`: import the helpers;
+- [x] B1.4 **(stage wiring — self-checked, NOT vitest)** Modify `benchmark/build-packets.ts`: import the helpers;
   in the main loop AFTER `assertPacketPair(...)` add
   `const missing = verifyDumpCoverage(ddlDump, deriveCoverageTargets(q.qid, q.family, gt));` and, on non-empty,
   `throw` the PINNED LOUD message `SELF-CHECK FAILED: <qid> (<family>) — DDL dump does not define target object(s):
@@ -103,7 +103,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   un-redacted in a correct dump) — NEVER a composed answer value. Spec scenarios "Wrong-DB dump → LOUD exit 1" +
   "Failure output leaks no key VALUE" (stage half). Design §Stage wiring. Done: correct fixture-built db still exits 0
   (proven in B2.1-adjacent smoke); wrong-db aborts (B2.2).
-- [ ] B1.5 **(stage wiring — self-checked, NOT vitest)** Modify `benchmark/score.ts`: add `readonly promptSha256?:
+- [x] B1.5 **(stage wiring — self-checked, NOT vitest)** Modify `benchmark/score.ts`: add `readonly promptSha256?:
   string` to `RawRecord`, `promptSha256: string` to `ConditionResult`; read the frozen manifest (default
   `join(benchmarkDir, 'packets', 'manifest.json')`, `--manifest` override; missing FILE → throw); call
   `joinManifestHashes` and, per `(qid,condition)`: `mismatch` → COLLECT then FAIL loudly (exit 1, ALL offenders, no
@@ -112,7 +112,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   guard). Spec scenarios "Scored output carries the manifest hash" + "Non-empty mismatching hash fails loudly" +
   "Empty raw hash is stamped with honest attestation" (stage half). Design D4/OQ1. Done: score.ts stamps additively;
   the field is honest.
-- [ ] B1.6 GATE (Batch B1): `npx tsc --noEmit` clean (covers `harness-checks.ts` via the `benchmark` include + the
+- [x] B1.6 GATE (Batch B1): `npx tsc --noEmit` clean (covers `harness-checks.ts` via the `benchmark` include + the
   test via `test`); `npm run lint` 0/0; `npm test` GREEN (baseline 3229 + harness-checks unit suite) with the
   independence guard green (units import ONLY `harness-checks.ts`; NO new `fixtures/*.json`; NO `STAGE_RE` literal; NO
   `benchmark/runs` string) and ZERO run artifacts; leak-scan clean. Then COMMIT
@@ -125,7 +125,7 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
 > forbids importing the stage into vitest, so this is a documented smoke proof, NOT a suite). No new source expected —
 > the change is CODE-complete at the B1 commit; this batch is the verification oracle before `sdd-verify`.
 
-- [ ] B2.1 **(proof — byte-identical scoring, smoke-style)** CAPTURE the pre-change `aggregate.json` bytes for BOTH
+- [x] B2.1 **(proof — byte-identical scoring, smoke-style)** CAPTURE the pre-change `aggregate.json` bytes for BOTH
   `benchmark/runs/torture-2026-07-06` and `benchmark/runs/explore-payloads-2026-07-06` (they are the pre-change
   oracle — the raw records carry EMPTY/absent `promptSha256`, the known W1 state). Re-run
   `node --experimental-strip-types benchmark/score.ts runs/<id>` (default frozen manifest) for each. ASSERT:
@@ -134,19 +134,48 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
   every empty raw hash was WARNED and STAMPED from the frozen manifest; NO `mismatch`/`missing-in-manifest` (all run
   qids are present in the frozen manifest). ANY scoring-outcome drift is a HARD STOP. Spec scenarios "Stamp is
   additive — byte-identical" + "Scored output carries the manifest hash" + "Empty raw hash stamped". Design D4.
-- [ ] B2.2 **(negative proof — poisoned db, smoke-style, NOT vitest)** Materialize a WRONG mini-db that OMITS one
+  > **B2.1 PROOF (2026-07-07, HEAD 8555cb4):** pre-change bytes captured aside before re-scoring (runs/ gitignored).
+  > Re-ran `node --experimental-strip-types benchmark/score.ts benchmark/runs/<id>` (default frozen manifest) for
+  > BOTH runs — exit 0 each. `aggregate.json` **BYTE-IDENTICAL** to the captured oracle: torture
+  > `sha256=0ebbc9be1ca489084f33bc6cb1e5bd86ebbbd42333ba9b075e69b952fa06e44a` (pre == post),
+  > explore `sha256=458d70acff383abfd4929dcc55ff0b2e611933ff5d6bfd9ab9809d0e93d5c192` (pre == post) — NO accuracy/token
+  > drift. `scored/per-question.json` diff = ONLY added `promptSha256` per condition (each `tokens` block's closing
+  > `}`→`},` + one new line; every prior field VALUE byte-identical). All 10 (qid,condition) pairs per run were
+  > `empty-raw` → **WARNED** to stderr **and STAMPED** the frozen-manifest hash; **ZERO** `mismatch`/`missing-in-manifest`.
+  > Stamped values equal the manifest exactly (e.g. fk-path WITH `db08897b…`, WITHOUT `5b48f10f…`).
+- [x] B2.2 **(negative proof — poisoned db, smoke-style, NOT vitest)** Materialize a WRONG mini-db that OMITS one
   question's target object (e.g. drop `assignments` from a torture-derived copy), then run
   `node --experimental-strip-types benchmark/build-packets.ts --db <wrong.db>`. OBSERVE: exit code 1; the message is
   the PINNED `SELF-CHECK FAILED: <qid> (<family>) — DDL dump does not define target object(s): TABLE <name>, ...`
   naming the missing OBJECT + qid and containing NO composed answer value. This is documented HERE (not a vitest
   suite — `STAGE_RE` forbids importing `build-packets`). Spec scenarios "Wrong-DB dump missing a target — LOUD exit 1"
   + "Failure output leaks no key VALUE". Design §Stage wiring.
-- [ ] B2.3 GATE (Batch B2 — FINAL): `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` FULL
+  > **B2.2 SMOKE EVIDENCE (2026-07-07):** Restore/determinism first — regenerated packets from the REAL torture db
+  > (scratchpad `bench-run2/source.db`, verified present; schema carries assignments/employees/departments/projects/
+  > audit_log/counters + the trigger + 2 views) into a SCRATCH out-dir: exit 0, `diff -r` vs frozen `benchmark/packets`
+  > = **no diff**, manifest `sha256=dfbe1c44f73abebe7c1ab5402ec541810b307161c67f40fa07c778e6b32a44b2` (matches frozen).
+  > Poisoned proof — copied source.db → `poison.db`, `DROP TABLE assignments` (remaining tables:
+  > audit_log,counters,departments,employees,projects), ran
+  > `node --experimental-strip-types benchmark/build-packets.ts --db poison.db --out <scratch>`.
+  > **Exit code 1.** Stderr (pinned, verbatim):
+  > `Error: SELF-CHECK FAILED: column-type-assignments.dept_id (column-type) — DDL dump does not define target object(s): TABLE assignments`
+  > — names the qid + family + the bare missing OBJECT (`TABLE assignments`), contains NO composed answer value
+  > (no dataType, no FK path, no columns list). Zero packets written before abort (fails on the first question).
+  > Poisoned build targeted a scratch out-dir; `benchmark/packets/` left **byte-identical to pre-smoke** (`diff -r`
+  > clean, manifest sha unchanged `dfbe1c44…`). Not a vitest suite (STAGE_RE forbids importing build-packets).
+- [x] B2.3 GATE (Batch B2 — FINAL): `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` FULL
   GREEN (baseline 3229 + harness-checks suite) with the independence guard green and ZERO run artifacts;
   `aggregate.json` byte-identical for BOTH runs (no scoring drift — HARD STOP otherwise); no `questions.yaml`/N/scoring
   rule/protocol byte moved; leak-scan clean; confirm NOTHING pushed (NO push/PR/gh/tag). Trace the Definition of Done
   below. No new commit expected (proof only — re-scored artifacts land under git-ignored `runs/`). Hand off to
   `sdd-verify`.
+  > **B2.3 FINAL GATE (2026-07-07):** `npx tsc --noEmit` strict clean (exit 0, no `any`); `npm run lint` **0 errors /
+  > 0 warnings** (exit 0); `npm test` FULL GREEN — **3246 passed** across 185 files (baseline 3229 + 17 harness-checks
+  > units), independence guard green, ZERO run artifacts read. `aggregate.json` byte-identical for BOTH runs (B2.1 —
+  > no scoring drift). No `questions.yaml`/N/scoring-rule/protocol/`src/**`/`dist/` byte moved (B1 commit touched
+  > exactly 4 files: `benchmark/harness-checks.ts`, `benchmark/build-packets.ts`, `benchmark/score.ts`,
+  > `test/benchmark/harness-checks.test.ts`). Leak-scan clean (pre-commit hook passed with `.leakscan-denylist.local`
+  > present). NOTHING pushed — branch `v1-prep` has no upstream/origin ref, local commits only, no PR/gh/tag.
 
 ## Apply Batch Grouping (one sub-agent session each)
 
@@ -182,21 +211,21 @@ batch (conventional, references `benchmark-harness-hardening`, NO AI attribution
 
 ## Definition of Done (tied to the proposal's Success Criteria; 8 spec scenarios across 2 requirements traced)
 
-- [ ] A WITHOUT dump from the WRONG database (missing a target object) makes `build-packets` exit 1 with a message
+- [x] A WITHOUT dump from the WRONG database (missing a target object) makes `build-packets` exit 1 with a message
   naming the missing OBJECT + qid — no composed key value leaked. — B1.2 (pure MISS), B1.4 (stage abort), B2.2 (smoke)
   [scenarios: Wrong-DB dump → LOUD exit 1; Failure output leaks no key VALUE]
-- [ ] A correct dump passes unchanged and every target is derived per family by the pinned rule (fk-path from/to,
+- [x] A correct dump passes unchanged and every target is derived per family by the pinned rule (fk-path from/to,
   trigger qname, impact `whatToTest`, column-type/constraint table-from-qid). — B1.1, B1.2 (HIT) [scenarios: Correct
   dump covers every target; Targets derived per family by pinned rule]
-- [ ] `scored/per-question.json` carries the authoritative `promptSha256` per `(qid, condition)`, sourced from the
+- [x] `scored/per-question.json` carries the authoritative `promptSha256` per `(qid, condition)`, sourced from the
   frozen `manifest.json`, with the honest FROZEN-PACKET attestation. — B1.3, B1.5, B2.1 [scenarios: Scored output
   carries the manifest hash; Empty raw hash stamped with honest attestation]
-- [ ] A raw record whose non-empty `promptSha256` MISMATCHES the manifest fails scoring loudly (exit 1, no scored
+- [x] A raw record whose non-empty `promptSha256` MISMATCHES the manifest fails scoring loudly (exit 1, no scored
   file); a `(qid,condition)` missing from the manifest also fails (OQ1). — B1.3, B1.5 [scenario: Non-empty mismatching
   hash fails loudly]
-- [ ] For valid runs, `aggregate.json` (accuracy + token totals) is BYTE-IDENTICAL pre/post change and
+- [x] For valid runs, `aggregate.json` (accuracy + token totals) is BYTE-IDENTICAL pre/post change and
   `scored/per-question.json` differs ONLY by the additive `promptSha256` — proven against the two committed runs. —
   B2.1 [scenario: Stamp is additive — valid-run outcomes byte-identical (HARD guard)]
-- [ ] Zero changes to `questions.yaml`, N, scoring rules, protocols, `src/**`, or `dist/`; zero new deps;
+- [x] Zero changes to `questions.yaml`, N, scoring rules, protocols, `src/**`, or `dist/`; zero new deps;
   `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` GREEN (baseline 3229 + harness-checks suite) with the
   independence guard green; leak-scan clean — proven LOCALLY, nothing pushed. — every batch GATE (B1.6, B2.3)
