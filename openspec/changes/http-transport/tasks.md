@@ -265,3 +265,21 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 - [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3004 + http suites, no
   network beyond loopback, deterministic); `git diff test/mcp/golden/` EMPTY — all proven LOCALLY, nothing pushed past
   `closeout`. — Batch 1 (1.5), Batch 2 (2.5), Batch 3 (3.7), Batch 4 (4.4)
+
+## Post-Verify Remediation
+
+> sdd-verify (2026-07-06) returned FAIL on ONE success criterion — graceful shutdown drains sessions and closes the
+> listener with no dangling handles (`mcp-http-transport` R5). All 34 task boxes stay `[x]`; the fix is recorded here as an
+> R-entry rather than by un-checking done work (archive convention, cf. `phase-8a-pg` / `resilient-connectivity`).
+
+- **R1** — fixed **CRITICAL-1** (graceful-drain deadlock with an open Streamable-HTTP GET SSE stream). In `src/mcp/http.ts`
+  `startHttpMcpServer().close()`, REORDERED the drain: `await registry.close()` now runs FIRST (closing each session's
+  transport ends any in-flight standalone GET SSE notification stream), THEN `httpServer.close()` is awaited with an added
+  `httpServer.closeAllConnections()` to force-drop lingering keep-alive sockets (`node:http` Server API since 18.2; engines
+  `>=22`). Pre-fix, `close()` awaited `httpServer.close()` FIRST and hung indefinitely because a held GET connection only
+  ends when its transport closes — which happened AFTER (verifier probe: HANG >4000ms; reproduced by the new test as a clean
+  2000ms-guard failure). Also resolves **WARNING-1**: added a streaming-drain E2E in `test/mcp/http.test.ts` (task 3.4 block)
+  that OPENS + HOLDS the GET SSE stream before `close()` and asserts resolution < 2000ms (RED against the old ordering, GREEN
+  after); the existing POST-only drain test is KEPT (both paths covered). No pinned shutdown message string changed;
+  `git diff test/mcp/golden/` EMPTY; NO new dependency. Gate re-run GREEN: `npx tsc --noEmit` clean, `npm run lint` 0/0,
+  `npm test` 3088 passed (baseline 3087 + 1 new streaming-drain test). Design D6; spec `mcp-http-transport` R5.

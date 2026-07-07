@@ -901,5 +901,53 @@ describe('Batch 3 — loopback E2E over the SQLite torture fixture (tasks 3.1–
       expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
       expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
     });
+
+    it('close() drains promptly while a client holds the GET SSE notification stream open (verify R1)', async () => {
+      // WARNING-1 + CRITICAL-1 regression. The drain test above exercises a POST-only
+      // session, so it never opens the NORMATIVE Streamable-HTTP GET SSE notification
+      // stream — the exact connection that made close() deadlock. Here we OPEN and HOLD
+      // that stream, then require close() to resolve promptly. Pre-fix this HANGS (>2000ms)
+      // because httpServer.close() awaited the still-open GET connection BEFORE
+      // registry.close() ended it. A 2000ms race guard turns a regression into a clean
+      // assertion failure rather than a 15s runner-level hang.
+      const { logger } = captureLogger();
+      const h = await startHttpMcpServer({ host: '127.0.0.1', port: 0, logger }, { createServer: makeTinyServer });
+      const { port } = h;
+
+      const init = await rpc(port, 'POST', INIT_BODY);
+      expect(init.status).toBe(200);
+      const sid = init.sid as string;
+
+      // Open the standalone GET SSE stream (the SDK Client opens this for server→client
+      // notifications) and hold it — start a read that never completes, mirroring a real
+      // streaming agent keeping the channel open.
+      const controller = new AbortController();
+      const sse = await fetch(`http://127.0.0.1:${String(port)}/mcp`, {
+        method: 'GET',
+        headers: { accept: 'text/event-stream', ...SID_HEADERS(sid) },
+        signal: controller.signal,
+      });
+      expect(sse.status).toBe(200);
+      const reader = sse.body?.getReader();
+      const pendingRead = reader?.read().catch(() => undefined);
+
+      // The heart of the test: close() must drain the transport (ending the in-flight GET
+      // response) and resolve — it must NOT block on the held connection first.
+      const outcome = await Promise.race([
+        h.close().then(() => 'closed' as const),
+        new Promise<'timeout'>((resolve) => {
+          setTimeout(() => resolve('timeout'), 2000);
+        }),
+      ]);
+
+      // Release the client side regardless of outcome so no socket lingers.
+      controller.abort();
+      await pendingRead;
+
+      expect(outcome).toBe('closed');
+
+      // Listener stopped accepting → a later request is refused.
+      await expect(rpc(port, 'POST', INIT_BODY)).rejects.toBeDefined();
+    });
   });
 });

@@ -541,13 +541,21 @@ export function startHttpMcpServer(
         closed = true;
         process.removeListener('SIGINT', onSignal);
         process.removeListener('SIGTERM', onSignal);
-        // Stop accepting, then drain every open session's transport + server (design D6).
+        // Drain every open session's transport + server FIRST (design D6). Closing each
+        // transport ends any in-flight standalone GET SSE notification stream, so those
+        // connections finish BEFORE we await the listener close. The ORDER is load-bearing:
+        // awaiting httpServer.close() first deadlocks against a held GET stream — the SDK
+        // Client keeps that connection open until its TRANSPORT closes, which happens here.
+        await registry.close();
+        // Now stop accepting and wait for the listener to close. closeAllConnections()
+        // force-drops any lingering keep-alive sockets so the close callback fires
+        // deterministically (node:http Server#closeAllConnections since 18.2 — engines >=22).
         await new Promise<void>((resolveClose) => {
           httpServer.close(() => {
             resolveClose();
           });
+          httpServer.closeAllConnections();
         });
-        await registry.close();
       };
       const onSignal = (): void => {
         void close();
