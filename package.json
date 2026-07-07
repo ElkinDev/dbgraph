@@ -4,7 +4,6 @@
   "description": "Database schema graph for AI agents — index your database catalog into a local graph, served over MCP",
   "type": "module",
   "license": "MIT",
-  "private": true,
   "engines": {
     "node": ">=22"
   },
