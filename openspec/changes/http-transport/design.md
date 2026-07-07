@@ -220,8 +220,19 @@ installed agents) is byte-identical to today. No data migration.
 
 ## Open Questions
 
-- [ ] **Idle-session reaper** — ship a `--idle-timeout` sweeper in v1, or defer (DELETE/close only)? Design defers; small-team scope.
+- [x] ~~**Idle-session reaper**~~ — RESOLVED 2026-07-06 (Batch 3, task 3.5): DECISION = **DEFER**. v1 ships the
+  deterministic DELETE / `onsessionclosed` + graceful-drain path ONLY (D6); no `--idle-timeout` sweeper. Rationale:
+  the proposal's scope is small-team, single-graph — sessions are terminated explicitly by the client (`DELETE`) or
+  by SIGINT/SIGTERM drain, and a background sweeper adds a timer + eviction policy surface with no v1 requirement
+  behind it. A future change may add `--idle-timeout` on top of the existing registry without reworking D6. NO
+  reaper code added this change.
 - [x] ~~**IANA cross-check of 7423**~~ — RESOLVED 2026-07-06: 7423 FREE in the live IANA registry CSV (method: grep; 7422–7425 empty). See D4.
 - [x] ~~**Per-agent HTTP matrix**~~ — RESOLVED 2026-07-06: all 6 agents CONFIRMED for Streamable-HTTP client config; exact shapes + nuances captured in the Per-Agent HTTP Config Matrix above. Feeds DOCS only (no auto-wiring).
-- [ ] **`--allowed-host`/`--allowed-origin`** opt-in flags to re-tighten validation under `--host 0.0.0.0` — v1 or later?
+- [x] ~~**`--allowed-host`/`--allowed-origin`** opt-in flags to re-tighten validation under `--host 0.0.0.0`~~ —
+  RESOLVED 2026-07-06 (Batch 3, task 3.6): DECISION = **DEFER** — NOT v1. Rationale: D3 already keeps the Origin
+  rejection ALWAYS on (incl. under `0.0.0.0`) and only relaxes the un-knowable Host check on a non-loopback bind,
+  while the loopback-default bind + the documented reverse-proxy / network-control remedy remain the PRIMARY
+  containment. Adding `--allowed-host`/`--allowed-origin` allowlist flags is a defense-in-depth refinement a future
+  change can build on the existing `validateOriginHost` seam; it is not required for the v1 boundary. NO flag added
+  this change.
 - [x] ~~**SDK `handleRequest` body handling**~~ — RESOLVED 2026-07-06 (Batch 0, empirical): raw `req` DOES work (transport reads `req.json()` when `parsedBody` omitted), BUT the router MUST pre-parse anyway — a raw-only router cannot gate new sessions on `isInitializeRequest` and cannot produce the spec's split (unknown/terminated id must be **404**, but a fresh transport returns **400 `Server not initialized`**). DESIGN BRANCH TAKEN = pre-parse the POST body once + router-emitted 400/404 + pass `parsedBody`. See §"Batch 0 — empirical findings" 0.1.

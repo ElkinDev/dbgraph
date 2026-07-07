@@ -9,7 +9,10 @@
  * I/O, no listener — so the off-flag branch keeps the STDIO path byte-identical.
  */
 
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeAll, afterAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -26,11 +29,13 @@ import {
   createStderrLogger,
   emitStartupDiagnostics,
   startHttpMcpServer,
+  type HttpMcpServerHandle,
 } from '../../src/mcp/http.js';
-import { ConfigError, type Logger } from '../../src/index.js';
+import { ConfigError, type Logger, type GraphStore } from '../../src/index.js';
 import { planEntry } from '../../src/bin/sea-entry.js';
 import { createDbgraphServer, runMcpBin } from '../../src/mcp/server.js';
-import { createHarness } from './harness.js';
+import { createHarness, type McpTestHarness } from './harness.js';
+import { openFixtureStore, type FixtureStore } from './fixture.js';
 
 // Design D4 pinned defaults.
 const DEFAULT_HOST = '127.0.0.1';
@@ -582,5 +587,319 @@ describe('startHttpMcpServer — listener + router over loopback (task 2.4, desi
     handle = undefined; // already closed
 
     await expect(rpc(port, 'POST', INIT_BODY)).rejects.toBeDefined();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Batch 3 — in-process loopback E2E over the SQLite torture fixture (tasks 3.1–3.4).
+//
+// Drives the REAL startHttpMcpServer (B2) with createServer =
+// () => createDbgraphServer(fx.store) — the SAME factory + store the STDIO harness
+// uses — so cross-transport byte-identity (3.3) is a genuine parity lock, not a
+// re-render. NO Docker, NO network beyond loopback (127.0.0.1, ephemeral port 0),
+// deterministic. Responses arrive as SSE `data:` frames (SDK default,
+// enableJsonResponse=false — design §"Batch 0"); parseSse() extracts the JSON-RPC
+// message the SDK Client would otherwise decode transparently.
+// ═════════════════════════════════════════════════════════════════════════════
+
+const goldenDir = resolve(dirname(fileURLToPath(import.meta.url)), 'golden');
+
+/** The JSON-RPC message shape the E2E assertions read out of an SSE frame. */
+interface RpcMessage {
+  readonly result?: {
+    readonly tools?: readonly { readonly name: string }[];
+    readonly content?: readonly { readonly type: string; readonly text: string }[];
+    readonly instructions?: string;
+  };
+  readonly error?: { readonly code: number; readonly message: string };
+}
+
+/** Extracts the JSON-RPC message from an SSE `data:` frame (the SDK's default framing). */
+function parseSse(text: string): RpcMessage {
+  const data = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.replace(/^data:\s?/, ''))
+    .join('\n');
+  if (data.length === 0) {
+    throw new Error(`no SSE data frame in response: ${JSON.stringify(text)}`);
+  }
+  return JSON.parse(data) as RpcMessage;
+}
+
+/** Pulls the first text content block out of a tools/call result. */
+function toolText(msg: RpcMessage): string {
+  const text = msg.result?.content?.[0]?.text;
+  if (typeof text !== 'string') {
+    throw new Error(`no tool text in result: ${JSON.stringify(msg)}`);
+  }
+  return text;
+}
+
+const CALL_BODY = (name: string, args: Record<string, unknown>, id: number): Record<string, unknown> => ({
+  jsonrpc: '2.0',
+  id,
+  method: 'tools/call',
+  params: { name, arguments: args },
+});
+
+/** Session-routing headers for a follow-up request. */
+const SID_HEADERS = (sid: string): Record<string, string> => ({
+  'mcp-session-id': sid,
+  'mcp-protocol-version': '2025-06-18',
+});
+
+/** GraphStore mutators (ADR-008: HTTP tool calls must NEVER reach these). */
+const GRAPH_STORE_WRITE_METHODS: ReadonlySet<string> = new Set([
+  'upsertGraph',
+  'deleteNodes',
+  'putSnapshot',
+  'setMeta',
+]);
+
+/**
+ * Wraps a GraphStore in a recording proxy that logs every method call, classified
+ * as a write (a mutator — must stay EMPTY) or a read. Proves HTTP tool handlers
+ * issue read-only catalog access (task 3.4). `close` is excluded (lifecycle, not I/O).
+ */
+function recordingReadOnlyStore(store: GraphStore): { store: GraphStore; writes: string[]; reads: string[] } {
+  const writes: string[] = [];
+  const reads: string[] = [];
+  const proxy = new Proxy(store, {
+    get(target, prop, receiver): unknown {
+      const value = Reflect.get(target, prop, receiver) as unknown;
+      if (typeof value !== 'function') {
+        return value;
+      }
+      const name = String(prop);
+      const fn = value as (...fnArgs: unknown[]) => unknown;
+      return (...fnArgs: unknown[]): unknown => {
+        if (GRAPH_STORE_WRITE_METHODS.has(name)) {
+          writes.push(name);
+        } else if (name !== 'close') {
+          reads.push(name);
+        }
+        return fn.apply(target, fnArgs);
+      };
+    },
+  });
+  return { store: proxy as GraphStore, writes, reads };
+}
+
+describe('Batch 3 — loopback E2E over the SQLite torture fixture (tasks 3.1–3.4)', () => {
+  let fx: FixtureStore;
+  let sharedHttp: HttpMcpServerHandle;
+  let stdioHarness: McpTestHarness;
+
+  beforeAll(async () => {
+    fx = await openFixtureStore();
+    const { logger } = captureLogger();
+    sharedHttp = await startHttpMcpServer(
+      { host: '127.0.0.1', port: 0, logger },
+      { createServer: () => createDbgraphServer(fx.store) },
+    );
+    // The STDIO side of the parity lock: the SAME factory + store over InMemoryTransport.
+    stdioHarness = await createHarness(createDbgraphServer(fx.store));
+  }, 60_000);
+
+  afterAll(async () => {
+    await sharedHttp.close();
+    await stdioHarness.close();
+    await fx.cleanup();
+  });
+
+  // ── 3.1 — full session lifecycle over real HTTP ─────────────────────────────
+  describe('session lifecycle over real HTTP (task 3.1)', () => {
+    it('init→200+sid, tools/list→exactly 8 tools, tools/call→result, DELETE→200, terminated id→404, missing id→400', async () => {
+      const init = await rpc(sharedHttp.port, 'POST', INIT_BODY);
+      expect(init.status).toBe(200);
+      expect(init.sid).toBeTruthy();
+      const sid = init.sid as string;
+
+      const list = await rpc(sharedHttp.port, 'POST', LIST_BODY, SID_HEADERS(sid));
+      expect(list.status).toBe(200);
+      const names = (parseSse(list.text).result?.tools ?? []).map((t) => t.name).sort();
+      expect(names).toStrictEqual([...EXPECTED_TOOL_NAMES].sort());
+
+      const call = await rpc(sharedHttp.port, 'POST', CALL_BODY('dbgraph_status', {}, 3), SID_HEADERS(sid));
+      expect(call.status).toBe(200);
+      expect(toolText(parseSse(call.text))).toContain('DBGRAPH STATUS');
+
+      const del = await rpc(sharedHttp.port, 'DELETE', undefined, SID_HEADERS(sid));
+      expect(del.status).toBe(200);
+
+      // Terminated id → 404 (router-emitted; never reaches a tool handler).
+      const afterDelete = await rpc(sharedHttp.port, 'POST', LIST_BODY, SID_HEADERS(sid));
+      expect(afterDelete.status).toBe(404);
+      expect(afterDelete.text).toContain('Session not found');
+
+      // Non-init request with NO session id → 400 (router-emitted; no tool handler).
+      const missing = await rpc(sharedHttp.port, 'POST', LIST_BODY);
+      expect(missing.status).toBe(400);
+      expect(missing.text).toContain('-32000');
+    });
+
+    it('an UNKNOWN session id → 404 Session not found (no tool handler runs)', async () => {
+      const r = await rpc(sharedHttp.port, 'POST', LIST_BODY, {
+        'mcp-session-id': '00000000-0000-0000-0000-000000000000',
+        'mcp-protocol-version': '2025-06-18',
+      });
+      expect(r.status).toBe(404);
+      expect(r.text).toContain('Session not found');
+    });
+  });
+
+  // ── 3.2 — foreign Origin/Host → 403 BEFORE any tool handler ─────────────────
+  describe('Origin/Host 403 rejection before any tool handler (task 3.2, design D3)', () => {
+    it('foreign Origin → 403 -32000 Forbidden before a session/server is ever created; loopback proceeds', async () => {
+      let serversCreated = 0;
+      const { logger } = captureLogger();
+      const h = await startHttpMcpServer(
+        { host: '127.0.0.1', port: 0, logger },
+        {
+          createServer: (): Server => {
+            serversCreated += 1;
+            return createDbgraphServer(fx.store);
+          },
+        },
+      );
+      try {
+        const rejected = await rpc(h.port, 'POST', INIT_BODY, { origin: 'http://evil.example.com' });
+        expect(rejected.status).toBe(403);
+        const body: unknown = JSON.parse(rejected.text);
+        expect(body).toStrictEqual({ jsonrpc: '2.0', error: { code: -32000, message: 'Forbidden' }, id: null });
+        // The 403 short-circuits BEFORE session creation → no Server, hence no tool handler, was reached.
+        expect(serversCreated).toBe(0);
+
+        // An allowed loopback Origin proceeds to session routing normally (a server IS minted).
+        const allowed = await rpc(h.port, 'POST', INIT_BODY, { origin: 'http://localhost' });
+        expect(allowed.status).toBe(200);
+        expect(allowed.sid).toBeTruthy();
+        expect(serversCreated).toBe(1);
+      } finally {
+        await h.close();
+      }
+    });
+  });
+
+  // ── 3.3 — cross-transport byte-identity (ADR-008) ───────────────────────────
+  describe('cross-transport byte-identity (task 3.3, ADR-008)', () => {
+    // NOTE: the committed golden `explore-brief.txt` was captured from `main.employees`
+    // (the security-neutralized torture fixture has no `orders` table — the `orders` in
+    // the spec/tool-description text is an illustrative example). The parity contract is
+    // identical: HTTP == STDIO == the explore×brief golden, driven from ONE factory.
+    it('dbgraph_explore(main.employees, brief): HTTP == STDIO == the explore×brief golden', async () => {
+      const args = { target: 'main.employees', detail: 'brief' } as const;
+
+      const stdioText = await stdioHarness.callTool('dbgraph_explore', { ...args });
+
+      const sid = (await rpc(sharedHttp.port, 'POST', INIT_BODY)).sid as string;
+      const call = await rpc(sharedHttp.port, 'POST', CALL_BODY('dbgraph_explore', { ...args }, 20), SID_HEADERS(sid));
+      expect(call.status).toBe(200);
+      const httpText = toolText(parseSse(call.text));
+
+      // Byte-identical across transports (no transport-specific rendering).
+      expect(httpText).toBe(stdioText);
+
+      // And both match the committed golden (ADR-008 determinism).
+      const golden = readFileSync(join(goldenDir, 'explore-brief.txt'), 'utf-8');
+      expect(httpText).toBe(golden);
+      expect(stdioText).toBe(golden);
+    });
+
+    it('the static initialize instructions are identical across transports and match the golden', async () => {
+      const init = await rpc(sharedHttp.port, 'POST', INIT_BODY);
+      const httpInstructions = parseSse(init.text).result?.instructions;
+      const stdioInstructions = stdioHarness.client.getInstructions();
+
+      expect(httpInstructions).toBe(stdioInstructions);
+      const golden = readFileSync(join(goldenDir, 'instructions.txt'), 'utf-8');
+      expect(httpInstructions).toBe(golden);
+    });
+
+    it('both transports expose the identical 8-tool surface from one createDbgraphServer factory', async () => {
+      const stdioNames = (await stdioHarness.client.listTools()).tools.map((t) => t.name).sort();
+
+      const sid = (await rpc(sharedHttp.port, 'POST', INIT_BODY)).sid as string;
+      const list = await rpc(sharedHttp.port, 'POST', LIST_BODY, SID_HEADERS(sid));
+      const httpNames = (parseSse(list.text).result?.tools ?? []).map((t) => t.name).sort();
+
+      expect(httpNames).toStrictEqual([...EXPECTED_TOOL_NAMES].sort());
+      expect(httpNames).toStrictEqual(stdioNames);
+    });
+  });
+
+  // ── 3.4 — read-only preservation, content-free diagnostics, graceful drain ──
+  describe('read-only, content-free diagnostics, graceful drain (task 3.4, design D2/D6/D7)', () => {
+    it('HTTP tool calls issue ONLY reads — no GraphStore mutator is invoked; diagnostics are content-free', async () => {
+      const rec = recordingReadOnlyStore(fx.store);
+      const { logger, lines } = captureLogger();
+      const h = await startHttpMcpServer(
+        { host: '127.0.0.1', port: 0, logger },
+        { createServer: () => createDbgraphServer(rec.store) },
+      );
+      try {
+        const sid = (await rpc(h.port, 'POST', INIT_BODY)).sid as string;
+        await rpc(h.port, 'POST', CALL_BODY('dbgraph_explore', { target: 'main.employees', detail: 'full' }, 30), SID_HEADERS(sid));
+        await rpc(h.port, 'POST', CALL_BODY('dbgraph_search', { query: 'employees' }, 31), SID_HEADERS(sid));
+        await rpc(h.port, 'POST', CALL_BODY('dbgraph_status', {}, 32), SID_HEADERS(sid));
+
+        // Read-only: zero mutators, and the reads array proves the tools actually ran (not a ghost pass).
+        expect(rec.writes).toStrictEqual([]);
+        expect(rec.reads.length).toBeGreaterThan(0);
+
+        // Content-free diagnostics: no schema/object name, no connection string, no secret.
+        const diagnostics = lines.join('\n');
+        for (const objectName of ['employees', 'departments', 'projects', 'customers', 'orders']) {
+          expect(diagnostics).not.toContain(objectName);
+        }
+        expect(diagnostics).not.toMatch(/password|secret|token|Server=|Data Source=/i);
+      } finally {
+        await h.close();
+      }
+    });
+
+    it('SIGINT/SIGTERM are wired to a graceful drain that closes every session + the listener, leaving no dangling handles', async () => {
+      const sigintBefore = process.listenerCount('SIGINT');
+      const sigtermBefore = process.listenerCount('SIGTERM');
+
+      // Track that each open session's Server is closed on drain. (transport.close() is
+      // covered by the SessionRegistry unit — task 2.2 — which closes BOTH per entry.)
+      let sessionServerCloses = 0;
+      const trackingFactory = (): Server => {
+        const server = createDbgraphServer(fx.store);
+        const originalClose = server.close.bind(server);
+        server.close = async (): Promise<void> => {
+          sessionServerCloses += 1;
+          await originalClose();
+        };
+        return server;
+      };
+
+      const { logger } = captureLogger();
+      const h = await startHttpMcpServer({ host: '127.0.0.1', port: 0, logger }, { createServer: trackingFactory });
+
+      // Wiring: start installs exactly one SIGINT AND one SIGTERM handler (both signals covered).
+      expect(process.listenerCount('SIGINT')).toBe(sigintBefore + 1);
+      expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore + 1);
+
+      // Open ≥1 session so the drain has a live session to close.
+      const init = await rpc(h.port, 'POST', INIT_BODY);
+      expect(init.status).toBe(200);
+      expect(sessionServerCloses).toBe(0);
+
+      // Graceful drain — the EXACT function both signal handlers delegate to. Driving
+      // close() directly (rather than emitting a real process signal, which would race
+      // the test runner) is faithful: the SIGINT/SIGTERM handlers do nothing else.
+      await h.close();
+
+      // Every open session's Server was closed (drain).
+      expect(sessionServerCloses).toBe(1);
+      // Listener stopped accepting and closed → a later request is refused.
+      await expect(rpc(h.port, 'POST', INIT_BODY)).rejects.toBeDefined();
+      // No dangling handles: close() removed both signal listeners.
+      expect(process.listenerCount('SIGINT')).toBe(sigintBefore);
+      expect(process.listenerCount('SIGTERM')).toBe(sigtermBefore);
+    });
   });
 });

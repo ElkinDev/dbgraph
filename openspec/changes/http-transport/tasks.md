@@ -145,39 +145,39 @@ only). Then COMMIT (conventional, references `http-transport`, NO AI attribution
 > listener with an INJECTED fixture store (like phase-5's E2E — NO Docker, NO network beyond loopback, deterministic). Also
 > resolves the two remaining design Open Questions as explicit DEFER decisions recorded into `design.md`.
 
-- [ ] 3.1 **(E2E)** RED→GREEN `test/mcp/http.test.ts` session-lifecycle E2E: `startHttpMcpServer({host:'127.0.0.1',port:0})`
+- [x] 3.1 **(E2E)** RED→GREEN `test/mcp/http.test.ts` session-lifecycle E2E: `startHttpMcpServer({host:'127.0.0.1',port:0})`
   + injected fixture `createServer` over the SQLite torture fixture; raw `node:http`/`fetch`: POST `initialize`→response
   carries a fresh `mcp-session-id`→`tools/list` returns EXACTLY the 8 tools→`tools/call` returns its result→`DELETE`→a later
   request with that id→HTTP 404; a non-init request with NO id→HTTP 400; neither reaches a tool handler. Spec:
   mcp-http-transport S "--http serves the 8 tools over Streamable HTTP end to end" / "initialize issues a session id that
   routes subsequent requests" / "DELETE terminates the session" / "Missing or unknown session id is rejected by observable
   status". Done: `npm test http`.
-- [ ] 3.2 **(E2E)** RED→GREEN 403 rejection E2E: a request with `Host: evil` (or foreign `Origin`) → HTTP 403 with the
+- [x] 3.2 **(E2E)** RED→GREEN 403 rejection E2E: a request with `Host: evil` (or foreign `Origin`) → HTTP 403 with the
   JSON-RPC `-32000` Forbidden body BEFORE any tool handler; an allowed loopback `Host`/`Origin` → proceeds to session
   routing normally. Spec: mcp-http-transport S "Disallowed Origin is rejected before any tool runs" / "Allowed Origin
   proceeds". Design D3. Done: `npm test http`.
-- [ ] 3.3 **(E2E)** RED→GREEN cross-transport byte-identity: `dbgraph_explore({target:'orders',detail:'brief'})` served over
+- [x] 3.3 **(E2E)** RED→GREEN cross-transport byte-identity: `dbgraph_explore({target:'orders',detail:'brief'})` served over
   HTTP == served over STDIO == the `explore × brief` golden (ADR-008); the static `initialize` instructions string is
   IDENTICAL across transports; BOTH transports expose the same 8-tool surface from the ONE `createDbgraphServer()` factory
   (no transport-specific rendering). Spec: mcp-http-transport S "One tool's output is byte-identical across transports";
   mcp-server S "initialize returns the static golden instructions" / "Both transports serve the identical 8-tool surface
   from one factory". Done: `npm test http`; goldens byte-identical.
-- [ ] 3.4 **(E2E)** RED→GREEN read-only + content-free diagnostics + graceful drain: any tool over HTTP issues ONLY catalog
+- [x] 3.4 **(E2E)** RED→GREEN read-only + content-free diagnostics + graceful drain: any tool over HTTP issues ONLY catalog
   SELECT reads (no DDL/DML to the target DB); captured startup + per-request diagnostics contain NO object/schema name, NO
   connection-string value, NO resolved secret; SIGINT/SIGTERM with ≥1 open session → every transport closed + listener
   stops accepting and closes, leaving NO dangling handles (assert via open-handle inspection). Spec: mcp-http-transport S
   "HTTP mode adds no write surface" / "Diagnostics leak no schema names or secrets" / "SIGINT/SIGTERM drains sessions and
   closes the listener". Design D2/D6/D7. Done: `npm test http`.
-- [ ] 3.5 **(decision)** RESOLVE design Open Question "Idle-session reaper": DECISION = **DEFER** — v1 ships the
+- [x] 3.5 **(decision)** RESOLVE design Open Question "Idle-session reaper": DECISION = **DEFER** — v1 ships the
   deterministic DELETE/`onsessionclosed`+drain path ONLY; no `--idle-timeout` sweeper (small-team, single-graph scope per
   proposal). Check the box in `design.md` §Open Questions with this rationale; add NO reaper code this change. Design D6.
   Done: `design.md` updated.
-- [ ] 3.6 **(decision)** RESOLVE design Open Question "`--allowed-host`/`--allowed-origin` re-tighten flags under
+- [x] 3.6 **(decision)** RESOLVE design Open Question "`--allowed-host`/`--allowed-origin` re-tighten flags under
   `--host 0.0.0.0`": DECISION = **DEFER** — not v1; D3 already keeps Origin rejection + relaxes Host on `0.0.0.0`, and the
   loopback default + reverse-proxy/network controls remain the primary containment. Check the box in `design.md` §Open
   Questions with this rationale; add NO flag this change (a future change may build on it). Design D3. Done: `design.md`
   updated.
-- [ ] 3.7 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (E2E loopback in-suite, NO network
+- [x] 3.7 GATE (Batch 3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN (E2E loopback in-suite, NO network
   beyond loopback, deterministic); `git diff --exit-code test/mcp/golden/` EMPTY; BOTH open questions recorded as DEFER
   decisions in `design.md`. Then COMMIT `feat(http-transport): loopback E2E (session lifecycle, cross-transport parity,
   403, drain); defer idle-reaper + re-tighten flags`.
