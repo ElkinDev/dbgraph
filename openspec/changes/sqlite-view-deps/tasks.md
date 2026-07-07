@@ -152,7 +152,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 > Programmatic exact assertions FIRST; the SQLite golden family stays HELD for B4. Cross-engine goldens are a regression
 > pin (blast radius EMPTY, D4). Realizes D4.
 
-- [ ] B3.1 **(vitest)** RED→GREEN `test/core/normalize/fires-on-target.test.ts` (new) +
+- [x] B3.1 **(vitest)** RED→GREEN `test/core/normalize/fires-on-target.test.ts` (new) +
   `src/core/normalize/reference-resolver.ts`: add `resolveTriggerTarget(schema, name, nodeMap, excludedQNames,
   referencedById)` that probes `nodeMap` for an EXISTING real node across `['table','view']`, else falls back to
   `resolveOrStub('table', …)`; wire `buildFiresOnEdges` to use it. RED first: (a) an INSTEAD-OF trigger on an existing VIEW
@@ -161,20 +161,20 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   regression pin); (c) a trigger firing on a genuinely MISSING object still becomes a `missing:true` stub. Spec:
   `graph-normalization` "Trigger firing on a view resolves to the view node (cross-engine)". Design D4. Done:
   `npm test fires-on-target`.
-- [ ] B3.2 **(vitest)** RED→GREEN extend `test/core/normalize/normalize.test.ts` — exact SQLite + minimal-fixture pins:
+- [x] B3.2 **(vitest)** RED→GREEN extend `test/core/normalize/normalize.test.ts` — exact SQLite + minimal-fixture pins:
   (a) over the SQLite torture graph, `fires_on` is EXACTLY `main.trg_active_dept_instead_insert → main.active_departments`
   with target node kind `view`, and NO `[table] active_departments` stub appears (`not.toContainEqual`; stub count for it
   is zero); (b) the `catalog-minimal.json` fixture still normalizes to its golden graph (2 tables, 1 FK, 1 view, 1 trigger
   → exactly one `references`, one `depends_on`, one `fires_on`) — regression. Spec: `graph-normalization` "SQLite INSTEAD OF
   trigger fires on the view, no phantom stub (exact)" + "Minimal fixture normalizes to the golden graph". Design D4. Done:
   `npm test normalize`.
-- [ ] B3.3 **(vitest)** CROSS-ENGINE NO-DRIFT proof (part of the gate): assert the pg / mssql / mysql normalize+e2e
+- [x] B3.3 **(vitest)** CROSS-ENGINE NO-DRIFT proof (part of the gate): assert the pg / mssql / mysql normalize+e2e
   goldens are BYTE-IDENTICAL after the shared `buildFiresOnEdges` change — each engine's torture trigger fires on a TABLE
   (audited in design D4), so the resolved node and edge id are unchanged. RED intent: any cross-engine golden drift is a
   HARD STOP (investigate — the fix leaked beyond view-targets), NEVER a re-bless. Spec: `graph-normalization` cross-engine
   invariant. Design D4 (blast-radius audit). Done: `npm test` pg/mssql/mysql normalize+e2e suites; `git diff --exit-code`
   on their goldens EMPTY.
-- [ ] B3.4 GATE (Batch B3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN for the NEW/regression suites
+- [x] B3.4 GATE (Batch B3): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN for the NEW/regression suites
   (fires-on-target + normalize + cross-engine no-drift; baseline 3162 + those suites); cross-engine goldens byte-identical
   (HARD STOP on drift). **Continue to HOLD the SQLite golden family** for B4 (D5). Leak-scan clean. Then COMMIT
   `fix(normalize): resolve trigger fires_on target by node kind, kill phantom view stub (cross-engine)`.

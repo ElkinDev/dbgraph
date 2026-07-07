@@ -9,7 +9,7 @@
  * Tasks 3.2–3.4 (Batch 3): gated hook tests (gate-ON + Mongo auto-trigger + gate-OFF byte-identical).
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { normalizeCatalog } from '../../../src/core/normalize/normalize.js';
@@ -18,6 +18,10 @@ import type { RawCatalog } from '../../../src/core/model/catalog.js';
 import type { ExtractionScope } from '../../../src/core/model/capability.js';
 import type { NormalizationResult } from '../../../src/core/model/graph.js';
 import { NormalizationError } from '../../../src/core/errors.js';
+import { materializeTorture } from '../../fixtures/sqlite/materialize.js';
+import type { MaterializedDb } from '../../fixtures/sqlite/materialize.js';
+import { createSqliteSchemaAdapter } from '../../../src/adapters/engines/sqlite/factory.js';
+import { DEFAULT_LEVELS } from '../../../src/core/model/capability.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -690,5 +694,50 @@ describe('normalizeCatalog — fields branch (task 1.3, phase-9b-mongodb)', () =
     const r1 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
     const r2 = normalizeCatalog(collectionWithFields, FIELDS_ON_SCOPE);
     expect(serializeResult(r2)).toBe(serializeResult(r1));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B3.2 — SQLite INSTEAD OF trigger fires on the VIEW, no phantom stub (exact).
+// Built from the committed torture fixture through the real adapter → normalizer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('normalizeCatalog — SQLite torture fires_on resolves to the VIEW (B3.2, D4)', () => {
+  let mat: MaterializedDb;
+  let result: NormalizationResult;
+
+  beforeAll(async () => {
+    mat = materializeTorture();
+    const adapter = await createSqliteSchemaAdapter({ file: mat.path });
+    const catalog = await adapter.extract({ levels: DEFAULT_LEVELS });
+    await adapter.close();
+    result = normalizeCatalog(catalog, { levels: DEFAULT_LEVELS });
+  });
+
+  afterAll(() => {
+    mat.cleanup();
+  });
+
+  it('fires_on is EXACTLY main.trg_active_dept_instead_insert → main.active_departments (target kind view)', () => {
+    const idToNode = new Map(result.graph.nodes.map((n) => [n.id, n]));
+    const insteadPairs = result.graph.edges
+      .filter((e) => e.kind === 'fires_on')
+      .map((e) => ({
+        src: idToNode.get(e.src)?.qname ?? e.src,
+        dst: idToNode.get(e.dst),
+      }))
+      .filter((p) => p.src === 'main.trg_active_dept_instead_insert');
+
+    expect(insteadPairs).toHaveLength(1);
+    expect(insteadPairs[0]!.dst?.qname).toBe('main.active_departments');
+    expect(insteadPairs[0]!.dst?.kind).toBe('view');
+  });
+
+  it('NO [table] active_departments phantom stub appears (stub count for it is zero)', () => {
+    const tableForView = result.graph.nodes.filter(
+      (n) => n.kind === 'table' && n.qname === 'main.active_departments',
+    );
+    expect(tableForView).toStrictEqual([]);
+    expect(result.stubs.filter((s) => s.qname === 'main.active_departments')).toStrictEqual([]);
   });
 });
