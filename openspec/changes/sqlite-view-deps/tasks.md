@@ -187,7 +187,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 > re-bless batch (D5): every drifted SQLite golden re-blessed together with a per-golden inventory in the commit body; the
 > exact edge sets were pinned by B2/B3 FIRST. Realizes D5 + resolves OQ1/OQ2/OQ3 + spec open questions a/d.
 
-- [ ] B4.1 **(audit — resolves OQ1/OQ2/OQ3, spec open question d)** Enumerate the EXACT drifting golden set over the
+- [x] B4.1 **(audit — resolves OQ1/OQ2/OQ3, spec open question d)** Enumerate the EXACT drifting golden set over the
   torture graph before regenerating: run the suites and diff to identify which `test/mcp/golden/*` files move
   (candidates: `impact-tool-*`, `precheck-tool-*`, `related-tool-*`, `object-tool-*`, `explore-normal/full`, `explore-view`,
   `status-tool-*`, `path-tool-*` — the view/trigger gain neighbors and the edge count 54→64). CONFIRM the present-layer
@@ -195,14 +195,14 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   CONFIRM no benchmark test snapshots `generate.ts` output over the torture graph (OQ3). Record the final drift inventory
   for the B4.5 commit body. Design §Open Questions. Done: exact drift set enumerated; present-layer + benchmark
   no-snapshot confirmed.
-- [ ] B4.2 **(golden — DELIBERATE re-bless, single commit)** Regenerate the drifted SQLite goldens to match the pinned
+- [x] B4.2 **(golden — DELIBERATE re-bless, single commit)** Regenerate the drifted SQLite goldens to match the pinned
   graph: `test/fixtures/sqlite/golden-raw-catalog.json` (views/triggers gain `dependencies`), `test/fixtures/sqlite/golden-e2e.json`
   (`edgeCount 54→64`: +4 `depends_on`, +6 `writes_to`; `nodeCount 54→53`; `stubCount 1→0`), and EACH enumerated
   `test/mcp/golden/*` from B4.1 (view/trigger gain neighbors; `explore-view.txt` gains its dependents;
   `impact`/`precheck` whatToTest gains the view + trigger). EVERY byte change traces to a new edge or the phantom-stub
   removal. RE-RUN → byte-identical (deterministic). Spec: `sqlite-extraction` "Edge set is deterministic"; `mcp-server`
   golden pinning. Design D5. Done: `npm test` sqlite golden-freeze + e2e + mcp golden suites green, byte-identical on re-run.
-- [ ] B4.3 **(vitest)** RED→GREEN extend `test/mcp/precheck.test.ts` + `test/cli/commands/affected.test.ts` — L-009 exact
+- [x] B4.3 **(vitest)** RED→GREEN extend `test/mcp/precheck.test.ts` + `test/cli/commands/affected.test.ts` — L-009 exact
   `whatToTest` on a SQLite `departments.dept_id` drop. **VERIFY the pinned set against the ACTUAL precheck output FIRST**
   (spec open question a: a bare `dept_id` may be unresolved → the engine pivots on the `departments` TABLE; assert the set
   the graph REALLY yields, do not hard-code an unverified assumption). Target: `whatToTest` EXACTLY
@@ -214,14 +214,14 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   surfaces the exact view + trigger dependents", "affected on a SQLite departments column-drop includes view + trigger
   dependents", "ALTER + DROP INDEX … golden", "Non-matchable identifiers … unmatched", "affected reports changes and exits
   1; clean script exits 0". Design §Data Flow. Done: `npm test precheck`; `npm test affected`.
-- [ ] B4.4 **(vitest)** RED→GREEN `test/benchmark/generate.test.ts` (new): build the SQLite substrate from
+- [x] B4.4 **(vitest)** RED→GREEN `test/benchmark/generate.test.ts` (new): build the SQLite substrate from
   `test/fixtures/sqlite/torture.sql`, run the `view-dependency` enumerator (`getEdgesFrom(view, ['depends_on','reads_from'])`)
   and assert it now yields AT LEAST ONE candidate (the 2 torture views) where it previously yielded ZERO — the family is
   INSTANTIABLE. Assert this WITHOUT bumping N, adding a run, or touching the frozen `benchmark/questions.yaml` set (the
   N-change is DEFERRED to its own labeled run). Spec: `benchmark` "Enumerator now yields view-dependency candidates on
   SQLite" + "N and the committed question set are unchanged; prior runs stay frozen". Design §Scope (out-of-scope N-change).
   Done: `npm test benchmark`.
-- [ ] B4.5 GATE (Batch B4 — the RE-BLESS commit): `npx tsc --noEmit` clean; `npm run lint` 0/0; **`npm test` FULL GREEN**
+- [x] B4.5 GATE (Batch B4 — the RE-BLESS commit): `npx tsc --noEmit` clean; `npm run lint` 0/0; **`npm test` FULL GREEN**
   (baseline 3162 + ALL new suites: tokenizer, dependency-edges, capabilities, fires-on-target, normalize, precheck,
   affected, benchmark) with EVERY re-blessed SQLite golden byte-identical on re-run; cross-engine goldens byte-identical
   (HARD STOP on drift); `questions.yaml` data portions byte-stable (only the comment moved); read-only + ADR-004 boundary
@@ -235,7 +235,7 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 > the B4 re-bless commit. Confirms the whole suite, the cross-engine invariant, the read-only boundary, and traces every
 > success criterion. If clean, no new commit; hand off to verify.
 
-- [ ] B5.1 GATE (Batch B5 — FINAL): `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` FULL GREEN
+- [x] B5.1 GATE (Batch B5 — FINAL): `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` FULL GREEN
   (baseline 3162 + all sqlite-view-deps suites) with EVERY golden byte-identical on re-run; cross-engine (pg/mssql/mysql)
   goldens byte-identical; `benchmark/questions.yaml` frozen data untouched (comment-only); target DB read-only + ADR-004
   core/adapter boundary tests green; leak-scan clean across all new files; confirm NOTHING pushed (NO push/PR/gh/tag).
@@ -294,33 +294,33 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 
 ## Definition of Done (tied to the proposal's Success Criteria; 17 spec scenarios across 5 requirements traced)
 
-- [ ] `extractViews` emits `depends_on` edges EXACTLY `main.active_departments → {main.departments, main.employees}` and
+- [x] `extractViews` emits `depends_on` edges EXACTLY `main.active_departments → {main.departments, main.employees}` and
   `main.employee_summary → {main.employees, main.departments}` (src+dst qnames, `confidence:'parsed'`). — Batch B2 (B2.1,
   B2.3) [scenarios: View bodies emit exact depends_on; Edge set is deterministic]
-- [ ] `extractTriggers` emits `writes_to` for the five `trg_emp_* → main.audit_log` + `trg_active_dept_instead_insert →
+- [x] `extractTriggers` emits `writes_to` for the five `trg_emp_* → main.audit_log` + `trg_active_dept_instead_insert →
   main.departments`, with NO spurious `reads_from`/`writes_to` to the fires_on object and NO `reads_from` at all. — Batch B2
   (B2.2, B2.3) [scenarios: Trigger action bodies emit exact writes_to; Trigger header never leaks (negative); No self-edges
   and no phantom edges (negative)]
-- [ ] `trg_active_dept_instead_insert` `fires_on` the VIEW `main.active_departments` (kind `view`) and NO `[table]
+- [x] `trg_active_dept_instead_insert` `fires_on` the VIEW `main.active_departments` (kind `view`) and NO `[table]
   active_departments` phantom stub appears; table-triggers stay byte-identical; the minimal fixture still normalizes to its
   golden. — Batch B3 (B3.1, B3.2, B3.3) [scenarios: Trigger firing on a view resolves to the view node (cross-engine);
   SQLite INSTEAD OF trigger fires on the view, no phantom stub (exact); Minimal fixture normalizes to the golden graph]
-- [ ] `dbgraph_precheck` / `dbgraph affected` `whatToTest` for `departments.dept_id` is EXACTLY the five dependents (2
+- [x] `dbgraph_precheck` / `dbgraph affected` `whatToTest` for `departments.dept_id` is EXACTLY the five dependents (2
   views + 2 FK tables + the INSTEAD OF trigger), each `confidence:'parsed'`; `affected --json` exits 1; the `dbo.orders`
   golden + unmatched + clean-exit-0 regressions stay green. — Batch B4 (B4.3) [scenarios: SQLite column-drop surfaces the
   exact view + trigger dependents; affected includes view + trigger dependents; ALTER + DROP INDEX golden; Non-matchable
   reported as unmatched; affected reports changes and exits 1; clean script exits 0]
-- [ ] `supportsDependencyHints` remains `false` (matching pg/mysql/mongodb); the `capabilities.ts` comment and the
+- [x] `supportsDependencyHints` remains `false` (matching pg/mysql/mongodb); the `capabilities.ts` comment and the
   `benchmark/generate.ts` + `questions.yaml` blindness notes are corrected to state edges are body-derived. — Batch B2
   (B2.4, B2.5) [scenarios: `supportsDependencyHints` stays false, comment corrected; Stale blindness comments corrected]
-- [ ] The `view-dependency` enumerator yields ≥1 candidate (the 2 torture views) on the SQLite substrate where it
+- [x] The `view-dependency` enumerator yields ≥1 candidate (the 2 torture views) on the SQLite substrate where it
   previously yielded ZERO — the family is INSTANTIABLE — WITHOUT bumping N or altering the frozen committed question set
   (N-change deferred). — Batch B4 (B4.4) [scenarios: Enumerator now yields view-dependency candidates on SQLite; N and the
   committed question set are unchanged; prior runs stay frozen]
-- [ ] Every re-blessed SQLite golden (`golden-raw-catalog.json`, `golden-e2e.json`, the enumerated `test/mcp/golden/*`) is
+- [x] Every re-blessed SQLite golden (`golden-raw-catalog.json`, `golden-e2e.json`, the enumerated `test/mcp/golden/*`) is
   committed as ONE DELIBERATE re-bless with a per-golden inventory and is byte-identical on re-run; cross-engine goldens are
   byte-identical; target DB stays strictly READ-ONLY (ADR-004 boundary green). — Batch B4 (B4.1, B4.2, B4.5), Batch B5
   (B5.1) [scenarios: Edge set is deterministic]
-- [ ] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3162 + all new suites)
+- [x] `npx tsc --noEmit` strict clean (NO `any`); `npm run lint` 0/0; `npm test` GREEN (baseline 3162 + all new suites)
   with every golden byte-identical on re-run; leak-scan clean — proven LOCALLY (no CI), nothing pushed. — every batch GATE
   (B1.3, B2.6, B3.4, B4.5, B5.1)
