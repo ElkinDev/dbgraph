@@ -12,11 +12,13 @@
  */
 
 import type { ParsedArgs } from './parse/args.js';
+import { parseDetail } from './parse/detail.js';
 import { runInit } from './commands/init.js';
 import { runSync } from './commands/sync.js';
 import { runStatus } from './commands/status.js';
 import { runQuery } from './commands/query.js';
 import { runExplore } from './commands/explore.js';
+import { runObject } from './commands/object.js';
 import { runDiff } from './commands/diff.js';
 import { runAffected } from './commands/affected.js';
 import { runInstall, realFsSeam } from './commands/install.js';
@@ -197,17 +199,38 @@ async function handleQuery(args: ParsedArgs): Promise<HandlerOutcome> {
  */
 async function handleExplore(args: ParsedArgs): Promise<HandlerOutcome> {
   const qname = args.positionals[0] ?? '';
-  const detailRaw = args.flags['detail'];
-  const detail =
-    detailRaw === 'brief' || detailRaw === 'normal' || detailRaw === 'full'
-      ? detailRaw
-      : 'normal';
+  // Validate --detail up front (design D4): a bogus value throws a ConfigError → exit 2
+  // BEFORE any DB access. No silent coercion to 'normal'.
+  const detail = parseDetail(args.flags['detail']);
   const projectRoot = process.cwd();
   const logger = buildLogger(args);
 
   const { adapter, store } = await openConnections(projectRoot, logger);
   try {
     const result = await runExplore({ store, qname, detail });
+    process.stdout.write(result.output);
+    return { type: 'success' };
+  } finally {
+    await adapter.close();
+    await store.close();
+  }
+}
+
+/**
+ * Resolves qname → node + neighbors → formatObject (explore-payloads D5).
+ * A thin wrapper over runObject — byte-identical to dbgraph_object. NO --json (parity
+ * with the MCP tool). --detail defaults to 'normal' via parseDetail (bogus → ConfigError → exit 2).
+ */
+async function handleObject(args: ParsedArgs): Promise<HandlerOutcome> {
+  const qname = args.positionals[0] ?? '';
+  // Validate --detail up front (design D4): a bogus value throws before any DB access.
+  const detail = parseDetail(args.flags['detail']);
+  const projectRoot = process.cwd();
+  const logger = buildLogger(args);
+
+  const { adapter, store } = await openConnections(projectRoot, logger);
+  try {
+    const result = await runObject({ store, qname, detail });
     process.stdout.write(result.output);
     return { type: 'success' };
   } finally {
@@ -227,11 +250,9 @@ async function handleAffected(args: ParsedArgs): Promise<HandlerOutcome> {
     throw new Error('dbgraph affected: <script.sql> argument is required');
   }
   const json = args.flags['json'] === true;
-  const detailRaw = args.flags['detail'];
-  const detail =
-    detailRaw === 'brief' || detailRaw === 'normal' || detailRaw === 'full'
-      ? detailRaw
-      : 'normal';
+  // Validate --detail up front (design D4): a bogus value throws a ConfigError → exit 2
+  // BEFORE any DB access. No silent coercion to 'normal'.
+  const detail = parseDetail(args.flags['detail']);
   const projectRoot = process.cwd();
   const logger = buildLogger(args);
 
@@ -373,6 +394,7 @@ const COMMAND_TABLE: Readonly<Record<string, CommandHandler>> = {
   status: handleStatus,
   query: handleQuery,
   explore: handleExplore,
+  object: handleObject,
   diff: handleDiff,
   affected: handleAffected,
   install: handleInstall,

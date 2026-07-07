@@ -1,5 +1,5 @@
 IMPACT: main.employees  [table]
 ─────────────────────────────
-  READ impact:   1 chain
+  READ impact:   3 chains
   WRITE impact:  0 chains
 

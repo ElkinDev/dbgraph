@@ -1,6 +1,6 @@
 {
   "name": "@niklerk23/dbgraph",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Database schema graph for AI agents — index your database catalog into a local graph, served over MCP",
   "type": "module",
   "license": "MIT",
@@ -41,6 +41,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ElkinDev/dbgraph.git"
+  },
+  "homepage": "https://github.com/ElkinDev/dbgraph#readme",
+  "bugs": {
+    "url": "https://github.com/ElkinDev/dbgraph/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

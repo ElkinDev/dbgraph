@@ -42,3 +42,25 @@ describe('src/core/index.ts — present/ formatters (Batch A task 1.9)', () => {
     expect(typeof CoreBarrel.formatExplore).toBe('function');
   });
 });
+
+describe('src/core/index.ts — payload renderers (explore-payloads Batch A A.5)', () => {
+  it('exports renderColumns as a function', () => {
+    expect(typeof CoreBarrel.renderColumns).toBe('function');
+  });
+
+  it('exports renderConstraints as a function', () => {
+    expect(typeof CoreBarrel.renderConstraints).toBe('function');
+  });
+
+  it('exports renderIndexes as a function', () => {
+    expect(typeof CoreBarrel.renderIndexes).toBe('function');
+  });
+
+  it('exports renderTriggers as a function', () => {
+    expect(typeof CoreBarrel.renderTriggers).toBe('function');
+  });
+
+  it('exports deriveColumnAnnotations as a function', () => {
+    expect(typeof CoreBarrel.deriveColumnAnnotations).toBe('function');
+  });
+});

@@ -5,10 +5,14 @@ MATCHED OBJECTS
   [table]  main.employees  (confidence: parsed)
 
 READERS
+  [view]  main.active_departments  (confidence: parsed)
   [table]  main.assignments  (confidence: parsed)
+  [view]  main.employee_summary  (confidence: parsed)
 
 WHAT TO TEST
+  - main.active_departments
   - main.assignments
+  - main.employee_summary
 
 UNMATCHED IDENTIFIERS
   idx_emp_dept  (no matching graph node)

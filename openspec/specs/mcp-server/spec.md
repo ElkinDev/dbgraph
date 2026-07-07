@@ -29,21 +29,27 @@ relocated `openConnections`; no `graph-model` or `graph-query` requirement chang
 
 ### Requirement: Compact format pinned by docs/format-spec.md authored first
 
-The repository SHALL ship `docs/format-spec.md` (US-019) authored BEFORE any server code. It MUST define a
-deterministic line grammar — table lines, column lines, edge lines, and inline annotations such as
-`[3 idx, 1 trg!]` — three `detail` levels `brief | normal | full`, the `offset`/`limit`/`hasMore`
-pagination contract, the golden discipline (changing a golden REQUIRES a spec edit plus a token-delta
-justification), and a per-tool/per-`detail` TOKEN BUDGET. Budgets MUST be set EMPIRICALLY by measuring
-actual output on the committed SQLite torture fixture; ceilings are recorded as measured numbers with the
-`ceil(chars/4)` methodology. Every tool's output bytes MUST be produced by a PURE formatter under
-`src/core/present/` (extending/reusing `formatExplore`); no formatter may read `process.env`, the clock,
-randomness, or perform I/O.
+The repository SHALL ship `docs/format-spec.md` (US-019). It MUST define a deterministic line grammar —
+table lines, column lines, edge lines, and inline annotations such as `[3 idx, 1 trg!]` — three `detail`
+levels `brief | normal | full`, the `offset`/`limit`/`hasMore` pagination contract, the golden discipline
+(changing a golden REQUIRES a spec edit plus a token-delta justification), and a per-tool/per-`detail`
+TOKEN BUDGET. The grammar MUST NOW ALSO cover the explore per-kind PAYLOAD lines (column
+type/nullability/default, constraint kind + ordered columns + FK target mapping, index unique/columns,
+trigger timing/events) that `formatExplore` renders via the shared helper. Budgets MUST be set
+EMPIRICALLY by measuring ACTUAL output on the committed SQLite torture fixture; ceilings are recorded as
+measured numbers with the `ceil(chars/4)` methodology. Because explore now emits payload lines, the
+explore per-detail ceilings MUST be RE-MEASURED and updated with a token-delta note; the ceiling POLICY
+and methodology are UNCHANGED (measured numbers, spec-edit-plus-token-delta on every golden change). Every
+tool's output bytes MUST be produced by a PURE formatter under `src/core/present/`; no formatter may read
+`process.env`, the clock, randomness, or perform I/O.
+(Previously: the grammar and per-detail budgets covered only the neighbor-listing explore output; explore
+rendered no per-kind payload lines, so its ceilings were measured without them.)
 
 #### Scenario: Format spec exists with grammar, levels and budget methodology
 
-- GIVEN the repository before the server is built
+- GIVEN the repository
 - WHEN `docs/format-spec.md` is inspected
-- THEN it defines the line grammar (table/column/edge + annotations like `[3 idx, 1 trg!]`), the `brief|normal|full` levels, and the `offset`/`limit`/`hasMore` pagination contract
+- THEN it defines the line grammar (table/column/edge + annotations like `[3 idx, 1 trg!]` AND the explore payload lines), the `brief|normal|full` levels, and the `offset`/`limit`/`hasMore` pagination contract
 - AND each per-tool/per-`detail` token ceiling is a measured number with its methodology
 
 #### Scenario: Output is produced by a pure formatter and is byte-identical on re-run
@@ -59,6 +65,13 @@ randomness, or perform I/O.
 - WHEN it is rendered at `detail: brief`
 - THEN the output does not exceed the format-spec brief budget for that tool
 
+#### Scenario: Explore payload ceilings are re-measured and re-asserted
+
+- GIVEN explore now renders per-kind payload lines at `normal` and `full`
+- WHEN the explore output is measured on the torture fixture
+- THEN the `docs/format-spec.md` explore `normal`/`full` ceilings are updated to the RE-MEASURED numbers with a token-delta note
+- AND the budget assertion test re-asserts the updated ceilings and passes
+
 ### Requirement: Pagination via offset, limit and hasMore
 
 Tools returning a list (notably `dbgraph_search`, and any tool whose result can exceed its budget) SHALL
@@ -72,12 +85,54 @@ when results beyond the returned page remain, `false` otherwise. Cursor-based pa
 - THEN the first page returns `limit` items and `hasMore: true`
 - AND calling again with `offset` advanced returns the next page and eventually `hasMore: false`
 
+### Requirement: One shared payload-render helper backs explore and object
+
+A SINGLE pure module (`src/core/present/payload.ts`, core-types-only, deterministic — ADR-004/ADR-008)
+SHALL render the per-kind node payload — column dataType/nullability/default; constraint kind + ORDERED
+columns + FK target mapping; index unique/columns; trigger timing/events; module body — and MUST be the
+ONLY source of those section bytes consumed by BOTH `formatExplore` and `formatObject`. There MUST be no
+duplicated per-kind rendering logic and no drift: for the SAME node, the payload section bytes rendered
+inside `explore` MUST be byte-identical to those rendered inside `object`. The FK target mapping MUST
+render the constraint payload target when present, else RECONSTRUCT the table-level target from the node's
+`references` edges when unambiguous, else render the FK columns without a target — never guessed (design
+D8), applied identically to both surfaces. The EXTRACTION of the existing per-kind logic into the helper
+MUST be behavior-preserving — refactoring `formatObject` onto the helper alone MUST keep the existing
+object goldens byte-identical (no re-bless). The SEPARATE FK-reconstruction feature MAY change object
+output ONLY where a payload-less FK gains a reconstructed target; that change is a DELIBERATE, §6-noted
+re-bless of ONLY the affected FK lines, applied to `object` and `explore` together (they share the source).
+
+#### Scenario: object goldens are byte-identical after the refactor step (transparency)
+
+- GIVEN the object × detail goldens (`test/mcp/golden/object-tool-*.txt`, `test/core/present/golden/object-*.txt`) captured BEFORE this change
+- WHEN `formatObject` is refactored onto the shared helper (extraction only, before the D8 FK-reconstruction feature)
+- THEN every object golden is byte-identical to before — NO re-bless — e.g. `object-tool-full.txt` still renders `  salary  REAL  [NN]  DEFAULT 0.0` and `  [PK]  pk_employees  (emp_id)`
+
+#### Scenario: the FK-reconstruction feature re-blesses ONLY the FK lines, in object and explore together
+
+- GIVEN the D8 FK-reconstruction feature and the torture `main.employees` (payload-less FK, unambiguous `references` edge to `main.departments`)
+- WHEN `object-tool-{normal,full}.txt` is re-captured
+- THEN ONLY the FK lines change — the column line becomes `  dept_id  INTEGER  [FK→main.departments]  [NN]` and the constraint line becomes `  [FK]  fk_employees_0  (dept_id → main.departments)` — and every non-FK line (e.g. `  salary  REAL  [NN]  DEFAULT 0.0`, `  [PK]  pk_employees  (emp_id)`) stays byte-identical
+- AND the SAME reconstruction re-blesses the explore goldens (shared source), with a matching `docs/format-spec.md` token-delta note (§6)
+
+#### Scenario: explore and object render identical section bytes for the same node
+
+- GIVEN the torture node `main.employees`
+- WHEN its COLUMNS/CONSTRAINTS/INDEXES/TRIGGERS sections are rendered inside `explore` and inside `object`
+- THEN the two renderings are byte-identical, produced by the ONE shared helper (no per-surface branch)
+
 ### Requirement: dbgraph_explore returns a compact neighborhood or a disambiguation list
 
 `dbgraph_explore` SHALL accept `{ target: string, detail?: 'brief'|'normal'|'full' }` (US-010), wrap
 `getNeighbors` + `formatExplore` (the CLI `runExplore` precedent), and return the pivot node with grouped
-inbound/outbound neighbors in compact format at the requested `detail`. When the target matches several
-entities it MUST return the disambiguation candidate list and MUST NOT guess one.
+inbound/outbound neighbors in compact format at the requested `detail`. In ADDITION it MUST render the
+pivot node's per-kind PAYLOAD via the shared payload-render helper — columns with types, ordered
+PK/constraints, indexes, trigger timing/events — GATED by detail identically to `dbgraph_object`
+(`brief` = counts only; `normal` = +columns+constraints; `full` = +indexes+triggers+body). Because CLI
+`explore` and this tool share the SAME `formatExplore`, their output for a given graph/target/detail MUST
+be BYTE-IDENTICAL. When the target matches several entities it MUST return the disambiguation candidate
+list and MUST NOT guess one.
+(Previously: `dbgraph_explore` rendered only grouped neighbor qnames — no column types, PK ordering, FK
+mapping or trigger timing — reading payload solely for the full-level `hasDynamicSql` warning.)
 
 #### Scenario: Explore returns the compact neighborhood (golden)
 
@@ -91,6 +146,13 @@ entities it MUST return the disambiguation candidate list and MUST NOT guess one
 - GIVEN a target name matching entities in more than one schema
 - WHEN `dbgraph_explore` runs
 - THEN it returns the candidate qualified names and does not pick one
+
+#### Scenario: Explore payload matches the CLI byte-for-byte
+
+- GIVEN the torture fixture, `main.employees`, and detail `normal`
+- WHEN `dbgraph_explore({ target: "main.employees", detail: "normal" })` and CLI `dbgraph explore main.employees --detail normal` both run
+- THEN both emit byte-identical text, including the COLUMNS lines `  emp_id  INTEGER  [PK]` and `  salary  REAL  [NN]  DEFAULT 0.0`
+- AND the explore goldens are re-blessed DELIBERATELY with a matching `docs/format-spec.md` edit + token-delta note
 
 ### Requirement: dbgraph_search returns ranked paginated hits
 
@@ -202,9 +264,12 @@ neighbors of each endpoint by QUALIFIED NAME (not raw node IDs).
 that extracts qualified identifiers from the DDL via the conservative regex tokenizer (reusing the MSSQL
 `tokenizer.ts` pattern), matches them against the graph via `search`/`getNodeByQName`, and AGGREGATES
 `getImpact` across all statements (deduplicated) into sections: triggers firing on the affected objects,
-who writes/reads them, constraints/indexes involved, and what-to-test derived from the edges. Every
-parse-derived item MUST be tagged `confidence: 'parsed'`. Identifiers that match no graph node MUST be
-reported as unmatched, never guessed. `node-sql-parser` is out of scope.
+who writes/reads them, constraints/indexes involved, and what-to-test derived from the edges. Because
+impact traversal follows inbound `writes_to`/`reads_from`/`depends_on`/`references` edges, the
+aggregation MUST surface view and trigger dependents on EVERY engine that emits those edges — including
+SQLite. Every parse-derived item MUST be tagged `confidence: 'parsed'`. Identifiers that match no graph
+node MUST be reported as unmatched, never guessed. `node-sql-parser` is out of scope.
+(Previously: on SQLite the aggregation was view/trigger-blind — the adapter emitted no `depends_on`/`writes_to` edges for views/triggers, so a `departments` column-drop surfaced only the FK-linked `employees`/`assignments` and MISSED the dependent views and the INSTEAD OF trigger.)
 
 #### Scenario: ALTER + DROP INDEX DDL returns the aggregated, deduped precheck (golden)
 
@@ -219,6 +284,14 @@ reported as unmatched, never guessed. `node-sql-parser` is out of scope.
 - GIVEN a DDL referencing an identifier with no corresponding graph node
 - WHEN `dbgraph_precheck` runs
 - THEN that identifier is reported as unmatched and no impact is fabricated for it
+
+#### Scenario: SQLite column-drop surfaces the exact view + trigger dependents
+
+- GIVEN the SQLite torture graph and a DDL dropping `departments.dept_id` (e.g. `ALTER TABLE departments DROP COLUMN dept_id`)
+- WHEN `dbgraph_precheck({ ddl })` runs over that graph
+- THEN `whatToTest` is EXACTLY `{main.active_departments, main.assignments, main.employee_summary, main.employees, main.trg_active_dept_instead_insert}`
+- AND `main.active_departments` and `main.employee_summary` appear in the READERS section (inbound `depends_on`), and `main.employees`/`main.assignments` remain there (inbound FK `references`)
+- AND `main.trg_active_dept_instead_insert` appears in the TRIGGERS section (inbound `writes_to`), with every item tagged `confidence: 'parsed'`
 
 ### Requirement: dbgraph_status reports index trust and live drift
 
@@ -241,13 +314,21 @@ MUST say so and report local state only.
 - WHEN `dbgraph_status` runs
 - THEN it runs the live fingerprint and reports drift detected: yes
 
-### Requirement: stdio server with static initialize instructions
+### Requirement: Transport-selectable server with static initialize instructions
 
-The server SHALL start as an `@modelcontextprotocol/sdk` stdio transport entry (`src/mcp/server.ts`,
-`#!/usr/bin/env node`) registering the 8 tools. Its `initialize` response MUST surface usage guidance from
-a STATIC, golden-tested string in `src/mcp/instructions.ts` (US-018): when to use explore vs search vs
-object, and the recommended pre-change flow (status → explore → precheck). Each tool description MUST
-carry exactly ONE example call. There MUST be zero user-maintained instruction files.
+The server SHALL start as an `@modelcontextprotocol/sdk` server (`src/mcp/server.ts`,
+`#!/usr/bin/env node`) registering the 8 tools, with a SELECTABLE transport: STDIO is the DEFAULT
+(`startMcpServer()` → `StdioServerTransport`) and Streamable HTTP is an OPT-IN alternative
+(`startHttpMcpServer()`, see `mcp-http-transport`). The `createDbgraphServer()` factory, the 8-tool
+table, and the static `initialize` instructions MUST be reused UNCHANGED across BOTH transports. Its
+`initialize` response MUST surface usage guidance from a STATIC, golden-tested string in
+`src/mcp/instructions.ts` (US-018): when to use explore vs search vs object, and the recommended
+pre-change flow (status → explore → precheck). Each tool description MUST carry exactly ONE example
+call. There MUST be zero user-maintained instruction files. With the HTTP mode ABSENT, the STDIO path
+MUST stay BYTE-IDENTICAL to today through BOTH MCP entry seams — the SEA `dbgraph mcp` route
+(`sea-entry.planEntry` dispatching `startMcpServer()`) AND the npm `dbgraph-mcp` bin auto-run guard —
+producing no new output and taking no new branch off the flag.
+(Previously: the server started ONLY as a stdio transport entry; there was no transport selection and no HTTP launcher.)
 
 #### Scenario: initialize returns the static golden instructions
 
@@ -255,6 +336,20 @@ carry exactly ONE example call. There MUST be zero user-maintained instruction f
 - WHEN it sends `initialize`
 - THEN the response includes the static guidance string (explore-vs-search-vs-object + status→explore→precheck flow) matching its golden
 - AND each registered tool description carries exactly one example call
+
+#### Scenario: Bare mcp stays byte-identical STDIO across both entry seams
+
+- GIVEN the HTTP mode is absent (bare `dbgraph mcp` / npm `dbgraph-mcp`)
+- WHEN the server starts through the SEA `planEntry` route AND through the npm bin auto-run guard
+- THEN each starts `startMcpServer()` over `StdioServerTransport` with no new output and no HTTP listener
+- AND the STDIO behavior is byte-identical to before this change (regression-pinned)
+
+#### Scenario: Both transports serve the identical 8-tool surface from one factory
+
+- GIVEN the STDIO transport and the HTTP transport
+- WHEN each is connected to a `Server` built by `createDbgraphServer()`
+- THEN both expose the same 8 tools with the same descriptions and `initialize` instructions
+- AND no transport-specific tool rendering exists (formatters are shared, ADR-008)
 
 ### Requirement: dbgraph install idempotently wires the agent MCP config
 
@@ -445,6 +540,13 @@ objects (a non-zero "changes detected" signal) and 0 when nothing is affected.
 - WHEN `dbgraph affected script.sql --json` runs
 - THEN it prints the aggregated precheck as JSON with parsed-confidence tags and exits with code 1
 - AND a script affecting nothing exits with code 0
+
+#### Scenario: affected on a SQLite departments column-drop includes view + trigger dependents
+
+- GIVEN a SQLite graph over the torture fixture and a `.sql` script dropping `departments.dept_id`
+- WHEN `dbgraph affected script.sql --json` runs
+- THEN its `whatToTest` includes `main.active_departments`, `main.employee_summary` and `main.trg_active_dept_instead_insert` (inherited from the shared engine), alongside `main.employees` and `main.assignments`
+- AND it exits with code 1 (changes detected)
 
 ### Requirement: src/mcp boundary and openConnections relocation
 

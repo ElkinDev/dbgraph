@@ -82,6 +82,48 @@ export function resolveOrStub(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Trigger fires_on target resolution by ACTUAL node kind (Design D4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Resolves a trigger `fires_on` target to the ACTUAL existing node kind instead of a
+ * hardcoded `table` stub. Probes `nodeMap` across `['table', 'view']` for an existing REAL
+ * (non-missing, non-excluded) node:
+ *   1. a real TABLE with this qname → returned as-is. This keeps table-firing triggers
+ *      byte-identical (same resolved node → same `fires_on` edge id) across ALL engines,
+ *      which is why the cross-engine blast radius is EMPTY (pg/mssql/mysql fire on tables).
+ *   2. else a real VIEW with this qname → returned. This kills the phantom `missing:true`
+ *      `[table]` stub previously minted for a trigger defined on a view (e.g. the SQLite
+ *      INSTEAD OF trigger on `active_departments`).
+ *   3. else → `resolveOrStub('table', …)`, preserving the current missing/excluded-stub
+ *      semantics exactly (a genuinely absent target still becomes a `missing:true` table stub).
+ *
+ * Table is probed BEFORE view so a real table always wins — we never "try view first"
+ * (which would mint a phantom VIEW stub for a real table). Shared by every engine.
+ */
+export function resolveTriggerTarget(
+  targetSchema: string | null,
+  targetName: string,
+  nodeMap: NodeMap,
+  excludedQNames: ReadonlySet<string>,
+  referencedById: string,
+): ResolveResult {
+  const qname = canonicalQName(targetSchema, targetName);
+
+  const tableNode = nodeMap.get(nodeMapKey('table', qname));
+  if (tableNode !== undefined && !tableNode.missing && !tableNode.excluded) {
+    return { node: tableNode, isStub: false };
+  }
+
+  const viewNode = nodeMap.get(nodeMapKey('view', qname));
+  if (viewNode !== undefined && !viewNode.missing && !viewNode.excluded) {
+    return { node: viewNode, isStub: false };
+  }
+
+  return resolveOrStub('table', targetSchema, targetName, nodeMap, excludedQNames, referencedById);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FK constraint → references edges (design §5.2)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -189,8 +231,8 @@ export function buildFiresOnEdges(
   const stubs: StubInfo[] = [];
   const edges: GraphEdge[] = [];
 
-  const targetResult = resolveOrStub(
-    'table',
+  // Resolve to the ACTUAL node kind (view OR table), not a hardcoded table stub (D4).
+  const targetResult = resolveTriggerTarget(
     trigger.table.schema,
     trigger.table.name,
     nodeMap,

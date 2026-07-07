@@ -23,6 +23,7 @@ let tmpDir: string;
 let affectedSqlPath: string;
 let emptyDdlPath: string;
 let unmatchedDdlPath: string;
+let deptDropSqlPath: string;
 
 beforeAll(async () => {
   fx = await openFixtureStore();
@@ -43,6 +44,10 @@ beforeAll(async () => {
   // SQL with only unmatched identifiers (no impact)
   unmatchedDdlPath = join(tmpDir, 'unmatched.sql');
   writeFileSync(unmatchedDdlPath, 'ALTER TABLE completely_nonexistent_table ADD COLUMN x INT;', 'utf-8');
+
+  // sqlite-view-deps (B4.3): SQLite column-drop that surfaces view + trigger dependents.
+  deptDropSqlPath = join(tmpDir, 'dept-drop.sql');
+  writeFileSync(deptDropSqlPath, 'ALTER TABLE main.departments DROP COLUMN dept_id;', 'utf-8');
 });
 
 afterAll(async () => {
@@ -126,6 +131,48 @@ describe('runAffected — --json mode', () => {
     const r1 = await runAffected({ store: fx.store, sqlFile: affectedSqlPath, json: true });
     const r2 = await runAffected({ store: fx.store, sqlFile: affectedSqlPath, json: true });
     expect(r1.output).toBe(r2.output);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suite: SQLite column-drop surfaces view + trigger dependents (L-009, B4.3)
+//
+// Spec `mcp-server` "affected on a SQLite departments column-drop includes view +
+// trigger dependents". The CLI is a thin wrapper over the SAME precheck engine, so
+// it inherits the exact whatToTest set. EXACT-set assertion via the --json payload.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('runAffected — SQLite departments column-drop (view + trigger dependents)', () => {
+  it('exits 1 (changes detected) for the departments.dept_id drop', async () => {
+    const result = await runAffected({ store: fx.store, sqlFile: deptDropSqlPath });
+    expect(result.type).toBe('negative');
+  });
+
+  it('--json whatToTest is EXACTLY the 2 views + 2 FK tables + the INSTEAD OF trigger', async () => {
+    const result = await runAffected({ store: fx.store, sqlFile: deptDropSqlPath, json: true });
+    const parsed = JSON.parse(result.output) as {
+      impact: { whatToTest: string[]; readers: Array<{ qname: string; confidence: string }> };
+    };
+    expect(parsed.impact.whatToTest).toStrictEqual([
+      'main.active_departments',
+      'main.assignments',
+      'main.employee_summary',
+      'main.employees',
+      'main.trg_active_dept_instead_insert',
+    ]);
+  });
+
+  it('--json readers carry confidence:parsed and include both dependent views', async () => {
+    const result = await runAffected({ store: fx.store, sqlFile: deptDropSqlPath, json: true });
+    const parsed = JSON.parse(result.output) as {
+      impact: { readers: Array<{ qname: string; kind: string; confidence: string }> };
+    };
+    expect(parsed.impact.readers).toContainEqual(
+      { qname: 'main.active_departments', kind: 'view', confidence: 'parsed' },
+    );
+    expect(parsed.impact.readers).toContainEqual(
+      { qname: 'main.employee_summary', kind: 'view', confidence: 'parsed' },
+    );
   });
 });
 

@@ -208,3 +208,141 @@ trigger, require, or depend on a WITH/WITHOUT execution.
 - GIVEN the test suite definitions
 - WHEN they are inspected
 - THEN NO vitest test invokes the WITH/WITHOUT protocol, spawns an agent run, or reads `benchmark/runs/` transcripts
+
+### Requirement: Multiple runs are reported as code-version-labeled tables on the frozen protocol
+
+`docs/benchmarks.md` MAY carry MORE THAN ONE results table. Each table MUST be LABELED with the exact
+dbgraph code version / run-id it was produced under (e.g. `torture-2026-07-06`,
+`explore-payloads-2026-MM-DD`) so runs are never conflated and no reader mistakes one run's numbers for
+another's. Every additional run MUST use the FROZEN methodology UNCHANGED: the SAME pre-registered
+question set and separately-held ground-truth key, the SAME deterministic blind scorer, the SAME single
+token-accounting boundary, and the SAME WITH tool surface of EXACTLY the four commands `query`,
+`explore`, `affected`, `status` (each with `--json`). A re-run MUST NOT add, remove, or alter any command,
+question, or scoring rule. Results MUST be reported HONESTLY per the standing contract: whatever the
+numbers show — INCLUDING no improvement or a REGRESSION versus the first run — is reported, scoped to
+"on this fixture, this question set, this model", with NO suppression and NO extrapolation.
+
+#### Scenario: A second results table is labeled with its code version
+
+- GIVEN a re-run of the frozen harness after the explore-payloads change
+- WHEN `docs/benchmarks.md` is updated
+- THEN it gains a SECOND results table LABELED with its code version / run-id, leaving the first table intact
+- AND both tables carry per-question outcomes and per-condition token totals
+
+#### Scenario: The re-run's WITH surface is the unchanged four commands
+
+- GIVEN the explore-payloads re-run's WITH condition
+- WHEN its permitted tool surface is inspected
+- THEN it grants EXACTLY `query`, `explore`, `affected`, `status` (with `--json`) — byte-identical to the first run's protocol, with no command added, removed, or altered
+
+#### Scenario: An unfavorable second run is reported, not suppressed
+
+- GIVEN a re-run in which dbgraph scores no better, or worse, than the first run
+- WHEN the report is written
+- THEN the second table reports those per-question outcomes faithfully, scoped to this fixture/question-set/model, with no extrapolation
+- AND omitting or softening the unfavorable result is a SPEC VIOLATION
+
+### Requirement: view-dependency family is instantiable; the N-change is deferred to its own run
+
+Once SQLite view bodies emit `depends_on` edges, the `view-dependency` question family enumerated in
+`benchmark/generate.ts` (from `getEdgesFrom(view, ['depends_on','reads_from'])`) SHALL yield candidates
+on the SQLite substrate where it previously yielded ZERO. This change SHALL NOT bump N, regenerate or
+re-freeze the committed `benchmark/questions.yaml`, add a `benchmark/runs/` transcript, or re-derive any
+mechanical ground-truth key. Any N change (5→6) and any re-run against the NEW `affected`-derived
+mechanical key MUST land as its OWN labeled run under the frozen methodology; Runs 1 and 2 (N=5) MUST
+remain frozen and labeled with their N. Stale `supportsDependencyHints`-blindness comments in
+`benchmark/generate.ts` and `benchmark/questions.yaml` SHALL be corrected to state that dependency edges
+are body-derived (the flag denotes cheap catalog hints, which SQLite lacks).
+
+#### Scenario: Enumerator now yields view-dependency candidates on SQLite
+
+- GIVEN the SQLite substrate built from `test/fixtures/sqlite/torture.sql` after this change
+- WHEN `benchmark/generate.ts` enumerates the `view-dependency` family via `getEdgesFrom(view, ['depends_on','reads_from'])`
+- THEN it yields at least one candidate (the family is instantiable) where it previously yielded ZERO
+
+#### Scenario: N and the committed question set are unchanged; prior runs stay frozen
+
+- GIVEN the committed `benchmark/questions.yaml` and the existing Run 1 / Run 2 tables (N=5)
+- WHEN this change lands
+- THEN N is NOT bumped, no question is added/removed/altered, no new run is recorded, and the Run 1 / Run 2 tables remain frozen and labeled with N=5
+
+#### Scenario: Stale blindness comments corrected
+
+- GIVEN the `supportsDependencyHints`-blindness comments in `benchmark/generate.ts` and `benchmark/questions.yaml`
+- WHEN they are inspected after this change
+- THEN they state that SQLite dependency edges are body-derived and NO LONGER assert that SQLite views/triggers carry no dependency edges
+
+### Requirement: WITHOUT-dump coverage is machine-asserted at build time
+
+`benchmark/build-packets.ts` MUST, BEFORE writing any packet, derive each question's target object
+identifiers from its family-typed ground truth and ASSERT each identifier appears in the generated
+WITHOUT DDL dump. A miss MUST abort with exit code 1. This turns the existing "WITHOUT dump is fair,
+from the same source of truth" scenario into a build-time MACHINE guarantee rather than a prose
+expectation. The failure output MUST name the missing OBJECT and the qid, and MUST NOT contain any
+ground-truth key VALUE — a bare schema OBJECT identifier is safe (it already appears un-redacted in
+the dump), whereas a COMPOSED answer value (e.g. a full FK path) is NOT.
+
+#### Scenario: Correct dump covers every target — build succeeds
+
+- GIVEN a WITHOUT DDL dump generated from the SAME source of truth that built the graph
+- WHEN `build-packets.ts` runs the coverage assertion for every question
+- THEN every derived target identifier is found in the dump, and packets are written with exit 0
+
+#### Scenario: Wrong-DB dump missing a target — LOUD exit 1
+
+- GIVEN a WITHOUT dump (e.g. from the wrong database) that omits a question's target object
+- WHEN `build-packets.ts` runs the coverage assertion
+- THEN it aborts with exit code 1, naming the missing OBJECT identifier and the offending qid
+
+#### Scenario: Targets derived per family by pinned rule
+
+- GIVEN each question's family-typed ground truth and its qid
+- WHEN target identifiers are derived
+- THEN they come from these fields ONLY:
+
+| Family | Target identifier source |
+|--------|--------------------------|
+| fk-path | ground-truth `fromTable` and `toTable` |
+| trigger-inventory | ground-truth `triggerQname` |
+| impact | ground-truth `whatToTest` |
+| column-type / constraint-semantics | the table encoded in the `qid` |
+
+#### Scenario: Failure output leaks no key VALUE
+
+- GIVEN a coverage miss for a family whose ground-truth key is a COMPOSED value (e.g. an FK path)
+- WHEN the failure message is emitted
+- THEN it contains ONLY the bare missing schema OBJECT identifier and the qid — NEVER the composed key value or the full ground-truth answer
+
+### Requirement: No-leak audit trail is self-contained in scored artifacts
+
+`benchmark/score.ts` MUST join `packets/manifest.json` at scoring time and STAMP the authoritative
+`promptSha256` per `(qid, condition)` into `scored/per-question.json`, so the no-leak audit trail is
+self-contained in the scored artifacts and needs NO separate-file cross-reference. A raw run record
+whose NON-EMPTY `promptSha256` MISMATCHES the manifest MUST fail scoring loudly (non-zero exit); an
+EMPTY raw hash MUST be stamped from the manifest. HONESTY: the stamped field attests ONLY the FROZEN
+PACKET content that the manifest hashes (the no-leak-checked packet) — it MUST NOT be represented as
+proof of what the agent saw at RUNTIME. The stamp MUST be ADDITIVE.
+
+#### Scenario: Scored output carries the manifest hash for both conditions
+
+- GIVEN a completed run with raw records for the WITH and the WITHOUT conditions
+- WHEN `score.ts` produces `scored/per-question.json`
+- THEN each `(qid, condition)` entry carries a `promptSha256` equal to the manifest's hash for that packet
+
+#### Scenario: Non-empty mismatching hash fails loudly
+
+- GIVEN a raw record whose `promptSha256` is non-empty but does NOT equal the manifest hash for its `(qid, condition)`
+- WHEN `score.ts` runs
+- THEN scoring FAILS loudly with a non-zero exit and emits no scored file for that run
+
+#### Scenario: Empty raw hash is stamped from manifest with honest attestation
+
+- GIVEN a raw record with an EMPTY `promptSha256`
+- WHEN `score.ts` stamps `scored/per-question.json`
+- THEN the field is populated from `manifest.json` AND is attested as the FROZEN PACKET hash — NOT as a claim about the runtime prompt the agent actually received
+
+#### Scenario: Stamp is additive — valid-run outcomes byte-identical (HARD guard)
+
+- GIVEN a valid run (all raw hashes empty or matching the manifest)
+- WHEN scoring runs with this change versus the pre-change scorer
+- THEN accuracy and token-total outcomes, and the frozen protocol, are BYTE-IDENTICAL; the `promptSha256` field is purely ADDITIVE

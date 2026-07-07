@@ -58,13 +58,18 @@ async function resolveNode(
     }
   }
 
-  if (matches.length === 0) {
+  // Prefer a REAL node over a phantom stub minted for the same qname (design D3),
+  // so a view targeted by an INSTEAD OF trigger resolves to the view, not the stub.
+  const real = matches.filter((n) => !n.missing);
+  const effective = real.length > 0 ? real : matches;
+
+  if (effective.length === 0) {
     return { notFound: true };
   }
-  if (matches.length === 1 && matches[0] !== undefined) {
-    return { node: matches[0] };
+  if (effective.length === 1 && effective[0] !== undefined) {
+    return { node: effective[0] };
   }
-  return { candidates: matches };
+  return { candidates: effective };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

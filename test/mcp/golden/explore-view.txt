@@ -1,0 +1,12 @@
+main.active_departments  [view]
+───────────────────────────────
+
+  depends_on
+    out:
+      → main.departments  [table]
+      → main.employees  [table]
+
+  fires_on
+    in:
+      ← main.trg_active_dept_instead_insert  [trigger]
+

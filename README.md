@@ -227,6 +227,28 @@ native env syntax — reference variables, never inline a credential:
 If no agent config is detected, `dbgraph install` prints a manual snippet for all six
 formats and exits successfully.
 
+### Serve over HTTP
+
+`dbgraph mcp` speaks **stdio** by default. Add `--http` to serve the same read-only
+8-tool surface over **Streamable HTTP** from one host, for several remote agents:
+
+```bash
+dbgraph mcp --http                 # endpoint at http://127.0.0.1:7423/mcp (loopback default)
+dbgraph mcp --http --host 0.0.0.0  # bind all interfaces — prints a no-auth warning
+```
+
+**No authentication ships in v1** and the default bind is loopback (`127.0.0.1`) — that
+loopback default is the primary containment. For any non-loopback exposure, front the
+endpoint with a reverse proxy (TLS + auth) or network controls. HTTP mode adds no write
+path and diagnostics stay content-free.
+
+HTTP client config is **not** auto-wired (`dbgraph install` wires the stdio entry only) —
+add the server by hand. Two shapes bite if copied across agents: **Gemini CLI** needs
+`httpUrl` (a plain `url` silently selects deprecated SSE), and **Cursor** takes **no**
+`type` field (it is inferred from the `url`). The verified 6/6 per-agent matrix, the
+reverse-proxy model, and the pinned `--host 0.0.0.0` warning are in
+[`docs/mcp-http.md`](docs/mcp-http.md).
+
 ## Troubleshooting
 
 Run `dbgraph doctor` first — it prints a **content-free** capability report (engine,

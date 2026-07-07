@@ -158,3 +158,61 @@ describe('dbgraph_explore — not found', () => {
     expect(text).toContain('xyzzy_nonexistent_table_abc');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D3 — [view] resolution fix (explore-payloads B.5). The torture INSTEAD OF
+// trigger mints a phantom `table` stub for active_departments; resolveNode must
+// prefer the real view and NOT report the qname as ambiguous.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('dbgraph_explore — D3 [view] resolution (explore-payloads B.5)', () => {
+  it('resolves main.active_departments to the VIEW (not the phantom table stub, not ambiguous)', async () => {
+    const text = await harness.callTool('dbgraph_explore', { target: 'main.active_departments' });
+    expect(text).toContain('main.active_departments  [view]');
+    // The PIVOT must resolve to the view, never the phantom `[table]` stub. Neighbor
+    // tables surfaced by the new view `depends_on` edges (main.departments/main.employees
+    // as `[table]`) are legitimate, so the negative is scoped to the pivot qname only.
+    expect(text).not.toContain('main.active_departments  [table]');
+    expect(text).not.toContain('Ambiguous');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dedicated VIEW-focus golden (explore-payloads B.6, ruling 5): pins BOTH the D3
+// [view] resolution fix and the payload rendering for main.active_departments.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('dbgraph_explore — view focus golden (explore-payloads B.6)', () => {
+  it('explore main.active_departments (normal) matches the view golden — header [view] + payload', async () => {
+    const text = await harness.callTool('dbgraph_explore', { target: 'main.active_departments', detail: 'normal' });
+    expect(text).toContain('main.active_departments  [view]');
+
+    if (CAPTURE) {
+      captureGolden('explore-view.txt', text);
+      return;
+    }
+    expect(text).toBe(readGolden('explore-view.txt'));
+  });
+
+  it('explore main.active_departments (normal) is byte-identical on re-run (ADR-008)', async () => {
+    if (CAPTURE) return;
+    const run1 = await harness.callTool('dbgraph_explore', { target: 'main.active_departments', detail: 'normal' });
+    const run2 = await harness.callTool('dbgraph_explore', { target: 'main.active_departments', detail: 'normal' });
+    expect(run1).toBe(run2);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D8 — composite FK reconstruction pinned in explore for main.assignments, from
+// the REAL built torture graph (explore-payloads B.7). Byte-identical to object.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('dbgraph_explore — main.assignments composite FK reconstruction (explore-payloads B.7)', () => {
+  it('reconstructs the composite FK target and preserves declared PK order', async () => {
+    const text = await harness.callTool('dbgraph_explore', { target: 'main.assignments', detail: 'normal' });
+    expect(text).toContain('  emp_id  INTEGER  [PK]  [FK→main.employees]');
+    expect(text).toContain('  dept_id  INTEGER  [PK]  [FK→main.employees]');
+    expect(text).toContain('  [FK]  fk_assignments_0  (emp_id, dept_id → main.employees)');
+    expect(text).toContain('  [PK]  pk_assignments  (project_id, emp_id, dept_id)');
+  });
+});

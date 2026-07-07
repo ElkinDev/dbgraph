@@ -18,6 +18,14 @@
 
 import type { GraphNode } from '../model/node.js';
 import type { NeighborGroups } from '../ports/graph-store.js';
+import {
+  deriveColumnAnnotations,
+  renderColumns,
+  renderConstraints,
+  renderIndexes,
+  renderTriggers,
+  renderFocusPayload,
+} from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: deduplicate neighbor entries by qname at display grain.
@@ -35,6 +43,18 @@ function uniqueByQname(entries: readonly { node: GraphNode }[]): { node: GraphNo
     }
   }
   return result;
+}
+
+/**
+ * Appends a payload section to `lines`, preceded by the inter-section blank
+ * separator — matching formatObject's cadence so the section bytes are identical.
+ * A section renderer that returns [] pushes nothing (no stray blank).
+ */
+function pushSection(lines: string[], section: readonly string[]): void {
+  if (section.length > 0) {
+    lines.push('');
+    lines.push(...section);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,11 +89,35 @@ export interface ExploreView {
 export function formatExplore(view: ExploreView, detail: ExploreDetail): string {
   const lines: string[] = [];
 
-  // ── Header (all levels) ───────────────────────────────────────────────────
+  // ── Header (all levels) — labels the focus node with its ACTUAL kind ───────
+  // (a view renders [view], never [table]; the resolution layer, not this formatter,
+  //  guarantees the real node is passed here — design D3.)
   lines.push(`${view.node.qname}  [${view.node.kind}]`);
   lines.push('─'.repeat(Math.min(60, view.node.qname.length + view.node.kind.length + 4)));
 
-  // ── Neighbor summary ──────────────────────────────────────────────────────
+  // ── Focus PAYLOAD sections (normal + full) via the shared helper ───────────
+  // Detail-gated identically to formatObject; brief carries NO payload (design D2).
+  // A table/view focus renders the SAME sections object renders (byte-identical);
+  // a column/constraint/index/trigger focus renders its own per-kind line(s).
+  if (detail !== 'brief') {
+    const isContainer = view.node.kind === 'table' || view.node.kind === 'view';
+    if (isContainer) {
+      const columns = view.neighbors['has_column']?.out ?? [];
+      const constraints = view.neighbors['has_constraint']?.out ?? [];
+      const references = view.neighbors['references']?.out ?? [];
+      const annots = deriveColumnAnnotations(constraints, references);
+      pushSection(lines, renderColumns(columns, annots));
+      pushSection(lines, renderConstraints(constraints, annots));
+      if (detail === 'full') {
+        pushSection(lines, renderIndexes(view.neighbors['has_index']?.out ?? []));
+        pushSection(lines, renderTriggers(view.neighbors['fires_on']?.in ?? []));
+      }
+    } else {
+      pushSection(lines, renderFocusPayload(view.node));
+    }
+  }
+
+  // ── Neighbor summary (retained AFTER the payload sections) ─────────────────
   const edgeKinds = Object.keys(view.neighbors).sort();
 
   if (detail === 'brief') {

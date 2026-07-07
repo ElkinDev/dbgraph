@@ -57,14 +57,20 @@ async function resolveNode(
     }
   }
 
-  if (matches.length === 0) {
+  // Prefer a REAL node over a phantom stub minted for the same qname (design D3):
+  // e.g. an INSTEAD OF trigger on a view mints a `table` stub, which would otherwise
+  // make a view falsely resolve as ambiguous / labeled [table].
+  const real = matches.filter((n) => !n.missing);
+  const effective = real.length > 0 ? real : matches;
+
+  if (effective.length === 0) {
     return { notFound: true };
   }
-  if (matches.length === 1 && matches[0] !== undefined) {
-    return { node: matches[0] };
+  if (effective.length === 1 && effective[0] !== undefined) {
+    return { node: effective[0] };
   }
-  // Multiple matches = disambiguation required
-  return { candidates: matches };
+  // Multiple real matches = disambiguation required
+  return { candidates: effective };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

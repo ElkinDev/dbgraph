@@ -225,3 +225,46 @@ describe('runExplore — return type', () => {
     expect(result.output.length).toBeGreaterThan(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D3 — [view] resolution fix: prefer a real node over a phantom stub with the
+// same qname (explore-payloads B.5). Torture mints a phantom `table` stub for the
+// active_departments view (INSTEAD OF trigger target); the real `view` must win.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const VIEW_QNAME = 'main.active_departments';
+
+/** A store where the qname resolves to a phantom table STUB and a real VIEW. */
+function makeViewStubStore(): GraphStore {
+  const realView: GraphNode = {
+    ...makeNode('active_departments', 'view', VIEW_QNAME),
+    id: 'real-view',
+    schema: 'main',
+    missing: false,
+  };
+  const phantomTable: GraphNode = {
+    ...makeNode('active_departments', 'table', VIEW_QNAME),
+    id: 'phantom-table',
+    schema: 'main',
+    missing: true,
+  };
+  return {
+    ...makeFakeStore(),
+    async getNodeByQName(kind, qname) {
+      if (qname !== VIEW_QNAME) return null;
+      if (kind === 'table') return phantomTable; // NODE_KINDS visits 'table' before 'view'
+      if (kind === 'view') return realView;
+      return null;
+    },
+  };
+}
+
+describe('runExplore — D3 [view] resolution (explore-payloads B.5)', () => {
+  it('prefers the real view over the phantom table stub → header reads [view]', async () => {
+    const store = makeViewStubStore();
+    const result = await runExplore({ store, qname: VIEW_QNAME, detail: 'brief' });
+
+    expect(result.output).toContain(`${VIEW_QNAME}  [view]`);
+    expect(result.output).not.toContain('[table]');
+  });
+});

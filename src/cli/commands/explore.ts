@@ -43,12 +43,18 @@ export interface ExploreOutcome {
 export async function runExplore(options: ExploreOptions): Promise<ExploreOutcome> {
   const { store, qname, detail } = options;
 
-  // Resolve the node by searching getNodeByQName across all kinds
-  let node: GraphNode | null = null;
+  // Resolve the node across all kinds, preferring a REAL node over a phantom stub
+  // minted for the same qname (design D3 — e.g. an INSTEAD OF trigger on a view
+  // mints a `table` stub; NODE_KINDS visits `table` before `view`, so a first-match
+  // break would mislabel the view as [table]). Prefer non-`missing` matches.
+  const matches: GraphNode[] = [];
   for (const kind of NODE_KINDS as readonly NodeKind[]) {
-    node = await store.getNodeByQName(kind, qname);
-    if (node !== null) break;
+    const found = await store.getNodeByQName(kind, qname);
+    if (found !== null) matches.push(found);
   }
+  const real = matches.filter((n) => !n.missing);
+  const effective = real.length > 0 ? real : matches;
+  const node: GraphNode | null = effective[0] ?? null;
 
   if (node === null) {
     throw new NotFoundError('entity', qname);

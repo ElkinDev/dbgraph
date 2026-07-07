@@ -127,3 +127,33 @@ describe('dbgraph_object — not found', () => {
     expect(text).toContain('xyzzy_phantom_table_99');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D3 — [view] resolution fix (explore-payloads B.5), object surface. resolveNode
+// prefers the real view over the phantom table stub minted for active_departments.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('dbgraph_object — D3 [view] resolution (explore-payloads B.5)', () => {
+  it('resolves main.active_departments to the VIEW (not the phantom table stub, not ambiguous)', async () => {
+    const text = await harness.callTool('dbgraph_object', { qname: 'main.active_departments', detail: 'brief' });
+    expect(text).toContain('main.active_departments  [view]');
+    expect(text).not.toContain('[table]');
+    expect(text).not.toContain('Ambiguous');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D8 — composite FK reconstruction + declared-order PK for main.assignments,
+// pinned from the REAL built torture graph (explore-payloads B.7). The composite
+// FK constraint name (fk_assignments_0) is captured here, not guessed.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('dbgraph_object — main.assignments composite FK reconstruction (explore-payloads B.7)', () => {
+  it('reconstructs the composite FK target and preserves declared PK order', async () => {
+    const text = await harness.callTool('dbgraph_object', { qname: 'main.assignments', detail: 'normal' });
+    expect(text).toContain('  emp_id  INTEGER  [PK]  [FK→main.employees]');
+    expect(text).toContain('  dept_id  INTEGER  [PK]  [FK→main.employees]');
+    expect(text).toContain('  [FK]  fk_assignments_0  (emp_id, dept_id → main.employees)');
+    expect(text).toContain('  [PK]  pk_assignments  (project_id, emp_id, dept_id)');
+  });
+});

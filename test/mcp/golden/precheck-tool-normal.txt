@@ -5,8 +5,12 @@ MATCHED OBJECTS
   [table]  main.employees
 
 READERS
+  [view]  main.active_departments
   [table]  main.assignments
+  [view]  main.employee_summary
 
 WHAT TO TEST
+  - main.active_departments
   - main.assignments
+  - main.employee_summary
 

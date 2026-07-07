@@ -98,6 +98,62 @@ describe('cli — USAGE_TEXT', () => {
     expect(installLine).toContain('--remove');
     expect(installLine).not.toContain('Claude Desktop');
   });
+
+  // ── http-transport task 4.1: the mcp banner line documents the --http surface ──
+
+  it('mcp banner line is present with EXACTLY the pinned, column-aligned text (task 4.1)', () => {
+    // cli-config scenario "mcp banner line is present with the exact aligned text":
+    // two leading spaces, `mcp`, seven spaces — description aligned at character index 12,
+    // matching init/affected/doctor/install. A single-character drift fails the build.
+    const mcpLine = USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('mcp')) ?? '';
+    expect(mcpLine).toBe(
+      '  mcp       Serve the MCP tools over stdio (default) or Streamable HTTP (--http)',
+    );
+    // The description column is index 12 (same as every other command line).
+    expect(mcpLine.indexOf('Serve')).toBe(12);
+    // Dropping the --http mention must fail the build (silent-SSE/misconfig guard).
+    expect(mcpLine).toContain('--http');
+  });
+
+  // ── explore-payloads C.5: the object banner line, column-aligned + placed after explore ──
+
+  it('object banner line is present with EXACTLY the pinned, column-aligned text (C.5)', () => {
+    // cli-config scenario "usage banner documents the object line with the exact alignment":
+    // two leading spaces, `object`, four spaces — description aligned at character index 12,
+    // matching query/explore/install. Dropping the object command fails the build.
+    const objectLine = USAGE_TEXT.split('\n').find((l) => l.trimStart().startsWith('object')) ?? '';
+    expect(objectLine).toBe(
+      '  object    Show one object in full (columns, constraints, indexes, triggers)',
+    );
+    // Description column is index 12 (same as every other command line).
+    expect(objectLine.indexOf('Show')).toBe(12);
+  });
+
+  it('object line is placed immediately AFTER the explore line (C.5)', () => {
+    const lines = USAGE_TEXT.split('\n');
+    const exploreIdx = lines.findIndex((l) => l.trimStart().startsWith('explore'));
+    const objectIdx = lines.findIndex((l) => l.trimStart().startsWith('object'));
+    expect(exploreIdx).toBeGreaterThanOrEqual(0);
+    expect(objectIdx).toBe(exploreIdx + 1);
+  });
+
+  it('adds ONLY the mcp line — every existing command line stays byte-identical (task 4.1)', () => {
+    // cli-config scenario "Adding the mcp line leaves the other command lines unchanged":
+    // init…doctor (incl. the pinned install line) are byte-identical to before.
+    for (const line of [
+      '  init      Initialize the graph index for a database',
+      '  sync      Synchronize the graph index with the database',
+      '  status    Show the current state of the graph index',
+      '  query     Search the graph index for a term',
+      '  explore   Explore a node and its neighbors in the graph',
+      '  diff      Compare two snapshots of the graph index',
+      '  affected  Analyze DDL to show impacted objects (--json for machine output)',
+      '  install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)',
+      '  doctor    Run a content-free connectivity self-test (safe to share)',
+    ]) {
+      expect(USAGE_TEXT).toContain(line);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -220,20 +276,20 @@ describe('cli — --version / -v (task 1.1, design D6)', () => {
     }
   });
 
-  it('DBGRAPH_VERSION placeholder is still exactly "0.0.0" (fallback anchor for the smoke)', () => {
-    expect(DBGRAPH_VERSION).toBe('0.0.0');
+  it('DBGRAPH_VERSION placeholder is still exactly "1.0.0" (fallback anchor for the smoke)', () => {
+    expect(DBGRAPH_VERSION).toBe('1.0.0');
   });
 
-  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "0.0.0\\n" and returns 0', async () => {
+  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.0.0\\n" and returns 0', async () => {
     const code = await runCli(['--version']);
     expect(code).toBe(0);
-    expect(stdout.join('')).toBe('0.0.0\n');
+    expect(stdout.join('')).toBe('1.0.0\n');
   });
 
-  it('runCli(["-v"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "0.0.0\\n" and returns 0', async () => {
+  it('runCli(["-v"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.0.0\\n" and returns 0', async () => {
     const code = await runCli(['-v']);
     expect(code).toBe(0);
-    expect(stdout.join('')).toBe('0.0.0\n');
+    expect(stdout.join('')).toBe('1.0.0\n');
   });
 
   it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION set to "9.9.9" prints EXACTLY "9.9.9\\n" and returns 0', async () => {

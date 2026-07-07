@@ -17,7 +17,8 @@ import {
   type ExploreView,
   type ExploreDetail,
 } from '../../../src/core/present/explore.js';
-import type { GraphNode, NeighborGroups } from '../../../src/index.js';
+import { formatObject } from '../../../src/core/present/object.js';
+import type { GraphNode, GraphEdge, NeighborGroups } from '../../../src/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test fixtures
@@ -286,5 +287,215 @@ describe('formatExplore — goldens', () => {
     expect(output).toContain('abc123def456');
     expect(output).toContain('dbo.customers');
     expect(output).toContain('dbo.orders.order_id');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B.4 — focus PAYLOAD sections via the shared helper, byte-identical to object
+// (torture main.employees fixture; FK target RECONSTRUCTED from the references edge)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function empNode(kind: GraphNode['kind'], name: string, payload: Record<string, unknown>): GraphNode {
+  return {
+    id: `emp-${kind}-${name}`,
+    kind,
+    schema: 'main',
+    name,
+    qname: kind === 'table' ? `main.${name}` : `main.employees.${name}`,
+    level: 'full',
+    missing: false,
+    excluded: false,
+    bodyHash: null,
+    payload,
+  };
+}
+
+const EMP_TABLE: GraphNode = {
+  id: 'emp-table',
+  kind: 'table',
+  schema: 'main',
+  name: 'employees',
+  qname: 'main.employees',
+  level: 'full',
+  missing: false,
+  excluded: false,
+  bodyHash: null,
+  payload: {},
+};
+
+const DEPARTMENTS: GraphNode = {
+  id: 'dep-table',
+  kind: 'table',
+  schema: 'main',
+  name: 'departments',
+  qname: 'main.departments',
+  level: 'metadata',
+  missing: false,
+  excluded: false,
+  bodyHash: null,
+  payload: {},
+};
+
+const refEdge = (agg: boolean, srcColumn?: string): GraphEdge => ({
+  id: `emp-ref-${srcColumn ?? 'agg'}`,
+  kind: 'references',
+  src: 'emp-table',
+  dst: 'dep-table',
+  confidence: 'declared',
+  score: null,
+  attrs: { constraintName: 'fk_employees_0', ...(agg ? { aggregate: true } : {}), ...(srcColumn !== undefined ? { srcColumn, dstColumn: srcColumn } : {}) },
+});
+
+const plainEdge = (kind: GraphEdge['kind'], src: string, dst: string): GraphEdge => ({
+  id: `${kind}-${src}-${dst}`,
+  kind,
+  src,
+  dst,
+  confidence: 'declared',
+  score: null,
+  attrs: {},
+});
+
+const EMP_NEIGHBORS: NeighborGroups = {
+  has_column: {
+    out: [
+      { node: empNode('column', 'emp_id', { dataType: 'INTEGER', nullable: false, ordinal: 1 }), edge: plainEdge('has_column', 'emp-table', 'emp_id') },
+      { node: empNode('column', 'full_name', { dataType: 'TEXT', nullable: false, ordinal: 2 }), edge: plainEdge('has_column', 'emp-table', 'full_name') },
+      { node: empNode('column', 'email', { dataType: 'TEXT', nullable: true, ordinal: 3 }), edge: plainEdge('has_column', 'emp-table', 'email') },
+      { node: empNode('column', 'dept_id', { dataType: 'INTEGER', nullable: false, ordinal: 4 }), edge: plainEdge('has_column', 'emp-table', 'dept_id') },
+      { node: empNode('column', 'salary', { dataType: 'REAL', nullable: false, ordinal: 5, default: '0.0' }), edge: plainEdge('has_column', 'emp-table', 'salary') },
+      { node: empNode('column', 'hire_date', { dataType: 'TEXT', nullable: true, ordinal: 6 }), edge: plainEdge('has_column', 'emp-table', 'hire_date') },
+    ],
+    in: [],
+  },
+  has_constraint: {
+    out: [
+      { node: empNode('constraint', 'fk_employees_0', { type: 'FK', columns: ['dept_id'] }), edge: plainEdge('has_constraint', 'emp-table', 'fk_employees_0') },
+      { node: empNode('constraint', 'idx_emp_email', { type: 'UNIQUE', columns: ['email'] }), edge: plainEdge('has_constraint', 'emp-table', 'idx_emp_email') },
+      { node: empNode('constraint', 'pk_employees', { type: 'PK', columns: ['emp_id'] }), edge: plainEdge('has_constraint', 'emp-table', 'pk_employees') },
+    ],
+    in: [],
+  },
+  has_index: {
+    out: [
+      { node: empNode('index', 'idx_emp_active_dept', { unique: false, columns: ['dept_id'] }), edge: plainEdge('has_index', 'emp-table', 'idx_emp_active_dept') },
+      { node: empNode('index', 'idx_emp_dept', { unique: false, columns: ['dept_id', 'hire_date'] }), edge: plainEdge('has_index', 'emp-table', 'idx_emp_dept') },
+      { node: empNode('index', 'idx_emp_email', { unique: true, columns: ['email'] }), edge: plainEdge('has_index', 'emp-table', 'idx_emp_email') },
+      { node: empNode('index', 'idx_emp_email_lower', { unique: false, columns: ['(expr)'] }), edge: plainEdge('has_index', 'emp-table', 'idx_emp_email_lower') },
+    ],
+    in: [],
+  },
+  fires_on: {
+    out: [],
+    in: [
+      { node: empNode('trigger', 'trg_emp_after_delete', { timing: 'AFTER', events: ['DELETE'] }), edge: plainEdge('fires_on', 'trg_emp_after_delete', 'emp-table') },
+      { node: empNode('trigger', 'trg_emp_after_insert', { timing: 'AFTER', events: ['INSERT'] }), edge: plainEdge('fires_on', 'trg_emp_after_insert', 'emp-table') },
+      { node: empNode('trigger', 'trg_emp_before_insert', { timing: 'BEFORE', events: ['INSERT'] }), edge: plainEdge('fires_on', 'trg_emp_before_insert', 'emp-table') },
+      { node: empNode('trigger', 'trg_emp_before_update', { timing: 'BEFORE', events: ['UPDATE'] }), edge: plainEdge('fires_on', 'trg_emp_before_update', 'emp-table') },
+      { node: empNode('trigger', 'trg_emp_salary_update', { timing: 'BEFORE', events: ['UPDATE'] }), edge: plainEdge('fires_on', 'trg_emp_salary_update', 'emp-table') },
+    ],
+  },
+  references: {
+    out: [
+      { node: DEPARTMENTS, edge: refEdge(false, 'dept_id') },
+      { node: DEPARTMENTS, edge: refEdge(true) },
+    ],
+    in: [],
+  },
+};
+
+const EMP_VIEW = { node: EMP_TABLE, neighbors: EMP_NEIGHBORS };
+
+const COLUMNS_BLOCK = [
+  'COLUMNS',
+  '  emp_id  INTEGER  [PK]',
+  '  full_name  TEXT  [NN]',
+  '  email  TEXT',
+  '  dept_id  INTEGER  [FK→main.departments]  [NN]',
+  '  salary  REAL  [NN]  DEFAULT 0.0',
+  '  hire_date  TEXT',
+].join('\n');
+
+const CONSTRAINTS_BLOCK = [
+  'CONSTRAINTS',
+  '  [FK]  fk_employees_0  (dept_id → main.departments)',
+  '  [UNIQUE]  idx_emp_email  (email)',
+  '  [PK]  pk_employees  (emp_id)',
+].join('\n');
+
+const INDEXES_BLOCK = [
+  'INDEXES',
+  '  idx_emp_active_dept  (dept_id)',
+  '  idx_emp_dept  (dept_id, hire_date)',
+  '  idx_emp_email  UNIQUE (email)',
+  '  idx_emp_email_lower  ((expr))',
+].join('\n');
+
+const TRIGGERS_BLOCK = [
+  'TRIGGERS',
+  '  trg_emp_after_delete  AFTER DELETE',
+  '  trg_emp_after_insert  AFTER INSERT',
+  '  trg_emp_before_insert  BEFORE INSERT',
+  '  trg_emp_before_update  BEFORE UPDATE',
+  '  trg_emp_salary_update  BEFORE UPDATE',
+].join('\n');
+
+describe('formatExplore — focus payload sections (explore-payloads B.4)', () => {
+  it('normal renders the COLUMNS + CONSTRAINTS sections, byte-identical to object', () => {
+    const explore = formatExplore(EMP_VIEW, 'normal');
+    const object = formatObject(EMP_VIEW, 'normal');
+    expect(explore).toContain(COLUMNS_BLOCK);
+    expect(explore).toContain(CONSTRAINTS_BLOCK);
+    expect(object).toContain(COLUMNS_BLOCK);
+    expect(object).toContain(CONSTRAINTS_BLOCK);
+  });
+
+  it('normal renders the reconstructed FK column line and constraint mapping', () => {
+    const explore = formatExplore(EMP_VIEW, 'normal');
+    expect(explore).toContain('  dept_id  INTEGER  [FK→main.departments]  [NN]');
+    expect(explore).toContain('  [FK]  fk_employees_0  (dept_id → main.departments)');
+  });
+
+  it('normal does NOT render INDEXES/TRIGGERS sections (full-only, gated like object)', () => {
+    const explore = formatExplore(EMP_VIEW, 'normal');
+    expect(explore).not.toContain('INDEXES');
+    expect(explore).not.toContain('TRIGGERS');
+  });
+
+  it('full renders the INDEXES + TRIGGERS sections, byte-identical to object', () => {
+    const explore = formatExplore(EMP_VIEW, 'full');
+    const object = formatObject(EMP_VIEW, 'full');
+    expect(explore).toContain(INDEXES_BLOCK);
+    expect(explore).toContain(TRIGGERS_BLOCK);
+    expect(object).toContain(INDEXES_BLOCK);
+    expect(object).toContain(TRIGGERS_BLOCK);
+    expect(explore).toContain('  trg_emp_after_insert  AFTER INSERT');
+    expect(explore).toContain('  trg_emp_salary_update  BEFORE UPDATE');
+  });
+
+  it('brief renders NO payload lines (only header + neighbor-kind counts)', () => {
+    const brief = formatExplore(EMP_VIEW, 'brief');
+    expect(brief).not.toContain('COLUMNS');
+    expect(brief).not.toContain('CONSTRAINTS');
+    expect(brief).not.toContain('INDEXES');
+    expect(brief).not.toContain('TRIGGERS');
+    expect(brief).toContain('has_column');
+  });
+
+  it('retains the grouped in/out neighbor listing AFTER the payload sections', () => {
+    const explore = formatExplore(EMP_VIEW, 'normal');
+    expect(explore).toContain('references');
+    expect(explore).toContain('→ main.departments  [table]');
+    expect(explore.indexOf('COLUMNS')).toBeLessThan(explore.indexOf('  fires_on'));
+  });
+
+  it('renders a NON-container (column) focus via renderFocusPayload at normal', () => {
+    const colFocus = {
+      node: empNode('column', 'salary', { dataType: 'REAL', nullable: false, ordinal: 5, default: '0.0' }),
+      neighbors: {} as NeighborGroups,
+    };
+    const out = formatExplore(colFocus, 'normal');
+    expect(out).toContain('COLUMNS');
+    expect(out).toContain('  salary  REAL  [NN]  DEFAULT 0.0');
   });
 });

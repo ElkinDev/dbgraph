@@ -36,6 +36,7 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 import { schemaTokens, type Family, type TokenCount } from './scorer/index.ts';
+import { deriveCoverageTargets, verifyDumpCoverage } from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI args (mirrors generate.ts — no dependency on a YAML/arg library, ADR: zero new deps)
@@ -332,6 +333,18 @@ for (const q of questions) {
   const withoutText = withoutPacket(q, ddlDump);
 
   assertPacketPair(q.qid, q.family, withText, withoutText, ddlDump, gt);
+
+  // Build-time DDL-coverage assertion (spec Req 1): every derived target object MUST be DEFINED
+  // in the WITHOUT dump. A miss (e.g. a dump from the WRONG database) aborts LOUDLY with exit 1.
+  // The message names only `KIND bare-identifier` — already present un-redacted in a correct dump
+  // — NEVER a composed answer value (leak guard). The pure decisions live in harness-checks.ts.
+  const missing = verifyDumpCoverage(ddlDump, deriveCoverageTargets(q.qid, q.family, gt));
+  if (missing.length > 0) {
+    const objects = missing.map((m) => `${m.kind.toUpperCase()} ${m.name}`).join(', ');
+    throw new Error(
+      `SELF-CHECK FAILED: ${q.qid} (${q.family}) — DDL dump does not define target object(s): ${objects}`,
+    );
+  }
 
   writeFileSync(join(outDir, `${q.qid}.with.md`), withText);
   writeFileSync(join(outDir, `${q.qid}.without.md`), withoutText);

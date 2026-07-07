@@ -13,10 +13,11 @@
  * [5,10], every ground-truth key carries a `source_ddl_ref`, and no answer value leaks into
  * its question text (D5 leakage guard).
  *
- * SUBSTRATE NOTE: on SQLite the `view-dependency` family yields ZERO candidates because the
- * SQLite schema adapter declares dependency blindness (`supportsDependencyHints: false`,
- * US-007) — views carry no `depends_on`/`reads_from` edges. The family enumerator is present
- * and correct; it simply produces nothing on this substrate, so `--per-family 1` gives N=5.
+ * SUBSTRATE NOTE: on SQLite the `view-dependency` family is now INSTANTIABLE — the SQLite
+ * schema adapter derives view `depends_on` edges from bodies via the shared presence-gate
+ * tokenizer (sqlite-view-deps), so the enumerator yields candidates. This committed set,
+ * however, HOLDS N pinned at 5 with `view-dependency` excluded; instantiating it (N=5→6,
+ * a fresh labeled run) is DEFERRED to its own run — `--per-family 1` here still gives N=5.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -24,14 +25,20 @@ import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createSqliteGraphStore } from '../dist/index.js';
+// Types come from src (erased at runtime) so `tsc --noEmit` never depends on a
+// built dist/ being present; the RUNTIME import below still consumes the built
+// artifact because `node --experimental-strip-types` cannot remap .js -> .ts.
 import type {
   GraphStore,
   GraphNode,
   ColumnPayload,
   ConstraintPayload,
   TriggerPayload,
-} from '../dist/index.js';
+} from '../src/index.js';
+
+const { createSqliteGraphStore } = (await import(
+  '../dist/index.js' as string
+)) as typeof import('../src/index.js');
 import type { Family, FkHop, TriggerTuple } from './scorer/index.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -256,7 +263,7 @@ async function deriveViewDependency(
   const records: QuestionRecord[] = [];
   for (const view of await store.getNodesByKind('view')) {
     const edges = await store.getEdgesFrom(view.id, ['depends_on', 'reads_from']);
-    if (edges.length === 0) continue; // SQLite dependency blindness → no candidates
+    if (edges.length === 0) continue; // view with no body-derived depends_on/reads_from → skip
     const deps: string[] = [];
     for (const e of edges) {
       const dep = await store.getNode(e.dst);
@@ -399,7 +406,7 @@ function renderQuestionsYaml(
   for (const f of excluded) lines.push(`  - ${f}`);
   lines.push('notes:');
   lines.push(
-    `  view-dependency: ${yamlString('excluded on the SQLite substrate — the adapter declares dependency blindness (supportsDependencyHints=false, US-007), so views carry no depends_on/reads_from edges. Enumerator is present and correct; it yields no candidates here.')}`,
+    `  view-dependency: ${yamlString('held out of the frozen set — N is pinned at 5. The SQLite adapter now derives view depends_on edges from bodies (sqlite-view-deps), so the enumerator yields candidates; instantiating them into the committed set is deferred to its own labeled run.')}`,
   );
   lines.push('questions:');
   for (const q of questions) {

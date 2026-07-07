@@ -24,6 +24,8 @@
 import { createRequire } from 'node:module';
 import { runCli } from '../cli/cli.js';
 import { startMcpServer } from '../mcp/server.js';
+import { parseMcpFlags, startHttpMcpServer, type McpTransportPlan } from '../mcp/http.js';
+import { DbgraphError } from '../index.js';
 
 // Batch 0.2 EMPIRICAL FINDING (Node 24.18.0 win-x64): a SEA `process.argv` is
 // [execPath, execPath, ...userArgs] — Node fills the argv[1] script slot with the
@@ -36,19 +38,27 @@ const NODE_ARGV_OFFSET = 2;
 
 /** Dispatch plan produced by {@link planEntry}. */
 export type EntryPlan =
-  | { readonly mode: 'mcp' }
+  | { readonly mode: 'mcp'; readonly transport: McpTransportPlan }
   | { readonly mode: 'cli'; readonly args: readonly string[] };
 
 /**
  * PURE — unit-testable without spawning. Normalizes argv for the SEA vs node layout
  * and routes a leading `mcp` user arg to the MCP server, else to the CLI.
  *
+ * The `mcp` branch carries `transport: parseMcpFlags(argsAfter 'mcp')` (design D1): with
+ * `--http` ABSENT it is `{ kind:'stdio' }` — today's byte-identical STDIO path — else an
+ * `{ kind:'http', ... }` plan. May throw {@link ConfigError} on an invalid `--port`/`--host`
+ * value; {@link runSeaEntry} catches it and exits 2 (the established exit-code contract).
+ *
  * @param argv  - the raw process.argv (NOT pre-sliced).
  * @param isSea - true inside the SEA binary.
  */
 export function planEntry(argv: readonly string[], isSea: boolean): EntryPlan {
   const args = argv.slice(isSea ? SEA_ARGV_OFFSET : NODE_ARGV_OFFSET);
-  return args[0] === 'mcp' ? { mode: 'mcp' } : { mode: 'cli', args };
+  if (args[0] === 'mcp') {
+    return { mode: 'mcp', transport: parseMcpFlags(args.slice(1)) };
+  }
+  return { mode: 'cli', args };
 }
 
 /**
@@ -90,9 +100,37 @@ function installSqliteWarningFilter(): void {
 /** Unconditional-in-the-binary runner: install the warning filter, then dispatch. */
 function runSeaEntry(): void {
   installSqliteWarningFilter();
-  const plan = planEntry(process.argv, true);
+
+  // planEntry → parseMcpFlags may throw ConfigError on an invalid --port/--host value.
+  // Map it to exit 2 via the established DbgraphError → 2 contract (mirrors cli.ts),
+  // with an actionable message on stderr instead of an unhandled exception.
+  let plan: EntryPlan;
+  try {
+    plan = planEntry(process.argv, true);
+  } catch (err: unknown) {
+    if (err instanceof DbgraphError) {
+      console.error(`Error: ${err.message}`);
+      process.exitCode = 2;
+      return;
+    }
+    throw err;
+  }
 
   if (plan.mode === 'mcp') {
+    // With --http ABSENT the transport is 'stdio' → startMcpServer() with no args, the
+    // byte-identical STDIO path (design D1). With --http PRESENT → startHttpMcpServer(opts).
+    const transport = plan.transport;
+    if (transport.kind === 'http') {
+      void startHttpMcpServer({
+        host: transport.host,
+        port: transport.port,
+        quiet: transport.quiet,
+      }).catch((err: unknown) => {
+        console.error('Unexpected error:', err);
+        process.exit(2);
+      });
+      return;
+    }
     void startMcpServer().catch((err: unknown) => {
       console.error('Unexpected error:', err);
       process.exit(2);
