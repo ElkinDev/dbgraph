@@ -506,6 +506,7 @@ function coerceDepRow(raw: unknown, idx: number): DepRow {
       ref_schema_name: optionalString(getField(raw, 'ref_schema_name'), 'ref_schema_name'),
       ref_object_name: optionalString(getField(raw, 'ref_object_name'), 'ref_object_name'),
       ref_object_id: optionalNumber(getField(raw, 'ref_object_id'), 'ref_object_id'),
+      ref_object_type: optionalString(getField(raw, 'ref_object_type'), 'ref_object_type'),
     };
   } catch (e) {
     throw new Error(`json-rows: DepRow[${idx}]: ${(e as Error).message}`, { cause: e });

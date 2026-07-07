@@ -38,7 +38,7 @@ interface ModuleRow { schema_name: string; object_name: string; object_type: str
 interface TriggerEventRow { trigger_id: number; trigger_name: string; parent_object_id: number; is_instead_of_trigger: boolean; event_type: string }
 interface SequenceRow { schema_name: string; sequence_name: string; data_type: string; start_value: string; increment: string; minimum_value: string; maximum_value: string; is_cycling: boolean }
 interface ExtendedPropRow { schema_name: string; object_name: string; column_id: number; column_name: string | null; description: string }
-interface DepRow { schema_name: string; object_name: string; object_type: string; ref_schema_name: string | null; ref_object_name: string | null; ref_object_id: number | null }
+interface DepRow { schema_name: string; object_name: string; object_type: string; ref_schema_name: string | null; ref_object_name: string | null; ref_object_id: number | null; ref_object_type: string | null }
 
 const FULL_SCOPE: ExtractionScope = {
   levels: {

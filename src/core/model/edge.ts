@@ -6,6 +6,7 @@
 export type EdgeKind =
   | 'references'          // FK column→column AND aggregated table→table (attrs.aggregate=true)
   | 'depends_on'          // view/proc depends on object (e.g. view → table)
+  | 'calls'               // routine → routine INVOCATION (EXEC/CALL/SELECT fn()); confidence declared(mssql)/parsed(pg,mysql) (US-007)
   | 'reads_from'          // proc/trigger/view READS a table/column (US-007)
   | 'writes_to'           // proc/trigger WRITES a table/column (US-007)
   | 'fires_on'            // trigger → table, attrs.event = INSERT|UPDATE|DELETE
@@ -19,6 +20,7 @@ export type EdgeKind =
 export const EDGE_KINDS: readonly EdgeKind[] = [
   'references',
   'depends_on',
+  'calls',
   'reads_from',
   'writes_to',
   'fires_on',

@@ -299,6 +299,10 @@ ORDER BY s.name, o.name, ep.minor_id
  * referencing_id: the module (proc/func/view/trigger) that contains the ref.
  * referenced_schema_name / referenced_entity_name: the target.
  * referenced_id may be NULL for unresolved cross-database refs.
+ * ref_object_type: sys.objects.type (CHAR(2)) of the REFERENCED object, via a
+ *   LEFT JOIN on referenced_id — NULL for a NULL referenced_id (cross-db / unresolved).
+ *   DOG-1 (D2): a routine referenced_id (`P`/`FN`/`IF`/`TF`) drives a `calls` edge; the
+ *   LEFT JOIN keeps NULL-referenced_id rows, already skipped by the null-name guard.
  * Feeds the body tokenizer in map.ts (US-007, ADR-007).
  */
 export const SQL_MSSQL_DEPENDENCIES = `
@@ -308,10 +312,12 @@ SELECT
   o.type                          AS object_type,
   dep.referenced_schema_name      AS ref_schema_name,
   dep.referenced_entity_name      AS ref_object_name,
-  dep.referenced_id               AS ref_object_id
+  dep.referenced_id               AS ref_object_id,
+  ref.type                        AS ref_object_type
 FROM sys.sql_expression_dependencies dep
-JOIN sys.objects o  ON o.object_id = dep.referencing_id
-JOIN sys.schemas s  ON s.schema_id = o.schema_id
+JOIN sys.objects o   ON o.object_id = dep.referencing_id
+JOIN sys.schemas s   ON s.schema_id = o.schema_id
+LEFT JOIN sys.objects ref ON ref.object_id = dep.referenced_id
 WHERE dep.referenced_class = 1
   AND o.is_ms_shipped = 0
 ORDER BY s.name, o.name, dep.referenced_schema_name, dep.referenced_entity_name

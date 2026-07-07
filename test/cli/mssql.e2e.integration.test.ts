@@ -99,6 +99,61 @@ describe.skipIf(!mssqlIntegrationEnabled())(
       }
     });
 
+    // DOG-1 A.9 — INTEGRATION tier: the SAME L-009 exact-set + zero-stub assertions as the
+    // A.7 synthetic pin, proven end-to-end over the real materialized torture.sql catalog.
+    it('proc→proc and fn→fn yield declared calls edges with NO phantom [table] stub (L-009)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');
+      const store = await createSqliteGraphStore({ path: storePath });
+      try {
+        const procs = await store.getNodesByKind('procedure');
+        const fns = await store.getNodesByKind('function');
+        const tables = await store.getNodesByKind('table');
+        const byName = (list: readonly { name: string; id: string }[], n: string) =>
+          list.find((x) => x.name === n);
+
+        const refresh = byName(procs, 'usp_refresh_totals');
+        const logChange = byName(procs, 'usp_log_change');
+        const netAmount = byName(fns, 'fn_net_amount');
+        const roundMoney = byName(fns, 'fn_round_money');
+        expect(refresh, 'usp_refresh_totals node').toBeDefined();
+        expect(logChange, 'usp_log_change node').toBeDefined();
+        expect(netAmount, 'fn_net_amount node').toBeDefined();
+        expect(roundMoney, 'fn_round_money node').toBeDefined();
+
+        // usp_refresh_totals → EXACTLY one calls edge to usp_log_change (declared)
+        const refreshCalls = await store.getEdgesFrom(refresh!.id, ['calls']);
+        expect(refreshCalls).toHaveLength(1);
+        expect(refreshCalls[0]!.dst).toBe(logChange!.id);
+        expect(refreshCalls[0]!.confidence).toBe('declared');
+
+        // fn_net_amount → EXACTLY one calls edge to fn_round_money (declared)
+        const netCalls = await store.getEdgesFrom(netAmount!.id, ['calls']);
+        expect(netCalls).toHaveLength(1);
+        expect(netCalls[0]!.dst).toBe(roundMoney!.id);
+        expect(netCalls[0]!.confidence).toBe('declared');
+
+        // NEGATIVE: usp_log_change emits ZERO calls edges
+        expect(await store.getEdgesFrom(logChange!.id, ['calls'])).toStrictEqual([]);
+
+        // NEGATIVE: usp_refresh_totals has NO reads_from/writes_to edge to usp_log_change
+        const refreshRW = await store.getEdgesFrom(refresh!.id, ['reads_from', 'writes_to']);
+        expect(refreshRW.some((e) => e.dst === logChange!.id)).toBe(false);
+        // and it DOES write order_totals
+        const refreshWrites = await store.getEdgesFrom(refresh!.id, ['writes_to']);
+        const writeDstNames = new Set(
+          refreshWrites.map((e) => tables.find((t) => t.id === e.dst)?.name),
+        );
+        expect(writeDstNames.has('order_totals')).toBe(true);
+
+        // REGRESSION: NO phantom [table] stub named usp_log_change exists
+        expect(tables.some((t) => t.name === 'usp_log_change')).toBe(false);
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
     it('graph store contains table nodes after sync', async () => {
       const adapter = await createMssqlSchemaAdapter(handle.config);
       const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');

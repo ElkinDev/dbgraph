@@ -124,6 +124,49 @@ export function resolveTriggerTarget(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Routine-target resolution for `calls` edges (Design D5, DOG-1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The two NodeKinds that a `calls` edge may connect. */
+const ROUTINE_KINDS: readonly NodeKind[] = ['procedure', 'function'];
+
+/**
+ * Type guard: is this dependency target a routine (`procedure`/`function`)?
+ * Undefined (the common non-routine case) is false, so the existing read/write
+ * branch is preserved byte-for-byte for every table/view target.
+ */
+export function isRoutineKind(kind: NodeKind | undefined): kind is 'procedure' | 'function' {
+  return kind === 'procedure' || kind === 'function';
+}
+
+/**
+ * Resolves a routine-invocation target to the ACTUAL existing routine node, mirroring
+ * `resolveTriggerTarget` but CROSS-KIND over `['procedure', 'function']` and — critically —
+ * WITHOUT ever creating a stub (Design D5 / ADR-007). A `calls` edge is only meaningful when
+ * the target routine really exists; a builtin (`count()`), a same-named variable, or a
+ * table-named-like-a-function resolves to NO real routine node and yields `null`, so the
+ * caller emits NO edge and mints NO phantom `[table]`/`missing` stub — the exact bug class
+ * DOG-1 kills.
+ *
+ * Probe order is procedure-before-function only for determinism; a real node of either kind
+ * wins. Missing/excluded stub nodes are ignored (only REAL routines resolve).
+ */
+export function resolveRoutineTarget(
+  targetSchema: string | null,
+  targetName: string,
+  nodeMap: NodeMap,
+): GraphNode | null {
+  const qname = canonicalQName(targetSchema, targetName);
+  for (const kind of ROUTINE_KINDS) {
+    const node = nodeMap.get(nodeMapKey(kind, qname));
+    if (node !== undefined && !node.missing && !node.excluded) {
+      return node;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FK constraint → references edges (design §5.2)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -281,6 +324,26 @@ export function buildDependencyEdges(
   const edges: GraphEdge[] = [];
 
   for (const dep of dependencies) {
+    // Routine invocation (Design D5): a routine-target dependency becomes a `calls` edge
+    // resolved to the REAL routine node, carrying dep.confidence UNCHANGED. An unresolved
+    // routine target (builtin / dynamic blindness) emits NO edge and NO stub (ADR-007) —
+    // NEVER the read/write-over-`[table]`-stub default that minted the phantom bug.
+    if (isRoutineKind(dep.target.kind)) {
+      const routineNode = resolveRoutineTarget(dep.target.schema, dep.target.name, nodeMap);
+      if (routineNode === null) continue; // no real routine → no edge, no stub
+      const callsId = edgeId('calls', srcNode.id, routineNode.id, '');
+      edges.push({
+        id: callsId,
+        kind: 'calls',
+        src: srcNode.id,
+        dst: routineNode.id,
+        confidence: dep.confidence,
+        score: null,
+        attrs: {},
+      });
+      continue;
+    }
+
     const targetKind: NodeKind = dep.target.kind ?? 'table';
     const targetResult = resolveOrStub(
       targetKind,

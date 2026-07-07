@@ -77,6 +77,11 @@ export interface RawTriggerInfo {
 }
 
 export interface RawDependency {
+  // `target.kind` is LOAD-BEARING (DOG-1): when it is a routine (`procedure`/`function`)
+  // the normalizer emits a `calls` edge resolved to the real routine node instead of the
+  // default read/write-over-`table` branch. mssql sets it from the catalog (`ref.type`) and
+  // carries `confidence: 'declared'`; pg/mysql set it from the body tokenizer (`parsed`).
+  // Every non-routine target leaves `kind` unset and keeps the existing read/write logic.
   readonly target: { schema: string | null; name: string; kind?: NodeKind };
   readonly access: 'read' | 'write';            // read/write classification (US-007)
   readonly confidence: 'declared' | 'parsed';   // declared (catalog dep view) vs parsed (body)

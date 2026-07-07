@@ -93,54 +93,54 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
 > mssql routine fixtures, and the single deliberate mssql structural re-bless (the phantom `[table]` stub GONE). Blast
 > radius is mssql-only — pg/mysql/sqlite goldens MUST stay byte-identical.
 
-- [ ] A.1 **(vitest)** AUDIT then RED→GREEN `test/core/model/edge.test.ts` + `src/core/model/edge.ts`: FIRST grep/confirm NO
+- [x] A.1 **(vitest)** AUDIT then RED→GREEN `test/core/model/edge.test.ts` + `src/core/model/edge.ts`: FIRST grep/confirm NO
   test byte-pins the `EDGE_KINDS` tuple ORDER (record the audit); then add `calls` to the `EdgeKind` union + `EDGE_KINDS`
   tuple AFTER `depends_on`; doc-comment `RawDependency.target.kind` load-bearing in `src/core/model/catalog.ts`. Assert
   `calls ∈ EDGE_KINDS`; a `calls` edge carries `confidence ∈ {declared,parsed}`, NEVER `inferred`, and NO `score`. Spec:
   graph-model "calls edge connects two routine nodes" (S1). D1.
-- [ ] A.2 **(vitest)** RED→GREEN `test/core/normalize/routine-target.test.ts` (new) + `src/core/normalize/reference-resolver.ts`:
+- [x] A.2 **(vitest)** RED→GREEN `test/core/normalize/routine-target.test.ts` (new) + `src/core/normalize/reference-resolver.ts`:
   add `resolveRoutineTarget` (probe `['procedure','function']`, real node or `null`, NO stub) + `buildDependencyEdges`
   routine branch (`edgeId('calls',src,dst,'')` @ `dep.confidence`; unresolved → skip). RED over synthetic `RawCatalog`s:
   proc→proc = EXACTLY one `calls`, ZERO `reads_from`/`writes_to`, ZERO `[table]` stub (S6); unresolved routine (builtin
   `count`) = ZERO edge + ZERO stub (S7); table-only routine = read/write unchanged `parsed`, ZERO `calls` (S8); genuine
   self-recursion = one self-`calls`, non-recursive = none (S9). Deterministic ordering (ADR-008). Spec: graph-normalization
   (all 4). D5.
-- [ ] A.3 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/calls-absence.test.ts` (new) — pin SQLite ABSENCE over the
+- [x] A.3 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/calls-absence.test.ts` (new) — pin SQLite ABSENCE over the
   EXISTING sqlite torture graph (the shared A.2 branch must fabricate nothing): ZERO edges of kind `calls`; `CapabilityMatrix`
   still reports procedures+functions UNSUPPORTED; a trigger body naming a function-like token (`some_udf(x)`) invents NO
   `calls` edge and NO routine stub. Spec: graph-model "SQLite emits no calls edge" (S5); sqlite-extraction (S27, S28). D3.
-- [ ] A.4 **(vitest)** RED→GREEN `test/adapters/engines/mssql/*` + `src/adapters/engines/mssql/queries.ts` +
+- [x] A.4 **(vitest)** RED→GREEN `test/adapters/engines/mssql/*` + `src/adapters/engines/mssql/queries.ts` +
   `strategies/json-rows.ts`: `SQL_MSSQL_DEPENDENCIES` LEFT JOIN `sys.objects ref` → `ref.type AS ref_object_type`; `DepRow`
   + `coerceDepRow` gain `ref_object_type: string | null` (`optionalString`). RED over recorded FOR-JSON rows: coerce yields
   the trimmed `CHAR(2)` or `null`; a NULL-`referenced_id` row survives the LEFT JOIN and is skipped by the null-name guard.
   Spec: mssql-extraction "Catalog-declared calls edges" (plumbing half). D2.
-- [ ] A.5 **(vitest)** RED→GREEN `test/adapters/engines/mssql/*` + `src/adapters/engines/mssql/map.ts` + `tokenizer.ts`:
+- [x] A.5 **(vitest)** RED→GREEN `test/adapters/engines/mssql/*` + `src/adapters/engines/mssql/map.ts` + `tokenizer.ts`:
   `map.ts` maps `ref_object_type` via `moduleTypeToKind` (routine-gated: mapped kind ∈ {procedure,function} AND the
   referencing module is a routine) → `tokenizeModuleDeps`; `DepRef` gains `ref_object_type`, sets `target.kind` +
   `confidence:'declared'` for routine targets. RED over recorded DepRow fixtures: routine ref → `target.kind` + `declared`;
   table/view ref → UNCHANGED `parsed`, no kind; `sp_executesql`/variable-`EXEC` absent from catalog → NO `calls`. Spec:
   mssql-extraction "Catalog-declared calls edges" + negative (S15/S16/S17 unit half). D2/D3.
-- [ ] A.6 **(vitest, fixtures)** Add NEUTRAL routine objects to `test/fixtures/mssql/torture.sql` — `dbo.usp_refresh_totals`
+- [x] A.6 **(vitest, fixtures)** Add NEUTRAL routine objects to `test/fixtures/mssql/torture.sql` — `dbo.usp_refresh_totals`
   (`UPDATE dbo.order_totals` + `EXEC dbo.usp_log_change`), `dbo.usp_log_change` (`INSERT dbo.audit_log`), `dbo.fn_net_amount`
   (returns `dbo.fn_round_money(@x)`), `dbo.fn_round_money`, tables `dbo.order_totals`/`dbo.audit_log` — then RE-RECORD
   `test/fixtures/mssql/rows/dependencies.json` (add `ref_object_type` + the new dep rows) and `rows/modules.json` (new
   bodies) from the materialized fixture. Leak-scan neutral. Spec: mssql-extraction "mssql torture fixture exercises
   routine-calls-routine". D2/D3, §Open-Q fixture form.
-- [ ] A.7 **(vitest)** RED→GREEN `test/adapters/engines/mssql/calls-normalize.test.ts` (new) — SYNTHETIC in-memory
+- [x] A.7 **(vitest)** RED→GREEN `test/adapters/engines/mssql/calls-normalize.test.ts` (new) — SYNTHETIC in-memory
   `RawCatalog` (default CI, no container): `dbo.usp_refresh_totals` EXEC `dbo.usp_log_change` → normalize → L-009 exact-set:
   `dbo.usp_refresh_totals` = EXACTLY `{calls dbo.usp_log_change (declared), writes_to dbo.order_totals (parsed)}`;
   `dbo.usp_log_change` = `{writes_to dbo.audit_log (parsed)}`, ZERO `calls`; ZERO `[table] usp_log_change` stub; fn→fn =
   one `calls dbo.fn_round_money (declared)`. Spec: mssql-extraction (S15/S16/S17), graph-model "mssql calls is declared"
   (S4 declared side). §Testing.
-- [ ] A.8 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless `test/fixtures/mssql/golden/golden-raw-catalog.json`
+- [x] A.8 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless `test/fixtures/mssql/golden/golden-raw-catalog.json`
   (routines gain `dependencies` w/ routine kind) + `golden-e2e.json` (+2 `calls` edges; **−1 phantom `[table]
   usp_log_change` stub** → `stubCount` −1) to match the pinned graph; every byte traces to a `calls` edge or the stub
   removal; byte-identical on re-run (ADR-008). Commit body = per-golden inventory. Spec: mssql-extraction "fixture … goldens
   pin the calls edges" (S18). D5.
-- [ ] A.9 **(integration-gated)** Add the SAME A.7 L-009 exact-set + zero-stub assertions to
+- [x] A.9 **(integration-gated)** Add the SAME A.7 L-009 exact-set + zero-stub assertions to
   `test/cli/mssql.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated Testcontainers over `torture.sql`) — proves the
   catalog path end-to-end; runs only under the gate. Spec: mssql-extraction (S18, integration tier). §Testing.
-- [ ] A.10 GATE (Batch A): RE-MEASURE baseline FIRST; `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test`
+- [x] A.10 GATE (Batch A): RE-MEASURE baseline FIRST; `npx tsc --noEmit` clean (no `any`); `npm run lint` 0/0; `npm test`
   GREEN (baseline + A suites) with `golden-e2e`/`golden-raw-catalog` byte-identical on re-run; **pg/mysql/sqlite goldens
   byte-identical (HARD STOP on drift)**; leak-scan clean. COMMIT `feat(mssql): catalog-declared calls edges via ref_object_type seam + regression-stub golden`.
 
@@ -274,7 +274,7 @@ recorded FOR-JSON row fixtures (`test/fixtures/mssql/rows/{dependencies,modules}
 - [ ] A proc calling a proc yields EXACTLY one `calls` edge with the engine's confidence (mssql `declared`; pg/mysql
   `parsed`) — exact `src+dst+kind+confidence` (L-009). — A (A.2, A.7), B (B.4) [graph-model S1/S4; graph-normalization S6;
   mssql S15/S16; pg S19; mysql S23]
-- [ ] The mssql proc→proc fixture produces NO spurious `missing` `[table]` stub (regression golden, `stubCount` −1). — A
+- [x] The mssql proc→proc fixture produces NO spurious `missing` `[table]` stub (regression golden, `stubCount` −1). — A
   (A.7, A.8) [graph-normalization S6; mssql S18]
 - [ ] A routine touching only tables emits ZERO `calls` edges; an unresolved/builtin/dynamic-string invocation invents NO
   edge and NO stub (negatives). — A (A.2), B (B.1, B.2) [graph-normalization S7/S8/S9; mssql S17; pg S20/S21; mysql S24/S25]

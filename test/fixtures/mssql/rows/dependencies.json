@@ -5,7 +5,8 @@
     "object_type": "P",
     "ref_schema_name": "dbo",
     "ref_object_name": "audit_log",
-    "ref_object_id": 1004
+    "ref_object_id": 1004,
+    "ref_object_type": "U "
   },
   {
     "schema_name": "dbo",
@@ -13,7 +14,8 @@
     "object_type": "P",
     "ref_schema_name": "dbo",
     "ref_object_name": "orders",
-    "ref_object_id": 1001
+    "ref_object_id": 1001,
+    "ref_object_type": "U "
   },
   {
     "schema_name": "dbo",
@@ -21,7 +23,8 @@
     "object_type": "P",
     "ref_schema_name": "dbo",
     "ref_object_name": "order_items",
-    "ref_object_id": 1002
+    "ref_object_id": 1002,
+    "ref_object_type": "U "
   },
   {
     "schema_name": "dbo",
@@ -29,7 +32,8 @@
     "object_type": "FN",
     "ref_schema_name": "dbo",
     "ref_object_name": "order_items",
-    "ref_object_id": 1002
+    "ref_object_id": 1002,
+    "ref_object_type": "U "
   },
   {
     "schema_name": "dbo",
@@ -37,7 +41,8 @@
     "object_type": "TR",
     "ref_schema_name": "dbo",
     "ref_object_name": "audit_log",
-    "ref_object_id": 1004
+    "ref_object_id": 1004,
+    "ref_object_type": "U "
   },
   {
     "schema_name": "dbo",
@@ -45,6 +50,43 @@
     "object_type": "P",
     "ref_schema_name": null,
     "ref_object_name": null,
-    "ref_object_id": null
+    "ref_object_id": null,
+    "ref_object_type": null
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_refresh_totals",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "order_totals",
+    "ref_object_id": 1005,
+    "ref_object_type": "U "
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_refresh_totals",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "usp_log_change",
+    "ref_object_id": 3008,
+    "ref_object_type": "P "
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "usp_log_change",
+    "object_type": "P",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "audit_log",
+    "ref_object_id": 1004,
+    "ref_object_type": "U "
+  },
+  {
+    "schema_name": "dbo",
+    "object_name": "fn_net_amount",
+    "object_type": "FN",
+    "ref_schema_name": "dbo",
+    "ref_object_name": "fn_round_money",
+    "ref_object_id": 3010,
+    "ref_object_type": "FN"
   }
 ]

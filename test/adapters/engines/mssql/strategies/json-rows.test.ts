@@ -156,6 +156,7 @@ function makeDepRow(overrides: Record<string, unknown> = {}): Record<string, unk
     ref_schema_name: 'dbo',
     ref_object_name: 'Users',
     ref_object_id: 42,
+    ref_object_type: 'U',
     ...overrides,
   };
 }
@@ -346,6 +347,33 @@ describe('parseJsonRows — absent nullable text → null', () => {
       dependencies: [makeDepRow({ ref_schema_name: null })],
     }));
     expect(result.dependencies[0]!.ref_schema_name).toBeNull();
+  });
+
+  // DOG-1 A.4 — ref_object_type (sys.objects.type CHAR(2)) plumbed through DepRow.
+  it('coerces a routine ref_object_type (P) onto DepRow', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      dependencies: [makeDepRow({ ref_object_type: 'P' })],
+    }));
+    expect(result.dependencies[0]!.ref_object_type).toBe('P');
+  });
+
+  it('coerces a scalar-function ref_object_type (FN) onto DepRow', () => {
+    const result = parseJsonRows(makeMinimalInput({
+      dependencies: [makeDepRow({ ref_object_type: 'FN' })],
+    }));
+    expect(result.dependencies[0]!.ref_object_type).toBe('FN');
+  });
+
+  it('absent/null ref_object_type stays null on DepRow (NULL referenced_id / cross-db row)', () => {
+    const nullType = parseJsonRows(makeMinimalInput({
+      dependencies: [makeDepRow({ ref_object_type: null, ref_object_id: null })],
+    }));
+    expect(nullType.dependencies[0]!.ref_object_type).toBeNull();
+
+    const { ref_object_type: _omit, ...withoutType } = makeDepRow();
+    void _omit;
+    const missingType = parseJsonRows(makeMinimalInput({ dependencies: [withoutType] }));
+    expect(missingType.dependencies[0]!.ref_object_type).toBeNull();
   });
 });
 

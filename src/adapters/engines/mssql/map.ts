@@ -170,6 +170,9 @@ export interface DepRow {
   readonly ref_schema_name: string | null;
   readonly ref_object_name: string | null;
   readonly ref_object_id: number | null;
+  // sys.objects.type (CHAR(2)) of the REFERENCED object, via LEFT JOIN sys.objects on
+  // referenced_id. Null for unresolved / cross-database refs (NULL referenced_id). DOG-1 (D2).
+  readonly ref_object_type: string | null;
 }
 
 /**
@@ -557,11 +560,19 @@ function buildModules(
       }
     }
 
-    // Dependency classification via tokenizer
+    // Dependency classification via tokenizer.
+    // DOG-1 (D2): thread ref_object_type through and flag whether the referencing module is
+    // itself a routine, so a routine→routine reference becomes a catalog-declared `calls` edge.
     const deps = depMap.get(mod.object_name) ?? [];
+    const sourceIsRoutine = kind === 'procedure' || kind === 'function';
     const { hasDynamicSql: dynamic, dependencies } = tokenizeModuleDeps(
       mod.definition ?? '',
-      deps.map((d) => ({ ref_schema_name: d.ref_schema_name, ref_object_name: d.ref_object_name })),
+      deps.map((d) => ({
+        ref_schema_name: d.ref_schema_name,
+        ref_object_name: d.ref_object_name,
+        ref_object_type: d.ref_object_type,
+      })),
+      { sourceIsRoutine },
     );
 
     const obj: RawObject = {
