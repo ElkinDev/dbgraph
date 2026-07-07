@@ -295,6 +295,40 @@ describe('extractViews()', () => {
     expect(v).toBeDefined();
     expect(v!.body).toBeUndefined();
   });
+
+  // B2.1 — view bodies now tokenize into depends_on candidates via the shared presence-gate.
+  it('active_departments carries EXACT read deps {main.departments, main.employees} (B2.1)', () => {
+    const views = extractViews(driver, FULL_SCOPE);
+    const v = views.find((x) => x.name === 'active_departments');
+    expect(v).toBeDefined();
+    const set = new Set((v!.dependencies ?? []).map((d) => `${d.target.schema}.${d.target.name}|${d.access}|${d.confidence}`));
+    expect(set).toStrictEqual(
+      new Set(['main.departments|read|parsed', 'main.employees|read|parsed']),
+    );
+  });
+
+  it('employee_summary carries EXACT read deps {main.employees, main.departments} (B2.1)', () => {
+    const views = extractViews(driver, FULL_SCOPE);
+    const v = views.find((x) => x.name === 'employee_summary');
+    expect(v).toBeDefined();
+    const set = new Set((v!.dependencies ?? []).map((d) => `${d.target.schema}.${d.target.name}|${d.access}`));
+    expect(set).toStrictEqual(new Set(['main.departments|read', 'main.employees|read']));
+  });
+
+  it('no view carries a self-edge dependency (B2.1 negative)', () => {
+    const views = extractViews(driver, FULL_SCOPE);
+    for (const v of views) {
+      const names = (v.dependencies ?? []).map((d) => d.target.name);
+      expect(names).not.toContain(v.name);
+    }
+  });
+
+  it('at metadata scope, views carry NO dependencies (body gated off)', () => {
+    const views = extractViews(driver, METADATA_SCOPE);
+    for (const v of views) {
+      expect(v.dependencies ?? []).toStrictEqual([]);
+    }
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -348,10 +382,49 @@ describe('extractTriggers()', () => {
     expect(t!.trigger?.table.name).toBe('employees');
   });
 
-  it('trigger has empty dependencies (no guessing)', () => {
+  // B2.2 — trigger ACTION bodies now tokenize into writes_to/reads_from candidates.
+  // The header (incl. ON <target>) is stripped, so the fires_on object never leaks.
+  it('each trg_emp_* trigger carries EXACTLY one WRITE dep to main.audit_log (B2.2)', () => {
+    const triggers = extractTriggers(driver, FULL_SCOPE);
+    const empTriggers = [
+      'trg_emp_before_insert',
+      'trg_emp_after_insert',
+      'trg_emp_before_update',
+      'trg_emp_after_delete',
+      'trg_emp_salary_update',
+    ];
+    for (const name of empTriggers) {
+      const t = triggers.find((x) => x.name === name);
+      expect(t, name).toBeDefined();
+      const tuples = (t!.dependencies ?? []).map((d) => `${d.target.schema}.${d.target.name}|${d.access}|${d.confidence}`);
+      expect(tuples, name).toStrictEqual(['main.audit_log|write|parsed']);
+    }
+  });
+
+  it('trg_active_dept_instead_insert carries EXACTLY one WRITE dep to main.departments (B2.2)', () => {
+    const triggers = extractTriggers(driver, FULL_SCOPE);
+    const t = triggers.find((x) => x.name === 'trg_active_dept_instead_insert');
+    expect(t).toBeDefined();
+    const tuples = (t!.dependencies ?? []).map((d) => `${d.target.schema}.${d.target.name}|${d.access}|${d.confidence}`);
+    expect(tuples).toStrictEqual(['main.departments|write|parsed']);
+  });
+
+  it('NO trigger leaks a dep to its fires_on object, and NO trigger carries a read dep (B2.2 negative)', () => {
     const triggers = extractTriggers(driver, FULL_SCOPE);
     for (const t of triggers) {
-      expect(t.dependencies).toEqual([]);
+      const deps = t.dependencies ?? [];
+      // header ON-target (employees / active_departments) must never appear as a dep
+      const firesOn = t.trigger?.table.name;
+      expect(deps.map((d) => d.target.name), t.name).not.toContain(firesOn);
+      // the torture triggers only INSERT INTO audit_log/departments → writes only, no reads
+      expect(deps.every((d) => d.access === 'write'), t.name).toBe(true);
+    }
+  });
+
+  it('at metadata scope, triggers carry NO dependencies (body gated off)', () => {
+    const triggers = extractTriggers(driver, METADATA_SCOPE);
+    for (const t of triggers) {
+      expect(t.dependencies ?? []).toStrictEqual([]);
     }
   });
 

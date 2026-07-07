@@ -15,7 +15,7 @@ familiesIncluded:
 familiesExcluded:
   - view-dependency
 notes:
-  view-dependency: "excluded on the SQLite substrate — the adapter declares dependency blindness (supportsDependencyHints=false, US-007), so views carry no depends_on/reads_from edges. Enumerator is present and correct; it yields no candidates here."
+  view-dependency: "held out of the frozen set — N is pinned at 5. The SQLite adapter now derives view depends_on edges from bodies (sqlite-view-deps), so the enumerator yields candidates; instantiating them into the committed set is deferred to its own labeled run."
 questions:
   - qid: column-type-assignments.dept_id
     family: column-type

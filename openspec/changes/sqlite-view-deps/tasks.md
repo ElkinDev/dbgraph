@@ -100,20 +100,20 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
 > corrected; N and committed set unchanged). L-009 exact-set integration asserts against the BUILT torture graph FIRST
 > (D5). The SQLite golden family is HELD for B4 (this gate scopes to the new programmatic suites). Realizes D1/D3/D6.
 
-- [ ] B2.1 **(vitest)** RED→GREEN extend `test/adapters/engines/sqlite/extract.test.ts` + `src/adapters/engines/sqlite/map.ts`:
+- [x] B2.1 **(vitest)** RED→GREEN extend `test/adapters/engines/sqlite/extract.test.ts` + `src/adapters/engines/sqlite/map.ts`:
   `buildRawCatalog` assembles `potentialDeps` = all tables + all views (name-sorted, D3); `extractViews` passes each view
   `body` through `tokenizeSqliteBody(body, potentialDeps)`, dropping the hardcoded `dependencies: []`; emitted read deps
   become the view's `RawDependency[]`. RED first on the built catalog: `active_departments`/`employee_summary` carry the
   expected `dependencies` (verified programmatically, not via golden). Spec: `sqlite-extraction` view-body derivation.
   Design D1/D3. Done: `npm test extract`.
-- [ ] B2.2 **(vitest)** RED→GREEN `extract.test.ts` + `map.ts`: `extractTriggers` runs `extractTriggerActionBlock(body)`
+- [x] B2.2 **(vitest)** RED→GREEN `extract.test.ts` + `map.ts`: `extractTriggers` runs `extractTriggerActionBlock(body)`
   THEN `tokenizeSqliteBody(actionBlock, potentialDeps)` → `writes_to`/`reads_from` deps; hardcoded `dependencies: []`
   dropped. The `ON <object>` header is stripped BEFORE presence-gating so the fires_on object never leaks. RED first: the
   five `trg_emp_*` triggers carry a WRITE dep to `audit_log`; `trg_active_dept_instead_insert` carries a WRITE dep to
   `departments`; NONE carries a dep to its own fires_on object (`employees` / `active_departments`); NONE carries any read
   dep. Spec: `sqlite-extraction` trigger action-body derivation + header-never-leaks (seam→wiring). Design D1/D2/D3. Done:
   `npm test extract`.
-- [ ] B2.3 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/dependency-edges.test.ts` (new) — L-009 EXACT-set
+- [x] B2.3 **(vitest)** RED→GREEN `test/adapters/engines/sqlite/dependency-edges.test.ts` (new) — L-009 EXACT-set
   integration over the normalized torture graph (built from `test/fixtures/sqlite/torture.sql`). POSITIVE (exact,
   `.toStrictEqual` the full set): `depends_on` = `main.active_departments → {main.departments, main.employees}` and
   `main.employee_summary → {main.employees, main.departments}` — no other, no fewer; `writes_to` = each of
@@ -126,20 +126,20 @@ references `sqlite-view-deps`, NO AI attribution, NO push/PR/gh/tag).
   ACTUALLY produces, do not hard-code an unverified prefix. Spec: `sqlite-extraction` "View bodies emit exact depends_on",
   "Trigger action bodies emit exact writes_to", "Trigger header never leaks" (negative), "No self-edges and no phantom
   edges" (negative), "Edge set is deterministic". Design D1/D2/D3/D5. Done: `npm test dependency-edges`.
-- [ ] B2.4 **(vitest)** RED→GREEN extend `test/adapters/engines/sqlite/capabilities.test.ts` +
+- [x] B2.4 **(vitest)** RED→GREEN extend `test/adapters/engines/sqlite/capabilities.test.ts` +
   `src/adapters/engines/sqlite/capabilities.ts`: assert `supportsDependencyHints` is `false` (matching pg/mysql/mongodb)
   EVEN THOUGH body-derived edges are now emitted; correct the accompanying COMMENT to state edges are derived from bodies
   and the flag denotes cheap catalog hints SQLite lacks. RED first: the capability value is `false` and the comment text
   no longer asserts view/trigger dependency-blindness. Spec: `sqlite-extraction` "`supportsDependencyHints` stays false,
   comment corrected". Design D6. Done: `npm test capabilities`.
-- [ ] B2.5 **(vitest)** RED→GREEN a comment-correction guard test + edit `benchmark/generate.ts` (SUBSTRATE NOTE, inline,
+- [x] B2.5 **(vitest)** RED→GREEN a comment-correction guard test + edit `benchmark/generate.ts` (SUBSTRATE NOTE, inline,
   YAML string) and `benchmark/questions.yaml` — COMMENT-ONLY. The corrected text states SQLite dependency edges are
   body-derived and NO LONGER asserts SQLite views/triggers carry no dependency edges. **HARD STOP guard:** assert the
   `questions.yaml` DATA portions (N, every question id/prompt/ground-truth, the pre-registered set) are BYTE-STABLE — only
   the stale comment string changed (spec open question c). Spec: `benchmark` "Stale blindness comments corrected" + "N and
   the committed question set are unchanged; prior runs stay frozen". Design D6. Done: `npm test benchmark` (comment guard);
   `git diff` on `questions.yaml` shows ONLY the comment line.
-- [ ] B2.6 GATE (Batch B2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN for the NEW suites (extract +
+- [x] B2.6 GATE (Batch B2): `npx tsc --noEmit` clean; `npm run lint` 0/0; `npm test` GREEN for the NEW suites (extract +
   dependency-edges + capabilities + benchmark comment guard; baseline 3162 + those suites); cross-engine goldens
   byte-identical (HARD STOP on drift). **HOLD the SQLite golden family** (`golden-raw-catalog.json`, `golden-e2e.json`, the
   `test/mcp/golden/*` set) for the B4 single re-bless — do NOT re-bless here (D5); RECORD the pending set. Leak-scan clean.

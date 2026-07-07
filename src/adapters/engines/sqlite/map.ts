@@ -22,6 +22,7 @@ import type {
   RawConstraint,
   RawIndex,
   RawTriggerInfo,
+  RawDependency,
 } from '../../../core/model/catalog.js';
 import type { NodeKind } from '../../../core/model/node.js';
 import {
@@ -33,6 +34,28 @@ import {
   PRAGMA_INDEX_LIST,
   PRAGMA_INDEX_INFO,
 } from './queries.js';
+import { tokenizeSqliteBody, extractTriggerActionBlock } from './tokenizer.js';
+
+/** Candidate object reference for body tokenization (schema + bare name). */
+interface DepCandidate {
+  readonly schema: string;
+  readonly name: string;
+}
+
+/**
+ * Builds the deterministic candidate list for body tokenization (Design D3):
+ * ALL tables + ALL views, name-sorted. Reads only the sqlite_master NAME rows that
+ * extraction already consumes — no new query type, no dependency PRAGMA (SQLite has none).
+ * A view/trigger body never matches its OWN qname because the caller excludes self
+ * (view bodies from sqlite_master include the CREATE VIEW <name> AS header).
+ */
+function buildPotentialDeps(driver: ReadonlyDriver): DepCandidate[] {
+  const tableRows = driver.all(SQL_TABLES) as unknown as MasterRow[];
+  const viewRows = driver.all(SQL_VIEWS) as unknown as MasterRow[];
+  return [...tableRows, ...viewRows]
+    .map((r): DepCandidate => ({ schema: 'main', name: r.name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Kind rank for deterministic ordering (locked decision 5)
@@ -327,18 +350,39 @@ export function extractUniqueConstraints(driver: ReadonlyDriver, tableName: stri
 /**
  * Extracts views from sqlite_master.
  * body is level-gated: included only when levels.views === 'full'.
+ *
+ * When the body is present, it is tokenized against the candidate list (all tables +
+ * views, self excluded) via the shared presence-gate tokenizer → depends_on read deps.
+ * A view read dependency normalizes to `depends_on` (reference-resolver §buildDependencyEdges).
+ * The candidate list EXCLUDES the view own qname because the sqlite_master body includes
+ * the `CREATE VIEW <name> AS` header (unlike pg/mysql catalog bodies) — this is what keeps
+ * the no-self-edge invariant (Design D3, spec "No self-edges and no phantom edges").
  */
-export function extractViews(driver: ReadonlyDriver, scope: ExtractionScope): RawObject[] {
+export function extractViews(
+  driver: ReadonlyDriver,
+  scope: ExtractionScope,
+  potentialDeps: readonly DepCandidate[] = buildPotentialDeps(driver),
+): RawObject[] {
   const rows = driver.all(SQL_VIEWS) as unknown as MasterRow[];
   const includeBody = scope.levels.views === 'full';
 
   return rows.map((row) => {
+    const body = includeBody && row.sql !== null ? row.sql : undefined;
+
+    let dependencies: readonly RawDependency[] = [];
+    if (body !== undefined) {
+      const candidates = potentialDeps.filter(
+        (d) => !(d.schema === 'main' && d.name === row.name),
+      );
+      dependencies = tokenizeSqliteBody(body, candidates);
+    }
+
     const obj: RawObject = {
       kind: 'view',
       schema: 'main',
       name: row.name,
-      ...(includeBody && row.sql !== null ? { body: row.sql } : {}),
-      dependencies: [],
+      ...(body !== undefined ? { body } : {}),
+      dependencies,
     };
     return obj;
   });
@@ -388,22 +432,40 @@ function parseTriggerInfo(
 /**
  * Extracts triggers from sqlite_master.
  * body is level-gated: included only when levels.triggers === 'full'.
- * dependencies: [] — no guessing (declared blindness, design §4).
+ *
+ * When the body is present, the CREATE TRIGGER header is stripped via
+ * extractTriggerActionBlock (Design D2) so the `ON <target>` fires_on object never reaches
+ * the tokenizer; only the `BEGIN…END` action block is tokenized → writes_to (INSERT/UPDATE/
+ * DELETE targets) and reads_from (read targets). The candidate list is the full tables+views
+ * set (a trigger name is never itself a candidate, so no self-edge is possible).
  */
-export function extractTriggers(driver: ReadonlyDriver, scope: ExtractionScope): RawObject[] {
+export function extractTriggers(
+  driver: ReadonlyDriver,
+  scope: ExtractionScope,
+  potentialDeps: readonly DepCandidate[] = buildPotentialDeps(driver),
+): RawObject[] {
   const rows = driver.all(SQL_TRIGGERS) as unknown as TriggerMasterRow[];
   const includeBody = scope.levels.triggers === 'full';
 
   return rows.map((row) => {
     const triggerInfo = row.sql !== null ? parseTriggerInfo(row.sql, row.tbl_name) : undefined;
 
+    const body = includeBody && row.sql !== null ? row.sql : undefined;
+    let dependencies: readonly RawDependency[] = [];
+    if (body !== undefined) {
+      const actionBlock = extractTriggerActionBlock(body);
+      if (actionBlock !== '') {
+        dependencies = tokenizeSqliteBody(actionBlock, potentialDeps);
+      }
+    }
+
     const obj: RawObject = {
       kind: 'trigger',
       schema: 'main',
       name: row.name,
-      ...(includeBody && row.sql !== null ? { body: row.sql } : {}),
+      ...(body !== undefined ? { body } : {}),
       ...(triggerInfo !== undefined ? { trigger: triggerInfo } : {}),
-      dependencies: [],
+      dependencies,
     };
     return obj;
   });
@@ -425,6 +487,10 @@ export function buildRawCatalog(
 ): RawCatalog {
   const objects: RawObject[] = [];
 
+  // Candidate list for body tokenization (all tables + views, name-sorted, D3).
+  // Computed once and shared by extractViews/extractTriggers for determinism + no re-query.
+  const potentialDeps = buildPotentialDeps(driver);
+
   // Tables (always extracted if level !== 'off')
   if (scope.levels.tables !== 'off') {
     objects.push(...extractTables(driver));
@@ -432,12 +498,12 @@ export function buildRawCatalog(
 
   // Views (skip if 'off')
   if (scope.levels.views !== 'off') {
-    objects.push(...extractViews(driver, scope));
+    objects.push(...extractViews(driver, scope, potentialDeps));
   }
 
   // Triggers (skip if 'off')
   if (scope.levels.triggers !== 'off') {
-    objects.push(...extractTriggers(driver, scope));
+    objects.push(...extractTriggers(driver, scope, potentialDeps));
   }
 
   // Sort deterministically
