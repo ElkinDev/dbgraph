@@ -120,7 +120,7 @@ jobs:
       # goes public, provenance activates on the next release without edits.
       - name: Attest build provenance for the binaries (best-effort on private repos)
         continue-on-error: true
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: 'release/dbgraph-*'
 
