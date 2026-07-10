@@ -52,20 +52,53 @@ drives the conservative-include rule). mysql/sqlite edges stay byte-identical �
 
 ### Decision: Confidence — mssql declared as-is; pg upgrades covered pairs
 
-**Choice**: mssql view `depends_on` is ALREADY `declared` → attach set, no flip. pg: `view_column_usage`
+**Choice**: mssql view `depends_on` is ALREADY `declared` → attach the native-TVF-loop set (D8), no flip. pg: `view_column_usage`
 is a CATALOG dependency signal — covered (view,table) pairs flip `parsed`→`declared` + gain `dstColumns`;
 uncovered (owner-visibility gap / SELECT* / non-owned source) keep the tokenizer's `parsed` object grain.
 **Rationale**: honors "confidence: declared" (Success Criteria) honestly — a catalog-confirmed pair IS
 declared. Deliberate pg re-bless, Batch B only.
 
+### Decision: mssql column source — native `dm_sql_referenced_entities` TVF loop (hybrid), NOT `referenced_minor_id` — D8 (SUPERSEDES the originally-named source; live finding 2026-07-07)
+
+**Live finding (proven against `mssql:2022` over `torture.sql`)**: `sys.sql_expression_dependencies.referenced_minor_id`
+= 0 (whole-object, `ref_column_name = NULL`) for NON-schemabound views — the common case in the wild. Only schemabound
+views populate a non-zero `minor_id`. The originally-named source is therefore INERT for real-world view column lineage.
+The observable pins HELD, but only via a DIFFERENT catalog: `sys.dm_sql_referenced_entities('<view>','OBJECT')` — a
+PER-OBJECT table-valued function — returned EXACTLY orders→[customer_id,order_id,status,total_amount] (the COMPUTED
+`total_amount` consumed AS ITSELF, never expanded to quantity/unit_price) and order_items→[order_id,product_id].
+
+**Choice (hybrid)**:
+- **Native driver path** (`NativeTediousStrategy` → `MssqlReadonlyDriver`, in `extract()`): a JS-side per-view LOOP calls
+  `sys.dm_sql_referenced_entities(@view,'OBJECT')` (one lightweight metadata query per view; ~67 corporate views = acceptable).
+  EACH call is individually `try/catch`-wrapped — an UNBINDABLE view (broken/renamed/dropped source) is SKIPPED and its
+  `depends_on` edge KEEPS object grain (degrade-by-absence, D4; the model built for exactly this). DETERMINISTIC: views
+  iterated in stable qname order; per-view rows sorted by the normalizer stamp anyway (D3).
+- **sqlcmd + manual-dump paths**: the fixed single-SELECT-per-family dump contract (DOG-2) stays UNTOUCHED — NO view-columns
+  family is added (a per-object TVF loop is incompatible with one-SELECT-per-family). mssql-via-sqlcmd/dump therefore yields
+  OBJECT GRAIN for view lineage. This is the project's FIRST strategy-dependent coverage difference — surfaced LOUDLY in the
+  capability note, `docs/`, and an explicit spec scenario (edges byte-identical to pre-DOG-3, no `dstColumns`, no error).
+- **Schemabound views NOT special-cased**: even if `minor_id` were non-zero via the set query, ONE source (the TVF loop), ONE
+  behavior — uniformity beats a rare-path optimization.
+
+**Alternatives considered (rejected)**:
+- `sys.sql_expression_dependencies.referenced_minor_id` (originally named) — INERT: `minor_id = 0` for non-schemabound views →
+  zero columns, the feature would be dead in the wild.
+- Set-based `CROSS APPLY sys.dm_sql_referenced_entities` (FOR-JSON/dump-compatible, single SELECT) — one unbindable view ABORTS
+  the entire family: a read-only ROBUSTNESS regression vs today's set-based `sys.sql_expression_dependencies`.
+- Schemabound-only special case via the set query — forks behavior for a rare view class with zero coverage on the common case.
+
+**Rationale**: correct source (proven live) × per-call resilience (unbindable → skip, never abort) × dump-model compatibility
+(no new family) — the loop-per-view is the ONLY option satisfying all three. `SQL_MSSQL_DEPENDENCIES` stays object-grain-only;
+the `referenced_minor_id`/`sys.columns` mechanism is DROPPED.
+
 ## Data Flow
 
     adapter catalog ─(RawDependency.columns?)─► buildDependencyEdges ─► depends_on
-      mssql: minor_id→sys.columns (group)          sorted-unique         attrs.dstColumns
-      pg:    view_column_usage (merge, upgrade)          │                     │
-      my/sqlite: unset → degrade                         ▼                     ▼
-                                              impact: column pivot → owning table → filter
-                                              render: explore/object "consumes: t.col" (full)
+      mssql(native): dm_sql_referenced_entities per-view loop, per-call catch (group)   sorted-unique   attrs.dstColumns
+      mssql(sqlcmd/dump): NO view-cols family → unset → object grain (strategy diff)          │                │
+      pg:    view_column_usage (merge, upgrade)                                               ▼                ▼
+      my/sqlite: unset → degrade                                    impact: column pivot → owning table → filter
+                                                                    render: explore/object "consumes: t.col" (full)
 
 ## File Changes
 
@@ -75,8 +108,11 @@ declared. Deliberate pg re-bless, Batch B only.
 | `core/model/catalog.ts` | Modify | add `RawDependency.columns?: readonly string[]` (source set, optional) |
 | `core/model/capability.ts` | Modify | add `supportsColumnLineage?: boolean` to CapabilityMatrix |
 | `core/normalize/reference-resolver.ts` | Modify | `buildDependencyEdges` stamps sorted-unique set → `attrs.dstColumns`; absent → `{}` |
-| `adapters/engines/mssql/queries.ts` | Modify | `SQL_MSSQL_DEPENDENCIES` + `referenced_minor_id` + LEFT JOIN `sys.columns` (FOR-JSON-safe) |
-| `adapters/engines/mssql/map.ts` | Modify | `DepRow` += minor_id/col-name; group by referenced obj → `columns`; minor_id=0 → none |
+| `adapters/engines/mssql/queries.ts` | Modify | ADD const `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` — parameterized `sys.dm_sql_referenced_entities(@view,'OBJECT')`, NATIVE-only (NOT in the dump family); `SQL_MSSQL_DEPENDENCIES` UNCHANGED (object grain) |
+| `adapters/engines/mssql/mssql-schema-adapter.ts` | Modify | `extract()` adds a per-view TVF loop (native driver only), each call `try/catch` → unbindable view SKIPPED; feeds `map.ts` |
+| `adapters/engines/mssql/map.ts` | Modify | group TVF `(referenced obj, referenced column)` rows per view dependency → `RawDependency.columns`; unresolved/whole-object → none |
+| `adapters/engines/mssql/capabilities.ts` | Modify | note: view column lineage is NATIVE-driver only; sqlcmd/dump → object grain (FIRST strategy-dependent coverage difference) |
+| `adapters/engines/mssql/strategies/{registry,dump-emitter}.ts` | Verify | dump family stays the fixed catalog SELECTs (NO view-columns family) — the sqlcmd/dump degrade is BY DESIGN |
 | `adapters/engines/pg/queries.ts` | Create const | `SQL_PG_VIEW_COLUMN_USAGE` over `information_schema.view_column_usage` |
 | `adapters/engines/pg/map.ts` | Modify | merge column sets into tokenizer deps; covered → declared + `dstColumns` |
 | `adapters/engines/pg/capabilities.ts` | Modify | `supportsColumnLineage: true` (owner caveat) |
@@ -106,7 +142,7 @@ readonly columns?: readonly string[];    // RawDependency: source-column set (op
 |-------|------|----------|
 | Unit | `buildDependencyEdges` set-stamp + sort; mssql/pg map grouping; `filterReadersByColumn`; explore/object render | pure fns + JSON fixtures; golden strings |
 | Unit | `getImpact` drop-column precision (positive + NEGATIVE: unread col → no reader) | fixture store; L-009 exact-set |
-| Integration | real mssql `referenced_minor_id` (verify `dbo.orders.total_amount` computed-column truth); pg `view_column_usage` coverage + materialized-view exclusion | testcontainers tiers ARE available (mssql/pg/mysql images cached, ran green in DOG-1/DOG-2), `DBGRAPH_INTEGRATION`-gated; DOG-3's live verifications MUST run here at apply |
+| Integration | real mssql `dm_sql_referenced_entities` TVF loop (verify `dbo.orders.total_amount` computed-column truth + UNBINDABLE-view SKIP via a scratch broken view → edge stays object grain, extraction completes + sqlcmd/dump object-grain absence); pg `view_column_usage` coverage + materialized-view exclusion | testcontainers tiers ARE available (mssql/pg/mysql images cached, ran green in DOG-1/DOG-2), `DBGRAPH_INTEGRATION`-gated; DOG-3's live verifications MUST run here at apply |
 
 ## Migration / Rollout
 

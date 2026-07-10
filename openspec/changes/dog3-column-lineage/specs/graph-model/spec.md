@@ -51,7 +51,7 @@ MUST leave `attrs.dstColumns` UNSET → byte-identical to today's object-grain e
 ### Requirement: Per-engine column provenance and honest degradation-by-absence, never blurred
 
 The model SHALL make column-grain view lineage PROVENANCE-EXPLICIT and per-engine. Where a catalog sources
-the columns (mssql `sys.sql_expression_dependencies.referenced_minor_id`; pg
+the columns (mssql `sys.dm_sql_referenced_entities` (native path, D8); pg
 `information_schema.view_column_usage`) the view→table `depends_on` edge carries `attrs.dstColumns` at
 `confidence: 'declared'`. Where NO column catalog exists (mysql, sqlite) OR the catalog OMITS a source (pg
 materialized views / owner-visibility gaps / whole-object `SELECT *`), the edge MUST leave `attrs.dstColumns`

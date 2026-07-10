@@ -13,13 +13,14 @@
 The `RawCatalog` contract SHALL carry an OPTIONAL source-column path on view dependencies: a typed
 `RawDependency.columns?: readonly string[]` (defined by `graph-model`) naming the SOURCE columns a view
 consumes from that dependency's target table. Every adapter whose engine EXPOSES a view-column catalog (mssql
-`sys.sql_expression_dependencies.referenced_minor_id`; pg `information_schema.view_column_usage`) MUST
-populate it per view dependency the catalog sources; every adapter whose engine exposes NO view-column
-catalog (mysql, sqlite) MUST leave it UNSET. This path is ADDITIVE and OPTIONAL: it adds NO port method and
+`sys.dm_sql_referenced_entities`; pg `information_schema.view_column_usage`) MUST populate it per view
+dependency the catalog sources; every adapter whose engine exposes NO view-column catalog (mysql, sqlite) MUST
+leave it UNSET. This path is ADDITIVE and OPTIONAL: it adds NO port method and
 does NOT change the `SchemaAdapter` port SHAPE, and an adapter that does not populate `columns` MUST keep its
 existing `RawCatalog` goldens BYTE-IDENTICAL (ADR-008). The set MUST be provenance `declared` (catalog-sourced)
 — NEVER inferred, never body-parsed, never fabricated — and MUST distinguish "unknown" (UNSET: no
-view-column catalog, or a whole-object `SELECT *`/`minor_id = 0` reference) from a real sourced set.
+view-column catalog, a whole-object `SELECT *` reference, an unbindable source, or an extraction strategy that
+does not carry the view-column family) from a real sourced set.
 `columns` is a SOURCE-COLUMN SET only — it MUST NOT encode an OUTPUT-column ↔ source-column MAPPING (ADR-007).
 
 #### Scenario: An adapter with a view-column catalog populates columns

@@ -5,8 +5,8 @@ Standing header (every task): **STRICT TDD** — the failing `vitest` test PRECE
 PLUS the `attrs.dstColumns` array — and explicit `not.toContainEqual` NEGATIVES: no column the view does NOT read, no
 fabricated pair under degradation, no per-column edge, no column-node target); existence-only `.toBeDefined()`/`.length`
 is FORBIDDEN. HEXAGONAL (ADR-004): the SET rides `EdgeAttrs.dstColumns` in `core/model`, is stamped in `core/normalize`,
-filtered in `core/query`, rendered in `core/present`; per-engine sourcing in `adapters/engines/*`; `referenced_minor_id`
-NEVER crosses into `core`. **Model A — SETTLED (design D1):** the column grain is `attrs.dstColumns` on the ONE existing
+filtered in `core/query`, rendered in `core/present`; per-engine sourcing in `adapters/engines/*`; the mssql
+`dm_sql_referenced_entities` TVF rows (and the per-view loop that runs them) NEVER cross into `core`. **Model A — SETTLED (design D1):** the column grain is `attrs.dstColumns` on the ONE existing
 view→table `depends_on` edge — ZERO new edges, ZERO column-node targets, edge-count-CONSTANT at 14k columns; the reserved
 singular `srcColumn/dstColumn` stay `references`-scoped and UNTOUCHED (FK/`references` goldens byte-identical). SOURCE-COLUMN
 SET only — the columns a view READS — NEVER an OUTPUT↔SOURCE mapping (ADR-006/007). Attrs PERSIST verbatim
@@ -43,11 +43,11 @@ shared seam leaked — investigate, NEVER re-bless.
 - **D3 (determinism centralized in the normalizer):** `buildDependencyEdges` does `[...new Set(cols)].sort()` (code-point
   ascending, deduplicated) BEFORE stamping — `stableStringify` preserves array order so the sort is MANDATORY, applied
   identically for every engine regardless of adapter row order (ADR-008). REJECTED: per-adapter sorting (drift risk).
-- **D4 (degrade = ABSENCE of `dstColumns`, no per-edge marker):** mysql/sqlite/`SELECT *`/`minor_id=0`/uncovered-pg emit NO
-  `dstColumns` → byte-identical object grain. NO `attrs.degraded` stamp (would churn EVERY mysql/sqlite golden for zero
+- **D4 (degrade = ABSENCE of `dstColumns`, no per-edge marker):** mysql/sqlite/`SELECT *`/mssql-unbindable-view/
+  mssql-via-sqlcmd-or-dump/uncovered-pg emit NO `dstColumns` → byte-identical object grain. NO `attrs.degraded` stamp (would churn EVERY mysql/sqlite golden for zero
   function — absence already drives the conservative-include rule). The per-engine `supportsColumnLineage` documents WHY.
 - **D5 (confidence — mssql declared as-is; pg upgrades covered pairs):** mssql view `depends_on` is ALREADY `declared` →
-  attach the set, NO flip. pg: `view_column_usage` is a CATALOG signal → COVERED (view,table) pairs FLIP `parsed`→`declared`
+  attach the native-TVF-loop set (D8), NO flip. pg: `view_column_usage` is a CATALOG signal → COVERED (view,table) pairs FLIP `parsed`→`declared`
   + gain `dstColumns`; UNCOVERED (owner-visibility gap / materialized view / `SELECT *`) KEEP the tokenizer's `parsed` object
   grain, no set. REJECTED: leaving covered pg pairs `parsed` (dishonest — a catalog-confirmed pair IS declared).
 - **D6 (conservative include-on-absence via ONE pure helper):** `filterReadersByColumn(edges, pivotCol)` in
@@ -58,6 +58,15 @@ shared seam leaked — investigate, NEVER re-bless.
   columns as `consumes: <table>.<column>` (pinned SHAPE) from `edge.attrs.dstColumns`, gated to `full` detail ONLY (NOT
   brief/normal — budget honesty); CLI + MCP BYTE-IDENTICAL (one helper, no per-surface branch); degraded/uncovered → NO
   consumes section. Exact label TEXT + byte layout golden-locked at apply + `docs/format-spec.md` §6 token-delta note.
+- **D8 (mssql column source — native `dm_sql_referenced_entities` TVF loop, NOT `referenced_minor_id`; live finding 2026-07-07):**
+  a JS-side per-view LOOP over `sys.dm_sql_referenced_entities('<view>','OBJECT')` on the NATIVE driver, each call individually
+  `try/catch`-wrapped → an UNBINDABLE view is SKIPPED, its edge KEEPS object grain (degrade-by-absence, D4); views iterated in
+  stable qname order (ADR-008). `SQL_MSSQL_DEPENDENCIES` is UNCHANGED (object grain). The sqlcmd/manual-dump strategies carry NO
+  view-columns family (single-SELECT-per-family, DOG-2) → mssql-via-sqlcmd/dump is OBJECT GRAIN: the project's FIRST
+  strategy-dependent coverage difference (capability note + `docs/` + spec scenario). Schemabound views NOT special-cased —
+  ONE source, ONE behavior (uniformity beats a rare optimization). REJECTED: `referenced_minor_id` (= 0 for non-schemabound
+  views → INERT, proven live); set-based `CROSS APPLY sys.dm_sql_referenced_entities` (one unbindable view ABORTS the whole
+  family — a read-only robustness regression); schemabound-only set query (rare-path fork, zero common-case coverage).
 
 **§Spec Coherence rulings (apply MUST honor):**
 - **`supportsColumnLineage` stays an IMPLEMENTATION DETAIL (`adapters/engines/*/capabilities.ts` + the model
@@ -82,18 +91,19 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 
 ## Batch A: model + shared normalize seam + mssql (catalog-`declared`)
 
-> Realizes D1/D2/D3/D5. Lands the additive `dstColumns`/`columns`/`supportsColumnLineage` types, the sorted-unique stamp every
-> engine reuses, and the mssql `referenced_minor_id`→`sys.columns` sourcing proved via unit L-009 + `DBGRAPH_INTEGRATION`-gated
-> live verification. Blast radius is mssql-only — **pg/mysql/sqlite goldens MUST stay byte-identical**.
+> Realizes D1/D2/D3/D5/D8. Lands the additive `dstColumns`/`columns`/`supportsColumnLineage` types, the sorted-unique stamp every
+> engine reuses, and the mssql NATIVE `dm_sql_referenced_entities` per-view TVF-loop sourcing (each call try/caught; sqlcmd/dump
+> stays OBJECT GRAIN by design — D8) proved via unit L-009 + `DBGRAPH_INTEGRATION`-gated live verification. Blast radius is
+> mssql-only — **pg/mysql/sqlite goldens MUST stay byte-identical**.
 
-- [ ] A.1 **(vitest)** RED→GREEN `test/core/model/column-lineage.test.ts` (new) + `src/core/model/edge.ts` + `catalog.ts` +
+- [x] A.1 **(vitest)** RED→GREEN `test/core/model/column-lineage.test.ts` (new) + `src/core/model/edge.ts` + `catalog.ts` +
   `capability.ts`: add `EdgeAttrs.dstColumns?: readonly string[]` (edge.ts — load-bearing for `depends_on`), mirror
   `RawDependency.columns?: readonly string[]` (catalog.ts), add `supportsColumnLineage?: boolean` to `CapabilityMatrix`
   (capability.ts). Assert under strict TS: `dstColumns`/`columns` OPTIONAL (omit ≠ `[]`); the SET is a SOURCE-column set, NOT a
   mapping; `srcColumn/dstColumn` UNCHANGED (references-scoped). Spec: graph-model "Consumed source-column set on view
   depends_on via attrs.dstColumns" (the model shape + honesty scenarios); schema-extraction "Optional RawDependency.columns is
   an engine-agnostic source-column-set contract". D1/D2.
-- [ ] A.2 **(vitest)** RED→GREEN `test/core/normalize/column-lineage.test.ts` (new) +
+- [x] A.2 **(vitest)** RED→GREEN `test/core/normalize/column-lineage.test.ts` (new) +
   `src/core/normalize/reference-resolver.ts`: `buildDependencyEdges` stamps `dep.columns`, `[...new Set()].sort()` code-point
   ascending, onto the view→table `depends_on` edge as `attrs.dstColumns`; UNSET `columns` → `attrs {}` byte-identical; NEVER a
   per-column edge, NEVER a column-node target. L-009: `columns:['status','order_id','order_id','customer_id']` →
@@ -101,16 +111,41 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   normalize twice → byte-identical (ADR-008). Spec: graph-normalization "buildDependencyEdges stamps the consumed source-column
   set as sorted-unique attrs.dstColumns" (all 3 scenarios); graph-model "Non-sourced dependency stays byte-identical object
   grain". D3.
+> **✅ RESOLVED (design, 2026-07-07) — the mssql catalog-source blocker is CLEARED; apply RESUMES at A.3.**
+> LIVE Docker probe (mssql:2022 over `torture.sql`) proved `sys.sql_expression_dependencies.referenced_minor_id = 0`
+> (whole-object, `ref_column_name = NULL`) for NON-schemabound views — INERT for real-world view column lineage (only
+> schemabound views populate a non-zero `minor_id`, rare in the wild). The TRUTH source is
+> `sys.dm_sql_referenced_entities('<view>','OBJECT')` — a PER-OBJECT TVF — which returned EXACTLY the spec-pinned sets:
+> orders → {customer_id, order_id, status, total_amount} (the COMPUTED `total_amount` consumed AS ITSELF, never expanded to
+> quantity/unit_price) and order_items → {order_id, product_id}. **So the OBSERVABLE pins HOLD, via a DIFFERENT source than
+> every artifact named.** **RULING (design D8 — hybrid, now applied to design.md + specs + A.3/A.5/A.7):**
+> (1) the NATIVE driver runs a JS-side per-view loop over the TVF, each call individually `try/catch`-wrapped → an unbindable
+> view is SKIPPED (edge keeps object grain, extraction completes); views iterated in stable qname order (ADR-008).
+> (2) the sqlcmd/manual-dump strategies do NOT carry a view-columns family (the fixed single-SELECT-per-family contract is
+> UNTOUCHED) → mssql-via-sqlcmd/dump is OBJECT GRAIN — the project's FIRST strategy-dependent coverage difference, documented
+> LOUDLY (capability note + `docs/` + spec scenario). (3) schemabound views are NOT special-cased — one source (the TVF loop),
+> one behavior. REJECTED: set-based `CROSS APPLY` (aborts the whole family on any unbindable view — a read-only robustness
+> regression); schemabound-only `referenced_minor_id` set query (inert on the common non-schemabound view). A.1+A.2 (the
+> engine-agnostic model + normalize seam — the architectural bottleneck) remain DONE, gated green (tsc 0, lint 0/0, 3519 tests,
+> zero golden drift), UNAFFECTED by this ruling — they carry NO mssql-source dependency.
+
 - [ ] A.3 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mssql/column-lineage.test.ts` (new) +
-  `src/adapters/engines/mssql/queries.ts` + `map.ts`: extend `SQL_MSSQL_DEPENDENCIES` with `referenced_minor_id` + LEFT JOIN
-  `sys.columns` for the source column NAME (FOR-JSON-safe — single top-level SELECT, scalar cols, top-level `ORDER BY`; DOG-1
-  `ref_object_type` precedent); `DepRow`+`coerceDepRow` gain minor_id + col-name (`optionalString`/int); `map.ts` GROUPS rows
-  per referenced object → `RawDependency.columns`; `referenced_minor_id = 0` (whole-object / `SELECT *`) contributes NO column;
-  NULL/unresolved referenced object SKIPPED (never speculative). Extend the mssql DUMP `dependencies` family
-  (`dump-emitter.ts` — DOG-2 precedent) + `queries-for-json.integration.test.ts` for the new columns. L-009 map-unit over
-  recorded rows. ALSO wire into the `DBGRAPH_INTEGRATION`-gated `test/cli/mssql.e2e.integration.test.ts`. Spec: mssql-extraction
-  "Declared consumed-column set stamped on view depends_on via referenced_minor_id"; schema-extraction "An adapter with a
-  view-column catalog populates columns". D5.
+  `src/adapters/engines/mssql/queries.ts` + `mssql-schema-adapter.ts` + `map.ts` + `capabilities.ts`: ADD const
+  `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` — parameterized `sys.dm_sql_referenced_entities(@view,'OBJECT')` returning
+  `(referenced_schema, referenced_entity, referenced column NAME)`, catalog `SELECT` only (write-verb scanner green); `extract()`
+  (NATIVE driver path only) runs it in a PER-VIEW LOOP over the views in STABLE qname order, EACH call individually
+  `try/catch`-wrapped → an UNBINDABLE view (the TVF raises) is SKIPPED and its `depends_on` edge KEEPS object grain, extraction
+  COMPLETES for the rest (degrade-by-absence, NEVER abort); `map.ts` GROUPS the returned rows per referenced object →
+  `RawDependency.columns`; a whole-object reference resolving NO source column (`SELECT *`) contributes NO column;
+  NULL/unresolved referenced object SKIPPED (never speculative). `SQL_MSSQL_DEPENDENCIES` UNCHANGED (object grain). The mssql
+  DUMP `dependencies` family + `queries-for-json.integration.test.ts` are NOT extended — the sqlcmd/dump path stays object grain
+  BY DESIGN (D8 strategy-coverage difference); add the NATIVE-only capability NOTE to `capabilities.ts` (column lineage requires
+  the native driver; sqlcmd/dump → object grain). L-009 map-unit over recorded TVF rows: positive set + unbindable-skip (an
+  in-fixture raising view yields NO `dstColumns`, others still exact) + whole-object/NULL negatives. ALSO wire into the
+  `DBGRAPH_INTEGRATION`-gated `test/cli/mssql.e2e.integration.test.ts`. Spec: mssql-extraction "Declared consumed-column set
+  stamped on view depends_on via dm_sql_referenced_entities (native path)" + "An unbindable view is skipped and extraction
+  completes" + "Extraction via sqlcmd or manual dump yields object grain"; schema-extraction "An adapter with a view-column
+  catalog populates columns". D5/D8.
 - [ ] A.4 **(vitest)** RED→GREEN `test/adapters/engines/mssql/column-lineage-normalize.test.ts` (new) — SYNTHETIC in-memory
   `RawCatalog` (default CI, no container): `dbo.v_order_summary` → view→`dbo.orders` edge
   `attrs.dstColumns=[customer_id,order_id,status,total_amount]` and view→`dbo.order_items` edge
@@ -121,25 +156,38 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   "v_order_summary emits its EXACT declared consumed-column set", "Columns the view does NOT read are absent (negative)", "A
   computed source column is consumed as itself (honesty)"; graph-model "A view carries attrs.dstColumns for its exact consumed
   columns". D1/D5.
-- [ ] A.5 **(vitest, fixtures)** VERIFY/EXTEND `test/fixtures/mssql/torture.sql` so `dbo.v_order_summary` reads
-  `o.order_id,o.customer_id,o.status,o.total_amount, COUNT(oi.product_id)` from `dbo.orders o` LEFT JOIN `dbo.order_items oi`,
-  with `dbo.orders.total_amount` a COMPUTED `(quantity*unit_price)` column and `dbo.order_items` carrying
-  `order_id/product_id/region_id/qty` (needed for the A.4 negatives) — then RE-RECORD `test/fixtures/mssql/rows/dependencies.json`
-  (add `referenced_minor_id` + source-column names). Leak-scan neutral; no non-view object added beyond what the negatives need.
-  Spec: mssql-extraction fixture anchor (`dbo.v_order_summary`). D5.
-- [ ] A.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless mssql `golden-raw-catalog.json` (view deps gain `columns`) +
-  `golden-e2e.json` (view→table `depends_on` edges gain `attrs.dstColumns`, `confidence:'declared'`) + `dumps/mssql-dump-golden.json`
-  (extended `dependencies` family) to match the A.4 pinned sets; EVERY changed byte traces to a `dstColumns` array; positive set
-  AND non-consumed negatives asserted; byte-identical on re-run (ADR-008). **pg/mysql/sqlite goldens byte-identical (HARD STOP).**
-  Commit body = per-golden inventory. Spec: mssql-extraction "mssql view-column goldens re-blessed deliberately with exact sets".
+- [ ] A.5 **(vitest, fixtures)** VERIFY (expected NO-OP) `test/fixtures/mssql/torture.sql` already has `dbo.v_order_summary`
+  reading `o.order_id,o.customer_id,o.status,o.total_amount, COUNT(oi.product_id)` from `dbo.orders o` LEFT JOIN `dbo.order_items
+  oi`, with `dbo.orders.total_amount` a COMPUTED `(quantity*unit_price)` column and `dbo.order_items` carrying
+  `order_id/product_id/region_id/qty` (needed for the A.4 negatives); EXTEND only if a column is missing. RECORD a NEW offline
+  fixture `test/fixtures/mssql/rows/view-referenced-columns.json` for `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` (the per-view TVF rows).
+  `test/fixtures/mssql/rows/dependencies.json` STAYS BYTE-IDENTICAL (object grain — `SQL_MSSQL_DEPENDENCIES` is unchanged). No
+  DUMP-fixture change (dump family not extended). Leak-scan neutral; no non-view object added beyond what the negatives need.
+  Spec: mssql-extraction fixture anchor (`dbo.v_order_summary`). D5/D8.
+- [ ] A.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless the NATIVE-path mssql `golden-raw-catalog.json` (view deps
+  gain `columns`) + `golden-e2e.json` (view→table `depends_on` edges gain `attrs.dstColumns`, `confidence:'declared'`) to match
+  the A.4 pinned sets; EVERY changed byte traces to a `dstColumns` array; positive set AND non-consumed negatives asserted.
+  **`dumps/mssql-dump-golden.json` STAYS OBJECT GRAIN — NO `attrs.dstColumns`, BYTE-IDENTICAL to pre-DOG-3 (the dump family is
+  NOT extended; D8 strategy-coverage difference — a moved byte there means the shared seam leaked: HARD STOP, investigate,
+  do NOT re-bless).** Byte-identical on re-run (ADR-008). **pg/mysql/sqlite goldens byte-identical (HARD STOP).** Commit body =
+  per-golden inventory (call out the native-gains-`dstColumns` vs dump-stays-object-grain split). Spec: mssql-extraction "mssql
+  view-column goldens re-blessed deliberately with exact sets".
 - [ ] A.7 **(integration-gated)** Add to `test/cli/mssql.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated Testcontainers
-  over `torture.sql`) the LIVE computed-column truth: `dbo.orders.total_amount` (COMPUTED) appears in `v_order_summary`'s
-  `attrs.dstColumns` as itself, `quantity`/`unit_price` do NOT — proving the catalog attribution end-to-end, NOT a fabricated
-  base-column expansion. Spec: mssql-extraction "A computed source column is consumed as itself", integration tier.
+  over `torture.sql`) the LIVE hybrid proofs: **(1) TRUTH SETS** — `v_order_summary`→`dbo.orders` `attrs.dstColumns =
+  [customer_id, order_id, status, total_amount]`, →`dbo.order_items = [order_id, product_id]`, both `confidence:'declared'`;
+  **(2) COMPUTED-COLUMN honesty** — `dbo.orders.total_amount` (COMPUTED) appears AS ITSELF, `quantity`/`unit_price` do NOT
+  (real catalog attribution, NOT a fabricated base-column expansion); **(3) UNBINDABLE-VIEW SKIP** — CREATE a scratch broken
+  view in-container (references a dropped/renamed source so `dm_sql_referenced_entities` RAISES), assert it is SKIPPED (its edge
+  stays object grain, NO `dstColumns`) AND extraction COMPLETES with `v_order_summary` still exact; **(4) STRATEGY ABSENCE** —
+  extraction via the sqlcmd/manual-dump path over the SAME container yields OBJECT GRAIN (view edges carry NO `dstColumns`, NO
+  error), byte-identical to pre-DOG-3. Spec: mssql-extraction "A computed source column is consumed as itself" + "An unbindable
+  view is skipped and extraction completes" + "Extraction via sqlcmd or manual dump yields object grain", integration tier. D8.
 - [ ] A.8 GATE (Batch A): RE-MEASURE baseline FIRST; `npx tsc --noEmit` strict clean (no `any`, `exactOptionalPropertyTypes`);
-  `npm run lint` 0/0; `npm test` GREEN (baseline + A suites) with mssql `golden-e2e`/`golden-raw-catalog`/dump byte-identical on
-  re-run; engines write-verb scanner GREEN (extended `SQL_MSSQL_DEPENDENCIES` catalog `SELECT` only); **pg/mysql/sqlite goldens
-  byte-identical (HARD STOP on drift)**; leak-scan clean; confirm nothing pushed. COMMIT `feat(mssql,core): declared column-lineage set via attrs.dstColumns + referenced_minor_id sourcing`.
+  `npm run lint` 0/0; `npm test` GREEN (baseline + A suites) with the NATIVE-path mssql `golden-e2e`/`golden-raw-catalog`
+  byte-identical on re-run AND `dumps/mssql-dump-golden.json` OBJECT GRAIN, byte-identical to pre-DOG-3 (D8 strategy split —
+  HARD STOP if the dump gains a `dstColumns` byte); engines write-verb scanner GREEN (NEW `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` +
+  unchanged `SQL_MSSQL_DEPENDENCIES`, catalog `SELECT` only); **pg/mysql/sqlite goldens byte-identical (HARD STOP on drift)**;
+  leak-scan clean; confirm nothing pushed. COMMIT `feat(mssql,core): declared column-lineage set via attrs.dstColumns + dm_sql_referenced_entities native-loop sourcing`.
 
 ## Batch B: pg (catalog-`declared`, owner/materialized degrade + confidence flip)
 
@@ -248,8 +296,10 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 ## Apply Batch Grouping (one sub-agent session each)
 
 - **Batch A** (A.1–A.8): MODEL + SEAM + MSSQL — `edge.ts`/`catalog.ts`/`capability.ts` types, `reference-resolver.ts`
-  sorted-unique stamp, mssql `queries.ts`/`map.ts` `referenced_minor_id`+`sys.columns` sourcing + dump family, `v_order_summary`
-  fixture/rows, synthetic + integration-gated computed-column pins, the single mssql re-bless.
+  sorted-unique stamp, mssql `queries.ts` `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` + `mssql-schema-adapter.ts` native per-view TVF
+  loop (per-call catch) + `map.ts` grouping + `capabilities.ts` native-only note (dump family UNCHANGED — object grain by
+  design), `v_order_summary` fixture/TVF rows, synthetic + integration-gated computed-column/unbindable-skip/dump-absence pins,
+  the single mssql re-bless (native goldens gain `dstColumns`; dump golden stays object grain).
 - **Batch B** (B.1–B.8): PG — `queries.ts` `SQL_PG_VIEW_COLUMN_USAGE`, `map.ts`/`tokenizer.ts` merge + parsed→declared flip,
   `capabilities.ts` note + per-edge-coverage pin, `mv_product_stats` fixture, synthetic + integration-gated coverage/exclusion
   pins, the single pg re-bless (flip inventoried).
@@ -293,6 +343,12 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 - **Proposal lexical drift (reconciler b)** — the proposal's "make the singular `srcColumn/dstColumn` load-bearing" wording is
   SUPERSEDED by design D2 (new plural `dstColumns`). Apply follows D2; an ARCHIVE-TIME NOTE records the overturn (not an apply
   action, but flagged so archive does not mis-merge the graph-model delta).
+- **mssql source drift (reconciler c — live finding 2026-07-07)** — the proposal AND the `graph-model` delta name
+  `sys.sql_expression_dependencies.referenced_minor_id` as the mssql column source; design D8 SUPERSEDES it with the native
+  `sys.dm_sql_referenced_entities` per-view TVF loop (the `referenced_minor_id` catalog is INERT for non-schemabound views).
+  Apply follows D8; the `graph-model` parenthetical example (`spec.md` "Per-engine column provenance…" requirement) and the
+  proposal remain OUT of this revision's edit scope but their normative claim (edge carries `attrs.dstColumns` at `declared`) is
+  source-neutral and HOLDS — an ARCHIVE-TIME NOTE must correct the named source so archive does not re-assert the dead catalog.
 - **Benchmark column-lineage family INSTANTIABLE, labeled RUN DEFERRED** (§Spec Coherence) — no `benchmark` delta, no N-change,
   no run recorded in this change.
 
