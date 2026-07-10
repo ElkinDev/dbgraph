@@ -305,6 +305,26 @@ export function buildFiresOnEdges(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Consumed source-column set — centralized deterministic ordering (ADR-008, D3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DOG-3 (Model A / design D3): reduce a raw source-column list to the SORTED-UNIQUE set
+ * carried as `attrs.dstColumns`. `[...new Set(cols)].sort()` is code-point ASCENDING and
+ * deduplicated, applied ONCE here so every engine is consistent regardless of adapter row
+ * order — `stableStringify` preserves array order, so the sort is MANDATORY (ADR-008).
+ * Returns `undefined` for an empty/absent list so the caller OMITS the key (unset ≠ `[]`) and
+ * the edge stays byte-identical to the pre-DOG-3 object grain.
+ */
+function sortedUniqueColumns(
+  columns: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (columns === undefined || columns.length === 0) return undefined;
+  const set = [...new Set(columns)].sort();
+  return set.length > 0 ? set : undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Dependency edges (reads_from / writes_to / depends_on) — design §5.3
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -372,6 +392,12 @@ export function buildDependencyEdges(
     }
 
     const id = edgeId(edgeKind, srcNode.id, targetNode.id, '');
+    // DOG-3 (Model A / D1/D3): stamp the consumed source-column SET, sorted-unique, onto the
+    // EXISTING view→source-table `depends_on` edge as `attrs.dstColumns`. The edge identity is
+    // UNCHANGED (same id, endpoints) — it merely GAINS the array. An absent/empty set leaves the
+    // key OMITTED → `attrs {}`, byte-identical to the pre-DOG-3 object grain. NO per-column edge
+    // and NO column-node target is ever emitted (the column grain rides SOLELY in this attr).
+    const dstColumns = sortedUniqueColumns(dep.columns);
     const edge: GraphEdge = {
       id,
       kind: edgeKind,
@@ -379,7 +405,7 @@ export function buildDependencyEdges(
       dst: targetNode.id,
       confidence: dep.confidence,
       score: null,
-      attrs: {},
+      attrs: dstColumns !== undefined ? { dstColumns } : {},
     };
     edges.push(edge);
   }

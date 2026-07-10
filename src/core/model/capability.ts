@@ -12,6 +12,13 @@ export interface CapabilityMatrix {
   readonly defaultLevels: ObjectTypeLevels;  // ADR-003 defaults specialized per engine
   readonly supportsBodies: boolean;          // can it return proc/trigger source?
   readonly supportsDependencyHints: boolean; // can it report read/write deps cheaply?
+  // DOG-3 (design D4): does this engine expose a VIEW-COLUMN catalog that can source the SET of
+  // source columns a view consumes (→ `attrs.dstColumns` at `confidence: 'declared'`)? An
+  // IMPLEMENTATION-DETAIL capability flag that documents WHY an engine can or cannot carry
+  // column-grain view lineage — it is NEVER a per-edge coverage oracle (consumers read coverage
+  // from the EDGE's `attrs.dstColumns` present-or-absent, not from this flag). OPTIONAL: an engine
+  // that never supports it (e.g. mongodb — no views) leaves it UNSET rather than fabricating false.
+  readonly supportsColumnLineage?: boolean;
 }
 
 export interface ExtractionScope {

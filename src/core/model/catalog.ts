@@ -103,4 +103,12 @@ export interface RawDependency {
   readonly target: { schema: string | null; name: string; kind?: NodeKind };
   readonly access: 'read' | 'write';            // read/write classification (US-007)
   readonly confidence: 'declared' | 'parsed';   // declared (catalog dep view) vs parsed (body)
+  // DOG-3 (design D1/D2; schema-extraction): OPTIONAL source-column SET a view CONSUMES from
+  // this dependency's target table. An engine with a view-column catalog (mssql, pg) populates
+  // it per view dependency the catalog sources; an engine without one (mysql, sqlite) leaves it
+  // UNSET — honest absence ("unknown" ≠ "known-zero"; a whole-object / `SELECT *` reference is
+  // also UNSET). SOURCE-column SET only, provenance `declared` — NEVER inferred, never
+  // body-parsed, never an output↔source mapping (ADR-007). The normalizer stamps it sorted-unique
+  // as `attrs.dstColumns` on the view→table `depends_on` edge; UNSET → byte-identical object grain.
+  readonly columns?: readonly string[];
 }
