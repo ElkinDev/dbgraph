@@ -229,11 +229,22 @@ describe.skipIf(!mssqlIntegrationEnabled())(
         // ── C.2: precheck whatToTest surfaces the caller through the calls chain ──
         const view = await runPrecheck(store, 'ALTER TABLE dbo.usp_log_change ADD COLUMN reviewed BIT;');
         expect(view.impact.whatToTest).toContain('dbo.usp_refresh_totals');
+        // DOG-4 per-node degradation (closes W1 at CLI/e2e grain): usp_refresh_totals reaches
+        // usp_log_change through a `calls` edge AND its own body carries `EXEC dbo.usp_log_change`,
+        // so the mssql tokenizer flags it hasDynamicSql (declared blindness, US-007). The reader
+        // item therefore carries the EXACT 4-key degraded shape — pinned POSITIVELY here.
         expect(view.impact.readers).toContainEqual(
-          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed', hasDynamicSql: true },
         );
+        // L-009 per-node precision: the degraded-reader set is EXACTLY {usp_refresh_totals} —
+        // no sibling reader carries the marker (proves the marker attaches per-node, not blanket).
+        const degradedReaders = view.impact.readers
+          .filter((i) => i.hasDynamicSql === true)
+          .map((i) => i.qname);
+        expect(degradedReaders).toStrictEqual(['dbo.usp_refresh_totals']);
+        // NEGATIVE: usp_refresh_totals is a READER only — a `calls` edge is READ-impact, never a writer.
         expect(view.impact.writers).not.toContainEqual(
-          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed' },
+          { qname: 'dbo.usp_refresh_totals', kind: 'procedure', confidence: 'parsed', hasDynamicSql: true },
         );
 
         // ── C.3: explore renders the calls neighbor (outbound on caller, inbound on callee) ──
