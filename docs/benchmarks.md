@@ -205,6 +205,82 @@ graph ALREADY stored (column types/nullability, PK/FK column membership, trigger
 Run 1 found unreachable through the CLI; this re-run measures ONLY whether that presentation change
 moves the WITH outcomes on this frozen substrate — it licenses NO generalized superiority claim.
 
+## Results — Run 3 (`dog-complete-2026-07-10`)
+
+The THIRD run uses the FROZEN methodology UNCHANGED: the SAME pre-registered families and
+separately-held ground-truth keys, the SAME deterministic blind scorer, and the SAME single
+token-accounting boundary. The two tables above (`torture-2026-07-06`, `explore-payloads-2026-07-06`)
+stay INTACT and are never overwritten; the three runs are never conflated. Only the dbgraph code under
+test differs (post-v1) and — as a mechanical consequence of that code's new edges — the instantiable
+question set derives differently (see note a).
+
+### Environment (Run 3)
+
+| Field | Value |
+|-------|-------|
+| Model family | Claude (single family — no cross-model claim) |
+| Model id / version | claude-fable-5 (both conditions; fresh context per question — same as Runs 1–2) |
+| Run date | 2026-07-10 |
+| Run id | `dog-complete-2026-07-10` |
+| dbgraph version / commit | post-v1 @ `73d3de2` (DOG-1..4 + SQLite view-deps + guard-precision all in) |
+| Primary substrate | SQLite torture fixture (`test/fixtures/sqlite/torture.sql`, committed — UNCHANGED) |
+
+### N (Run 3)
+
+**N = 6** — for the FIRST time all six closed-form families are instantiable on the SQLite substrate.
+`view-dependency` now fires: post-v1 SQLite view-dependency extraction (sqlite-view-deps) gives views
+their `depends_on`/`reads_from` edges, so the family enumerator that yielded NO candidates in Runs 1–2
+now produces one. N stays within the pre-registered 5–10 bound.
+
+### Results (Run 3 — `dog-complete-2026-07-10`)
+
+Scored blind by `benchmark/score.ts`; table produced by `render.ts`:
+
+| Family | WITH accuracy | WITHOUT accuracy | WITH schema-tokens | WITHOUT schema-tokens |
+|--------|---------------|------------------|--------------------|-----------------------|
+| fk-path | 100% (1/1) | 100% (1/1) | 1381 | 787 |
+| column-type | 100% (1/1) | 100% (1/1) | 237 | 787 |
+| impact | 100% (1/1) | 100% (1/1) | 996 | 787 |
+| trigger-inventory | 100% (1/1) | 100% (1/1) | 197 | 787 |
+| view-dependency | 100% (1/1) | 100% (1/1) | 197 | 787 |
+| constraint-semantics | 100% (1/1) | 100% (1/1) | 573 | 787 |
+| **Overall** | 100% (6/6) | 100% (6/6) | 3581 | 4722 |
+
+Schema-token delta (WITH − WITHOUT): -1141 (WITH 3581 vs WITHOUT 4722).
+
+**Run 3, blind scorer: WITH 100% (6/6) / WITHOUT 100% (6/6) — a TIE on correctness on this fixture,
+this question set, this model.** With correctness tied, the efficiency comparison is the story, and
+the numbers are reported as they are: WITH spent 3581 approx schema-tokens versus WITHOUT's 4722
+(delta −1141), across 21 WITH tool calls versus 0 WITHOUT. No generalized claim is made beyond these
+measured conditions.
+
+### Run 3 protocol notes (part of the record)
+
+1. **Question-set derivation changed mechanically, not by choice (N=6).** `view-dependency` is
+   instantiable for the FIRST time (post-v1 sqlite-view-deps extraction). The impact question CHANGED
+   from `impact-departments` (Runs 1–2) to `impact-audit_log`: post-v1 trigger `writes_to` edges made
+   `audit_log`'s impact set non-empty, and the family enumerator selects the lexicographic-first
+   candidate among the non-empty set — `audit_log` sorts ahead of `departments`. This is a DERIVATION
+   of the frozen selection rule over the new edge set, not a hand-picked substitution.
+2. **Code version.** post-v1 @ `73d3de2` — DOG-1..4, SQLite view-dependency extraction, and
+   guard-precision are all in.
+3. **Impact-family circularity AMPLIFIED.** The mechanical key IS dbgraph's OWN `affected` output,
+   which now includes the view/trigger edges added post-v1. The WITH agent produced its answer by
+   using `affected` directly, so on this family WITH necessarily AGREES WITH THE TOOL. This is the
+   standing shared-extraction circularity limitation, stated plainly: the impact family measures
+   agreement-with-the-tool, now over a richer (view/trigger-aware) edge set.
+4. **Token accounting (Run 3 mode).** Both conditions use `approx` mode this run (the runtime did not
+   report actual usage): WITH = `ceil(chars/4)` over the concatenated tool stdout the agent received;
+   WITHOUT = `ceil(chars/4)` over the packet DDL dump. Model claude-fable-5 on both conditions, fresh
+   context per question. Because both sides are approx here (Runs 1–2 reported ACTUAL usage), Run 3's
+   absolute token figures are NOT directly comparable to the Run 1/2 numbers — only the within-run
+   WITH−WITHOUT delta is meaningful.
+5. **Tool calls.** WITH total 21, distributed 3 / 3 / 8 / 3 / 2 / 2 across
+   column-type / constraint-semantics / fk-path / impact / trigger-inventory / view-dependency.
+   WITHOUT made 0 tool calls (single DDL packet, no tools).
+6. **Paper cut observed.** `explore` requires `main.`-qualified object names; the WITH agents
+   recovered by running `query` FIRST to obtain the qualified name, then `explore`.
+
 ## Token accounting
 
 One boundary, applied IDENTICALLY to both conditions:
