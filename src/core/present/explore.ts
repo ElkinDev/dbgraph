@@ -25,6 +25,7 @@ import {
   renderIndexes,
   renderTriggers,
   renderFocusPayload,
+  renderConsumedColumns,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +112,11 @@ export function formatExplore(view: ExploreView, detail: ExploreDetail): string 
       if (detail === 'full') {
         pushSection(lines, renderIndexes(view.neighbors['has_index']?.out ?? []));
         pushSection(lines, renderTriggers(view.neighbors['fires_on']?.in ?? []));
+        // DOG-3 (D7): a view's consumed source columns, FULL detail ONLY (budget honesty).
+        // A table's depends_on group is naturally empty/undefined -> renderConsumedColumns
+        // returns [] -> pushSection emits nothing (no kind-check needed, same pattern as
+        // every other section renderer here).
+        pushSection(lines, renderConsumedColumns(view.neighbors['depends_on']?.out ?? []));
       }
     } else {
       pushSection(lines, renderFocusPayload(view.node));

@@ -117,6 +117,26 @@ For inferred edges, a score suffix is added:
   → target_qname  [inferred_reference, score=0.85]
 ```
 
+### 1.4a Consumed-column lines (DOG-3, view focus, `full` ONLY)
+
+For a VIEW focus node whose `depends_on` edge(s) carry `attrs.dstColumns` (a catalog-declared
+consumed source-column set — mssql; pg covered pairs), each consumed source column renders as
+ONE self-labeled line — no separate uppercase section header (unlike `COLUMNS`/`PARAMETERS`):
+
+```
+consumes: source_table_qname.column_name
+```
+
+Rules:
+- Rendered at `full` detail ONLY (`brief`/`normal` render NONE — budget honesty for wide views).
+- Multiple depended-on tables are ordered by TARGET qname (ADR-008); WITHIN one table the
+  columns preserve the normalizer's sorted-unique order (code-point ascending, graph-normalization).
+- A view whose edges carry NO `attrs.dstColumns` (degraded engines mysql/sqlite; uncovered pg
+  pairs) renders NO `consumes:` line at all — absence, never a marker.
+- SOURCE-COLUMN SET only — a line NEVER pairs an output column to a source column (ADR-007).
+- `dbgraph_explore` and `dbgraph_object` (CLI + MCP) render BYTE-IDENTICAL bytes (one shared
+  `renderConsumedColumns` helper in `core/present/payload.ts`, no per-surface branch).
+
 ### 1.5 Section headers
 
 ```
@@ -146,9 +166,9 @@ Per-tool level defaults and what each section shows:
 
 | Tool              | brief                       | normal                                | full                                      |
 |-------------------|-----------------------------|---------------------------------------|-------------------------------------------|
-| `dbgraph_explore` | header + counts             | + COLUMNS, CONSTRAINTS, grouped neighbors | + INDEXES, TRIGGERS, bodyHash, level, dynamic-SQL warning |
+| `dbgraph_explore` | header + counts             | + COLUMNS, CONSTRAINTS, grouped neighbors | + INDEXES, TRIGGERS, bodyHash, level, dynamic-SQL warning, `consumes:` lines (view, declared) |
 | `dbgraph_search`  | type + qname + rank         | + match column                        | + excerpt                                 |
-| `dbgraph_object`  | header + annotation counts  | + columns (type/null/default), FK/PK  | + indexes, triggers, body (modules)       |
+| `dbgraph_object`  | header + annotation counts  | + columns (type/null/default), FK/PK  | + indexes, triggers, `consumes:` lines (view, declared), body (modules) |
 | `dbgraph_related` | grouped edge kinds + counts | + qnames per group                    | + inferred score, body excerpts           |
 | `dbgraph_impact`  | chain summary               | + full chain (a→b→c), read/write split| + node types, dynamic-SQL / truncation ⚠  |
 | `dbgraph_path`    | route qnames only           | + join columns per hop                | + inferred marks, no-route neighbor list  |
@@ -352,6 +372,20 @@ Rules:
 - Goldens under `test/core/present/golden/` cover formatter × detail (unit-level, fixed view structs).
 - Goldens under `test/mcp/golden/` cover tool × detail (E2E-level, through the transport harness).
 - Every golden assertion must be byte-identical: `expect(output).toBe(goldenContent)`.
+
+### 6.1 Token-delta note — DOG-3 `consumes:` lines (Batch C)
+
+Adds §1.4a (`consumes: <table>.<column>`, view focus, `full` ONLY). No EXISTING committed
+golden changed: every `test/core/present/golden/` and `test/mcp/golden/` fixture view struct
+carries no `depends_on` edge with `attrs.dstColumns`, so `renderConsumedColumns` returns `[]`
+for all of them and the pre-DOG-3 bytes are reproduced exactly (proven by the full existing
+present/mcp golden suites passing unchanged — the freeze proof). A NEW golden-free unit suite
+(`test/core/present/column-lineage.test.ts`) pins the shape via exact-string assertions instead
+of a committed golden file (consistent with the DOG-2 `renderParameters` precedent in
+`parameters-wiring.test.ts`, which is also `toStrictEqual`/`toContain`-pinned rather than
+golden-file-pinned). Token cost: a covered view at `full` gains `~11 bytes` per consumed
+`table.column` pair (`consumes: ` prefix + the qualified name); a degraded/uncovered view gains
+`0 bytes` (absence). Zero cost at `brief`/`normal` (not rendered).
 
 ---
 

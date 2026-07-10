@@ -9,6 +9,10 @@
  *   which SQLite does NOT expose; false here matches pg/mysql/mongodb. Dependency edges
  *   (view depends_on, trigger writes_to/reads_from) are body-derived — parsed from the view/
  *   trigger body SQL via the shared presence-gate tokenizer — so the flag gates no code path here.
+ * supportsColumnLineage: false — SQLite has NO dependency/view-column catalog. View
+ *   depends_on edges stay object grain; the presence-gated body tokenizer is NEVER
+ *   extended to mint a column from the body text (ADR-007). Degradation is expressed
+ *   by ABSENCE of attrs.dstColumns — no per-edge marker (DOG-3 design D4).
  */
 
 import { DEFAULT_LEVELS } from '../../../core/model/capability.js';
@@ -28,4 +32,5 @@ export const SQLITE_CAPABILITIES: CapabilityMatrix = {
   defaultLevels: DEFAULT_LEVELS,
   supportsBodies: true,
   supportsDependencyHints: false,
+  supportsColumnLineage: false,
 } as const;

@@ -41,6 +41,7 @@ import {
   getImpact,
   getNeighbors,
   formatExplore,
+  formatObject,
   formatRelated,
   runPrecheck,
 } from '../../src/index.js';
@@ -386,6 +387,104 @@ describe.skipIf(!mssqlIntegrationEnabled())(
         try { await pool.request().query('DROP VIEW IF EXISTS dbo.v_scratch_broken'); } catch { /* ignore */ }
         try { await pool.request().query('DROP TABLE IF EXISTS dbo.tmp_broken_src'); } catch { /* ignore */ }
         await pool.close();
+      }
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 C.7 — LIVE column-precise impact + whatToTest + consumes: render
+    // (design D6/D7), end-to-end over the real materialized torture.sql catalog.
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('C.7: impact on order_items.product_id surfaces v_order_summary; region_id does NOT (live, D6)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const store = await createSqliteGraphStore({
+        path: join(projectRoot, '.dbgraph', 'dbgraph-c7-impact.db'),
+      });
+      try {
+        await runSync({ adapter, store, full: true });
+        const items = await store.getNodesByKind('table');
+        const orderItems = items.find((t) => t.name === 'order_items');
+        expect(orderItems).toBeDefined();
+        const columns = await getNeighbors(store, { nodeId: orderItems!.id, kinds: ['has_column'] });
+        const productIdCol = columns['has_column']?.out.find((e) => e.node.name === 'product_id');
+        const regionIdCol = columns['has_column']?.out.find((e) => e.node.name === 'region_id');
+        expect(productIdCol).toBeDefined();
+        expect(regionIdCol).toBeDefined();
+
+        const productImpact = await getImpact(store, { nodeId: productIdCol!.node.id });
+        const productReaders = new Set(
+          await Promise.all(
+            productImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+          ),
+        );
+        expect(productReaders.has('v_order_summary')).toBe(true);
+
+        const regionImpact = await getImpact(store, { nodeId: regionIdCol!.node.id });
+        const regionReaders = new Set(
+          await Promise.all(
+            regionImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+          ),
+        );
+        expect(regionReaders.has('v_order_summary')).toBe(false); // negative — column-grain precision, live
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
+    it('C.7: precheck whatToTest column-drop precision is live-precise (D6)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const store = await createSqliteGraphStore({
+        path: join(projectRoot, '.dbgraph', 'dbgraph-c7-precheck.db'),
+      });
+      try {
+        await runSync({ adapter, store, full: true });
+
+        const productView = await runPrecheck(store, 'DROP COLUMN dbo.order_items.product_id;');
+        expect(productView.impact.whatToTest).toContain('dbo.v_order_summary');
+        expect(productView.impact.readers).toContainEqual(
+          { qname: 'dbo.v_order_summary', kind: 'view', confidence: 'parsed' },
+        );
+
+        const regionView = await runPrecheck(store, 'DROP COLUMN dbo.order_items.region_id;');
+        expect(regionView.impact.whatToTest).not.toContain('dbo.v_order_summary');
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
+    it('C.7: explore/object render the LIVE consumes: lines for v_order_summary at full (D7)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const store = await createSqliteGraphStore({
+        path: join(projectRoot, '.dbgraph', 'dbgraph-c7-render.db'),
+      });
+      try {
+        await runSync({ adapter, store, full: true });
+        const views = await store.getNodesByKind('view');
+        const summary = views.find((v) => v.name === 'v_order_summary');
+        expect(summary).toBeDefined();
+        const neighbors = await getNeighbors(store, { nodeId: summary!.id });
+
+        const exploreFull = formatExplore({ node: summary!, neighbors }, 'full');
+        expect(exploreFull).toContain('consumes: dbo.orders.customer_id');
+        expect(exploreFull).toContain('consumes: dbo.orders.order_id');
+        expect(exploreFull).toContain('consumes: dbo.orders.status');
+        expect(exploreFull).toContain('consumes: dbo.orders.total_amount');
+        expect(exploreFull).toContain('consumes: dbo.order_items.order_id');
+        expect(exploreFull).toContain('consumes: dbo.order_items.product_id');
+
+        const objectFull = formatObject({ node: summary!, neighbors }, 'full');
+        // CLI (explore) and MCP (object) render byte-identical consumes: bytes (D7).
+        expect(objectFull).toContain('consumes: dbo.orders.customer_id');
+        expect(objectFull).toContain('consumes: dbo.order_items.product_id');
+
+        // negative: normal detail renders NO consumes section (budget honesty)
+        const exploreNormal = formatExplore({ node: summary!, neighbors }, 'normal');
+        expect(exploreNormal).not.toContain('consumes:');
+      } finally {
+        await adapter.close();
+        await store.close();
       }
     });
 

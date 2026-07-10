@@ -215,6 +215,30 @@ export function renderParameters(node: GraphNode): string[] {
   return lines;
 }
 
+/**
+ * CONSUMES lines (VIEW focus, FULL detail ONLY — design D7): one `consumes: <table>.<column>`
+ * line per source column a `depends_on` edge attributes to the view (`edge.attrs.dstColumns`,
+ * already sorted code-point ascending by the normalizer, D3 — this renderer does NOT re-sort
+ * WITHIN a table's column list, only ACROSS multiple depended-on tables, by target qname, for
+ * determinism, ADR-008). PINNED SHAPE per mcp-server spec — no separate uppercase header (unlike
+ * COLUMNS/PARAMETERS): each line self-labels via the `consumes:` prefix. An edge with NO
+ * `attrs.dstColumns` (degraded engines / uncovered pg pairs) contributes NO line — SOURCE-COLUMN
+ * SET only, NEVER an output-column <-> source-column pairing (ADR-007). Returns [] when no edge
+ * carries a set — degrade-by-absence, no marker (D4).
+ */
+export function renderConsumedColumns(dependsOn: readonly NeighborEntry[]): string[] {
+  const sorted = [...dependsOn].sort((x, y) => x.node.qname.localeCompare(y.node.qname));
+  const lines: string[] = [];
+  for (const entry of sorted) {
+    const cols = entry.edge?.attrs.dstColumns;
+    if (cols === undefined || cols.length === 0) continue;
+    for (const col of cols) {
+      lines.push(`consumes: ${entry.node.qname}.${col}`);
+    }
+  }
+  return lines;
+}
+
 /** TRIGGERS section: one row per trigger with timing + events (from the fires_on.in group). */
 export function renderTriggers(triggers: readonly NeighborEntry[]): string[] {
   if (triggers.length === 0) return [];

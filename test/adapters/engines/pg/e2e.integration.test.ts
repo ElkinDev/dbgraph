@@ -29,7 +29,11 @@ import { createPgSchemaAdapter } from '../../../../src/adapters/engines/pg/facto
 import { createSqliteGraphStore } from '../../../../src/adapters/storage/sqlite/factory.js';
 import { normalizeCatalog } from '../../../../src/core/normalize/normalize.js';
 import { getImpact } from '../../../../src/core/query/impact.js';
+import { getNeighbors } from '../../../../src/core/query/neighbors.js';
 import { findJoinPath } from '../../../../src/core/query/path.js';
+import { runPrecheck } from '../../../../src/core/precheck/engine.js';
+import { formatExplore } from '../../../../src/core/present/explore.js';
+import { formatObject } from '../../../../src/core/present/object.js';
 import { DEFAULT_LEVELS } from '../../../../src/core/model/capability.js';
 import type { ExtractionScope } from '../../../../src/core/model/capability.js';
 import type { GraphStore } from '../../../../src/core/ports/graph-store.js';
@@ -430,6 +434,79 @@ describe.skipIf(!pgIntegrationEnabled())(
         expect(e.attrs.dstColumns).toBeUndefined();
         expect('dstColumns' in e.attrs).toBe(false);
       }
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 C.7 — LIVE column-precise impact + whatToTest + consumes: render
+    // (design D6/D7), end-to-end over the real materialized torture.sql catalog.
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('C.7: impact on order_items.total_price surfaces v_order_summary; qty does NOT (live, D6)', async () => {
+      const orderItemsCols = await getNeighbors(store, {
+        nodeId: (await store.getNodesByKind('table')).find((t) => t.name === 'order_items')!.id,
+        kinds: ['has_column'],
+      });
+      const totalPriceCol = orderItemsCols['has_column']?.out.find((e) => e.node.name === 'total_price');
+      const qtyCol = orderItemsCols['has_column']?.out.find((e) => e.node.name === 'qty');
+      expect(totalPriceCol).toBeDefined();
+      expect(qtyCol).toBeDefined();
+
+      const totalPriceImpact = await getImpact(store, { nodeId: totalPriceCol!.node.id });
+      const totalPriceReaders = new Set(
+        await Promise.all(
+          totalPriceImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+        ),
+      );
+      expect(totalPriceReaders.has('v_order_summary')).toBe(true);
+
+      const qtyImpact = await getImpact(store, { nodeId: qtyCol!.node.id });
+      const qtyReaders = new Set(
+        await Promise.all(
+          qtyImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+        ),
+      );
+      expect(qtyReaders.has('v_order_summary')).toBe(false); // negative — column-grain precision, live
+    });
+
+    it('C.7: precheck whatToTest column-drop precision is live-precise (D6)', async () => {
+      const totalPriceView = await runPrecheck(store, 'DROP COLUMN app.order_items.total_price;');
+      expect(totalPriceView.impact.whatToTest).toContain('reporting.v_order_summary');
+      expect(totalPriceView.impact.readers).toContainEqual(
+        { qname: 'reporting.v_order_summary', kind: 'view', confidence: 'parsed' },
+      );
+
+      const qtyView = await runPrecheck(store, 'DROP COLUMN app.order_items.qty;');
+      expect(qtyView.impact.whatToTest).not.toContain('reporting.v_order_summary');
+    });
+
+    it('C.7: explore/object render the LIVE consumes: lines for v_order_summary at full (D7)', async () => {
+      const views = await store.getNodesByKind('view');
+      const summary = views.find((v) => v.name === 'v_order_summary');
+      expect(summary).toBeDefined();
+      const neighbors = await getNeighbors(store, { nodeId: summary!.id });
+
+      const exploreFull = formatExplore({ node: summary!, neighbors }, 'full');
+      expect(exploreFull).toContain('consumes: app.orders.customer_id');
+      expect(exploreFull).toContain('consumes: app.orders.order_id');
+      expect(exploreFull).toContain('consumes: app.orders.status');
+      expect(exploreFull).toContain('consumes: app.order_items.item_id');
+      expect(exploreFull).toContain('consumes: app.order_items.order_id');
+      expect(exploreFull).toContain('consumes: app.order_items.total_price');
+
+      const objectFull = formatObject({ node: summary!, neighbors }, 'full');
+      // CLI (explore) and MCP (object) render byte-identical consumes: bytes (D7).
+      expect(objectFull).toContain('consumes: app.orders.customer_id');
+      expect(objectFull).toContain('consumes: app.order_items.total_price');
+
+      // negative: normal detail renders NO consumes section (budget honesty)
+      const exploreNormal = formatExplore({ node: summary!, neighbors }, 'normal');
+      expect(exploreNormal).not.toContain('consumes:');
+
+      // negative: mv_product_stats (degraded/materialized) renders NO consumes section at full
+      const mv = views.find((v) => v.name === 'mv_product_stats');
+      expect(mv).toBeDefined();
+      const mvNeighbors = await getNeighbors(store, { nodeId: mv!.id });
+      expect(formatExplore({ node: mv!, neighbors: mvNeighbors }, 'full')).not.toContain('consumes:');
     });
 
     it('proc_cancel_order has EXACTLY 1 writes_to edge (orders) + 0 reads_from', () => {

@@ -270,11 +270,11 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 > the FULL-only `consumes:` render, and the mysql/sqlite degrade-by-absence guards, then the final deliberate re-bless. **mysql/
 > sqlite view-edge goldens + the sqlite present/MCP substrate MUST stay byte-identical.** Ends in the consolidated gate + DoD.
 
-- [ ] C.1 **(vitest)** RED→GREEN `test/core/query/column-pivot.test.ts` (new) + `src/core/query/column-pivot.ts`: pure
+- [x] C.1 **(vitest)** RED→GREEN `test/core/query/column-pivot.test.ts` (new) + `src/core/query/column-pivot.ts`: pure
   `filterReadersByColumn(edges, pivotCol)` — `dstColumns` present + INCLUDES pivot → affected; present + EXCLUDES → EXCLUDE;
   ABSENT → INCLUDE (degrade, no false negative). L-009 over synthetic edge sets: pin all three branches, INCLUDE-on-absence
   explicitly. Spec: graph-query "Depth-limited impact closure" (the `attrs.dstColumns` membership + absence-include rule). D6.
-- [ ] C.2 **(vitest)** RED→GREEN `test/core/query/impact-column.test.ts` (new) + `src/core/query/impact.ts`: a COLUMN-node pivot
+- [x] C.2 **(vitest)** RED→GREEN `test/core/query/impact-column.test.ts` (new) + `src/core/query/impact.ts`: a COLUMN-node pivot
   resolves to its owning TABLE then applies `filterReadersByColumn` at the view first-hop; TABLE-node pivot UNCHANGED. L-009 over
   the mssql torture graph: impact on `dbo.order_items.product_id` → affected views EXACTLY `{dbo.v_order_summary}` (READ impact);
   impact on `dbo.order_items.region_id` → `dbo.v_order_summary` ABSENT (negative precision, DELIBERATE improvement); TABLE pivot
@@ -283,19 +283,19 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   byte-identical on re-run. Spec: graph-query scenarios "dropping a consumed column surfaces the consuming view (exact set)",
   "dropping a non-consumed column of the same table excludes the view (negative, precision)", "table pivot impact is unchanged",
   "degraded engine keeps table-grain view impact". D6.
-- [ ] C.3 **(vitest)** RED→GREEN `test/mcp/precheck.test.ts` (extend) — precheck/affected reuse `filterReadersByColumn` for
+- [x] C.3 **(vitest)** RED→GREEN `test/mcp/precheck.test.ts` (extend) — precheck/affected reuse `filterReadersByColumn` for
   `DROP COLUMN` pivots: `dbgraph_precheck({ ddl: DROP dbo.order_items.product_id })` → `whatToTest` READERS includes
   `dbo.v_order_summary`, tagged `confidence:'parsed'` (DDL identifiers are parsed even though the edge is declared); DROP
   `dbo.order_items.region_id` → does NOT surface it; `dbgraph affected script.sql --json` mirrors via the shared engine
   (exit 1); non-matchable identifiers reported unmatched. Spec: mcp-server "precheck and affected surface column-grain view
   precision (declared engines)" (both scenarios). D6.
-- [ ] C.4 **(vitest + golden)** RED→GREEN `test/core/present/column-lineage.test.ts` (new) + `src/core/present/payload.ts`
+- [x] C.4 **(vitest + golden)** RED→GREEN `test/core/present/column-lineage.test.ts` (new) + `src/core/present/payload.ts`
   (+ `explore.ts`/`object.ts` wiring) — over a SYNTHETIC view-focus `PresentView` carrying `attrs.dstColumns`: render
   `consumes: <table>.<column>` (pinned SHAPE, code-point order) at `full` ONLY; `brief`/`normal` render NONE; `explore` and
   `object` (CLI + MCP) BYTE-IDENTICAL (one shared helper); a view whose edges carry NO `dstColumns` → NO consumes section
   (negative); the lines name ONLY consumed source columns, NEVER an output↔source pair. Spec: mcp-server "explore and object
   render a view's consumed source columns at full detail, honest" (view-focus-full, honesty, degraded-negative scenarios). D7.
-- [ ] C.5 **(vitest)** RED→GREEN `test/adapters/engines/{mysql,sqlite}/column-lineage-absence.test.ts` (new) +
+- [x] C.5 **(vitest)** RED→GREEN `test/adapters/engines/{mysql,sqlite}/column-lineage-absence.test.ts` (new) +
   `src/adapters/engines/{mysql,sqlite}/capabilities.ts`: set `supportsColumnLineage: false` (documents WHY, touches NO edge
   byte); PIN degrade-by-absence over the EXISTING torture views — mysql views to `b`/`c` and sqlite `main.active_departments`/
   `main.employee_summary` retain object-grain `depends_on` (`parsed`), carry NO `attrs.dstColumns`, NO marker, byte-identical to
@@ -303,19 +303,33 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   Per-edge coverage: capability `false` does NOT imply the edge — coverage read from the EDGE. Spec: mysql-extraction "View
   column lineage degrades by absence" (all 3 scenarios); sqlite-extraction "View column lineage degrades by absence" (all 3);
   graph-model "Per-engine column provenance and honest degradation-by-absence" (declared-vs-absent + no-fabrication). D4.
-- [ ] C.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless the mssql/pg impact + precheck goldens that genuinely gain
-  COLUMN precision (DELIBERATE, with the column-grain justification: a non-consumed column no longer surfaces the view) + add the
-  new present `consumes:` golden family (synthetic view focus, `full`) + the `docs/format-spec.md` §6 token-delta note.
-  **mysql/sqlite view-edge goldens BYTE-IDENTICAL (only the `supportsColumnLineage:false` flag, no edge byte); the sqlite
-  present/MCP substrate (TABLE focus, no `dstColumns`) shows ZERO drift (HARD STOP).** Byte-identical on re-run; per-golden
-  inventory. Spec: mcp-server render scenarios; graph-query precision scenario; sqlite/mysql zero-drift.
-- [ ] C.7 **(integration-gated)** Add the C.2/C.3/C.4 column-precise impact + `whatToTest` + `consumes:` render assertions to
-  the `DBGRAPH_INTEGRATION`-gated `test/cli/{mssql,pg}.e2e.integration.test.ts` over the real containers — end-to-end
-  column-drop precision + render. Spec: mcp-server precheck/render, integration tier.
-- [ ] C.8 GATE (Batch C — FINAL): RE-MEASURE baseline; `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0;
-  `npm test` FULL GREEN (baseline + ALL A/B/C suites) with EVERY re-blessed golden byte-identical on re-run; **mysql/sqlite
-  view-edge goldens + sqlite present/MCP substrate byte-identical (HARD STOP)**; engines write-verb scanner GREEN; ADR-004
-  read-only + ADR-008 determinism green; leak-scan clean; confirm NOTHING pushed (no push/PR/gh/tag). Trace the DoD below.
+- [x] C.6 **(golden — DELIBERATE re-bless, batch-scoped)** INVESTIGATED, NONE found to re-bless: no committed golden file
+  (`test/mcp/golden/`, `test/core/present/golden/`, or any mssql/pg impact/precheck golden) exercises a COLUMN-node pivot on a
+  graph carrying `attrs.dstColumns` — searched via grep across `test/core/query/*.test.ts` + `test/mcp/*.test.ts` for a
+  column-kind `nodeId`/golden combination; the only pre-existing column-pivot fixture (`test/core/query/impact.test.ts`
+  `'col-id'`) tests UNRELATED `reads_from`/`writes_to` column-grain impact with no `depends_on`/`dstColumns` in its fixture
+  at all, confirmed unaffected (regression-green). The new present `consumes:` family is pinned via a DEDICATED exact-string
+  unit suite (`test/core/present/column-lineage.test.ts`), NOT a committed golden file — same precedent as DOG-2's
+  `renderParameters` (`parameters-wiring.test.ts`, `toStrictEqual`/`toContain`-pinned). `docs/format-spec.md` §1.4a (line
+  grammar) + §6.1 (token-delta note) added. **mysql/sqlite view-edge goldens BYTE-IDENTICAL (`git status` on
+  `test/fixtures/{mysql,sqlite}/` empty — only the `supportsColumnLineage:false` flag added, no edge byte, no golden
+  touched); the sqlite present/MCP substrate shows ZERO drift** — proven by the FULL existing `test/core/present/` (322
+  tests) and `test/mcp/` suites passing UNCHANGED (freeze proof — any drift would have failed a `toBe(goldenContent)`
+  byte-comparison). Spec: mcp-server render scenarios; graph-query precision scenario; sqlite/mysql zero-drift.
+- [x] C.7 **(integration-gated)** Added the C.2/C.3/C.4 column-precise impact + `whatToTest` + `consumes:` render assertions to
+  `test/cli/mssql.e2e.integration.test.ts` (exists) AND `test/adapters/engines/pg/e2e.integration.test.ts` (pg has NO
+  `test/cli/pg.e2e.integration.test.ts` — same documented deviation as B.7) over the real mssql:2022/postgres:16 containers:
+  live column-drop impact precision (positive + negative), live precheck `whatToTest` precision, live `consumes:` render at
+  full (explore + object byte-parity) + negative at normal + negative for the degraded/materialized view. Both live tiers ran
+  GREEN: mssql 13/13, pg 84/84 (2 files). Spec: mcp-server precheck/render, integration tier.
+- [x] C.8 GATE (Batch C — FINAL): RE-MEASURED baseline (3554, the Batch B floor); `npx tsc --noEmit` strict clean (no `any`);
+  `npm run lint` 0/0; `npm test` FULL GREEN 230 files / 3595 tests (baseline 3554 + 41 new C suites) with every EXISTING golden
+  byte-identical on re-run (zero goldens re-blessed — see C.6); **mysql/sqlite view-edge goldens + sqlite present/MCP substrate
+  byte-identical (HARD STOP)** — verified via `git status` (zero touches to `test/fixtures/`) AND the 345 mysql/sqlite +
+  322 present regression tests passing unchanged; engines write-verb scanner GREEN (9/9, no new SQL added in Batch C); ADR-004
+  read-only green (33/33 boundary tests); ADR-008 determinism green (byte-identical-on-rerun asserted in column-pivot,
+  impact-column, and the live C.7 suites); leak-scan clean (commit landed through hooks); confirmed NOTHING pushed. DoD below
+  fully traced and closed.
   COMMIT `feat(query,present): column-precise impact + full-only consumes render + mysql/sqlite degrade-by-absence`.
 
 ## Apply Batch Grouping (one sub-agent session each)
@@ -379,28 +393,28 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 
 ## Definition of Done (tied to the proposal Success Criteria; 34 DOG-3 scenarios + 5 carried graph-query regressions across 14 requirements / 9 deltas traced)
 
-- [ ] Where a catalog sources it (mssql; pg covered pairs), a view→table `depends_on` edge carries `attrs.dstColumns` = the
+- [x] Where a catalog sources it (mssql; pg covered pairs), a view→table `depends_on` edge carries `attrs.dstColumns` = the
   EXACT sorted-unique consumed source columns at `confidence:'declared'` — exact set + negatives (L-009). — A (A.2, A.4), B
   (B.2, B.4) [graph-model "Consumed source-column set…"; graph-normalization stamp; mssql "Declared consumed-column set…"; pg
   "…with confidence flip"; schema-extraction "Optional RawDependency.columns…"]
-- [ ] Dropping a COLUMN surfaces ONLY the views reading it (a non-consumed column of the same table yields NO reader);
+- [x] Dropping a COLUMN surfaces ONLY the views reading it (a non-consumed column of the same table yields NO reader);
   table-pivot impact UNCHANGED; degraded engines keep object-grain view impact. — C (C.1, C.2, C.3) [graph-query "dropping a
   consumed/non-consumed column…", "table pivot unchanged", "degraded engine keeps table-grain"; mcp-server precheck/affected]
-- [ ] mysql/sqlite DEGRADE by ABSENCE — NO `dstColumns`, NO per-edge marker, view edges BYTE-IDENTICAL to pre-DOG-3, no
+- [x] mysql/sqlite DEGRADE by ABSENCE — NO `dstColumns`, NO per-edge marker, view edges BYTE-IDENTICAL to pre-DOG-3, no
   body-parsed fabrication; `supportsColumnLineage:false` documents WHY. — C (C.5) [mysql-extraction "…degrades by absence";
   sqlite-extraction "…degrades by absence"; graph-model "Per-engine column provenance…"]
-- [ ] `explore`/`object` (CLI + MCP) render a `consumes: <table>.<column>` section at `full` ONLY, byte-identical across
+- [x] `explore`/`object` (CLI + MCP) render a `consumes: <table>.<column>` section at `full` ONLY, byte-identical across
   surfaces, degraded/uncovered → no section — exact bytes + `docs/format-spec.md` §6 note. — C (C.4, C.6) [mcp-server "explore
   and object render a view's consumed source columns at full detail, honest"] (D7)
-- [ ] pg covered regular-view pairs FLIP `parsed`→`declared` + gain `dstColumns`; materialized/owner-gap sources STAY `parsed`
+- [x] pg covered regular-view pairs FLIP `parsed`→`declared` + gain `dstColumns`; materialized/owner-gap sources STAY `parsed`
   object grain (degrade-by-absence, never guessed); `supportsDependencyHints` STAYS `false`. — B (B.2, B.3, B.4) [pg-extraction
   all 3 requirements] (D5/D4)
-- [ ] Coverage is read from the EDGE, never inferred from `supportsColumnLineage` — a covered + an uncovered edge coexist on the
+- [x] Coverage is read from the EDGE, never inferred from `supportsColumnLineage` — a covered + an uncovered edge coexist on the
   SAME pg engine (reconciler a). — B (B.3) [pg-extraction capability scenario; §Spec Coherence]
-- [ ] Every re-blessed golden (mssql A.6, pg B.6, impact/precheck/present C.6) is ONE DELIBERATE per-batch commit with a
+- [x] Every re-blessed golden (mssql A.6, pg B.6, impact/precheck/present C.6) is ONE DELIBERATE per-batch commit with a
   per-golden inventory, byte-identical on re-run; cross-engine freeze honored (A: pg/mysql/sqlite; B: mssql/mysql/sqlite; C:
-  mysql/sqlite edges + sqlite present substrate); write-verb scanner green. — A (A.6, A.7), B (B.6, B.7), C (C.6, C.7)
-  [mssql re-bless; pg re-bless; graph-query/mcp-server determinism]
-- [ ] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new suites)
+  mysql/sqlite edges + sqlite present substrate); write-verb scanner green. — A (A.6, A.7), B (B.6, B.7), C (C.6 — none
+  needed, investigated and documented; C.7) [mssql re-bless; pg re-bless; graph-query/mcp-server determinism]
+- [x] `npx tsc --noEmit` strict clean (no `any`); `npm run lint` 0/0; `npm test` GREEN (re-measured baseline + all new suites)
   every golden byte-identical on re-run; ADR-004 read-only + ADR-008 determinism green; leak-scan clean; nothing pushed. —
-  every batch GATE (A.8, B.8, C.8)
+  every batch GATE (A.8, B.8, C.8) — FINAL: 230 files / 3595 tests, tsc 0, lint 0/0.

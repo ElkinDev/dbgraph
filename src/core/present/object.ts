@@ -21,6 +21,7 @@ import {
   renderIndexes,
   renderTriggers,
   renderParameters,
+  renderConsumedColumns,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -60,6 +61,7 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   const constraintGroup = view.neighbors['has_constraint'];
   const columnGroup = view.neighbors['has_column'];
   const referencesGroup = view.neighbors['references'];
+  const dependsOnGroup = view.neighbors['depends_on'];
 
   const indexCount = indexGroup ? indexGroup.out.length : 0;
   const triggerCount = triggerGroup ? triggerGroup.in.length : 0;
@@ -127,6 +129,15 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   if (triggerLines.length > 0) {
     lines.push('');
     lines.push(...triggerLines);
+  }
+
+  // ── CONSUMES lines (full only) — DOG-3 D7 ──────────────────────────────────
+  // A view's consumed source columns from attrs.dstColumns. A table's depends_on group is
+  // naturally empty/undefined -> [] -> nothing rendered (same pattern as every other section).
+  const consumesLines = renderConsumedColumns(dependsOnGroup ? dependsOnGroup.out : []);
+  if (consumesLines.length > 0) {
+    lines.push('');
+    lines.push(...consumesLines);
   }
 
   // ── Body section (full only, for modules at full level) ───────────────────
