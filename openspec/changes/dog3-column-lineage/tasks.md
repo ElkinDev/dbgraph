@@ -203,49 +203,66 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 > FLIP `parsed`→`declared`), and pins the honest degrade-by-absence for materialized/owner-gap sources. pg files are INDEPENDENT
 > of mssql — **mssql/mysql/sqlite goldens MUST stay byte-identical**.
 
-- [ ] B.1 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage.test.ts` (new) + `src/adapters/engines/pg/queries.ts`:
+- [x] B.1 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage.test.ts` (new) + `src/adapters/engines/pg/queries.ts`:
   add const `SQL_PG_VIEW_COLUMN_USAGE` over `information_schema.view_column_usage` sourcing per regular-view `(source table,
   source column)` pairs — catalog `SELECT` ONLY (write-verb scanner green). RED over recorded rows: shape coerces to a
   `(view, table, column)` set; materialized views are ABSENT from the result (they are not covered by `view_column_usage`).
   Spec: pg-extraction "Declared consumed-column set for regular views via view_column_usage" (query half). D5.
-- [ ] B.2 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage.test.ts` (extend) + `src/adapters/engines/pg/map.ts` +
-  `tokenizer.ts`: MERGE the `view_column_usage` sets into the tokenizer-derived deps — for each COVERED (view, table) pair FLIP
+- [x] B.2 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage.test.ts` (extend) + `src/adapters/engines/pg/map.ts`
+  (`tokenizer.ts` UNCHANGED — the merge happens in `map.ts` after `tokenizePgBody` returns, per design.md File Changes; no
+  tokenizer-level change was needed): MERGE the `view_column_usage` sets into the tokenizer-derived deps — for each COVERED (view, table) pair FLIP
   `confidence:'parsed'`→`'declared'` on the existing `depends_on` edge AND attach `RawDependency.columns`; UNCOVERED sources
   (materialized view / owner-visibility gap / `SELECT *`) KEEP `parsed` object grain with NO `columns` (degrade-by-absence, NO
   marker); NEVER fabricate a column from the body. Spec: pg-extraction "Declared … with confidence flip" + "Sources absent from
   view_column_usage stay parsed object grain (degrade-by-absence), never guessed" (materialized + owner-gap scenarios). D5/D4.
-- [ ] B.3 **(vitest)** RED→GREEN `test/adapters/engines/pg/capabilities.test.ts` (extend) +
+- [x] B.3 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage.test.ts` (capability assertions; `capabilities.test.ts`
+  NOT separately extended — the B.3 assertions live alongside the merge tests in the SAME new file for locality) +
   `src/adapters/engines/pg/capabilities.ts`: set `supportsColumnLineage: true` (owner caveat in the note); `supportsDependencyHints`
   STAYS `false` (`view_column_usage` is a DISTINCT view-scoped catalog, not a body dep-hint); add a capability NOTE that a
   DECLARED view-column source now feeds regular-view lineage. **RECONCILER (a): PIN per-edge coverage** — assert a pg graph
   where a COVERED edge carries `dstColumns` (declared) COEXISTS with an UNCOVERED edge WITHOUT (parsed) on the SAME engine;
   coverage is read from the EDGE, NEVER inferred from `supportsColumnLineage`. Spec: pg-extraction "capability note corrected;
   view-column goldens re-blessed with the confidence flip" (the capability scenario). §Spec Coherence.
-- [ ] B.4 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage-normalize.test.ts` (new) — SYNTHETIC in-memory
+- [x] B.4 **(vitest)** RED→GREEN `test/adapters/engines/pg/column-lineage-normalize.test.ts` (new) — SYNTHETIC in-memory
   `RawCatalog`: `reporting.v_order_summary` → view→`app.orders` edge `attrs.dstColumns=[customer_id,order_id,status]` and
   view→`app.order_items` edge `attrs.dstColumns=[item_id,order_id,total_price]`, EACH FLIPPED to `confidence:'declared'`;
   observable set EXACTLY the six pairs; NEGATIVE: `app.order_items.qty`/`product_id` absent. `reporting.mv_product_stats`
   (materialized) → edges to `app.products`/`app.order_items` carry NO `dstColumns`, stay `parsed` (no flip, no fabrication); an
   owner-gap view degrades identically. Spec: pg-extraction "v_order_summary flips to declared and emits its EXACT consumed-column
   set", "materialized view stays parsed object grain", "owner-visibility gap degrades honestly". D5/D4.
-- [ ] B.5 **(vitest, fixtures)** VERIFY/EXTEND `test/fixtures/pg/torture.sql` with the regular view `reporting.v_order_summary`
+- [x] B.5 **(vitest, fixtures)** VERIFY (expected NO-OP) `test/fixtures/pg/torture.sql` already has `reporting.v_order_summary`
   (reads `app.orders` + `app.order_items`) and the MATERIALIZED view `reporting.mv_product_stats` (reads `app.products` +
-  `app.order_items`); re-record any offline pg row fixtures for `view_column_usage`. Leak-scan neutral. Spec: pg-extraction
-  fixture anchors (`reporting.v_order_summary`, `reporting.mv_product_stats`).
-- [ ] B.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless pg `golden-raw-catalog.json`/`golden-e2e.json`: the
-  `v_order_summary` covered edges pinned `confidence:'declared'` with their `attrs.dstColumns` (the parsed→declared FLIP is an
-  INTENTIONAL re-bless), the `mv_product_stats` edges pinned `parsed` with NO `dstColumns`; every unrelated byte unchanged;
-  byte-identical on re-run. **mssql/mysql/sqlite goldens byte-identical (HARD STOP).** Commit body = per-golden inventory
-  (call out the flip + the materialized-absence). Spec: pg-extraction "supportsDependencyHints stays false while covered
-  regular-view pairs flip to declared".
-- [ ] B.7 **(integration-gated)** Add to `test/cli/pg.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated) the LIVE
-  verifications: `view_column_usage` COVERAGE (`v_order_summary` covered edges declared with exact `dstColumns`) AND
-  MATERIALIZED-VIEW EXCLUSION (`mv_product_stats` edges parsed, no `dstColumns`) over the real container. Spec: pg-extraction
-  covered + materialized scenarios, integration tier.
-- [ ] B.8 GATE (Batch B): RE-MEASURE baseline; `npx tsc --noEmit` strict clean; `npm run lint` 0/0; `npm test` GREEN (baseline +
-  A+B suites) with pg goldens byte-identical on re-run; engines write-verb scanner GREEN (`SQL_PG_VIEW_COLUMN_USAGE` catalog
-  `SELECT` only); **mssql/mysql/sqlite goldens byte-identical (HARD STOP)**; leak-scan clean; nothing pushed. COMMIT
-  `feat(pg): declared column-lineage via view_column_usage with parsed→declared flip + materialized/owner degrade`.
+  `app.order_items`), matching the pg-extraction spec scenario verbatim (`o.order_id, o.customer_id, o.status,
+  COUNT(oi.item_id), SUM(oi.total_price)`) — NOT extended. RECORDED a NEW offline fixture
+  `test/fixtures/pg/rows/view-column-usage.json` (the `information_schema.view_column_usage` rows: 6 rows for
+  `v_order_summary`, ZERO for `mv_product_stats` — materialized views are structurally absent from the catalog). Leak-scan
+  neutral. Spec: pg-extraction fixture anchors (`reporting.v_order_summary`, `reporting.mv_product_stats`).
+- [x] B.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-blessed pg `golden-raw-catalog.json` FROM LIVE OUTPUT
+  (`golden-e2e.json` UNCHANGED — digest-only, unaffected by an attr + confidence flip, `git diff --stat` empty): the
+  `v_order_summary` covered edges pinned `confidence:'declared'` with `attrs.dstColumns` (orders→[customer_id,order_id,status],
+  order_items→[item_id,order_id,total_price], the parsed→declared FLIP is an INTENTIONAL re-bless), the `mv_product_stats`
+  edges pinned `parsed` with NO `dstColumns`; diffed PROGRAMMATICALLY old-vs-new — ONLY `v_order_summary`'s `dependencies`
+  field changed, every other byte identical; scanned for an identical-array trap (an object sharing v_order_summary's
+  ORIGINAL `{order_items, orders}` dep-target-set) — NONE found; byte-identical on re-run (second live extract, ADR-008).
+  **mssql (including Batch A's blessed state)/mysql/sqlite goldens byte-identical (HARD STOP) — verified via `git status`
+  (zero touches outside `pg/`).** Commit body = per-golden inventory. Spec: pg-extraction "supportsDependencyHints stays false
+  while covered regular-view pairs flip to declared".
+- [x] B.7 **(integration-gated)** Added the LIVE verifications to `test/adapters/engines/pg/e2e.integration.test.ts`
+  (`DBGRAPH_INTEGRATION`-gated Testcontainers over `torture.sql`) — **NOT** `test/cli/pg.e2e.integration.test.ts` (that file
+  does not exist in this codebase; pg has no CLI-level e2e integration test analogous to mssql's, only the
+  adapter/normalize-level `e2e.integration.test.ts`, which already exercises the live normalized graph end-to-end and is the
+  correct home for this proof — documented deviation, same class as A.3's `queries-for-json.integration.test.ts` note):
+  `view_column_usage` COVERAGE (`v_order_summary` covered edges declared with exact `dstColumns`, negatives for
+  qty/product_id) AND MATERIALIZED-VIEW EXCLUSION (`mv_product_stats` edges parsed, no `dstColumns`) over the real container.
+  Both proofs GREEN live BEFORE the re-bless (RED was isolated to the golden-byte-comparison test only) and AFTER. Spec:
+  pg-extraction covered + materialized scenarios, integration tier.
+- [x] B.8 GATE (Batch B): RE-MEASURED baseline (3536, the Batch A floor); `npx tsc --noEmit` strict clean; `npm run lint` 0/0;
+  `npm test` GREEN 225 files / 3554 tests (baseline 3536 + 18 new B suites) with pg goldens byte-identical on re-run; engines
+  write-verb scanner GREEN (`SQL_PG_VIEW_COLUMN_USAGE` catalog `SELECT` only — required an apostrophe-in-comment fix in
+  `map.ts`/`pg-schema-adapter.ts`, the scanner's naive quote-pairing desyncs on an odd count of prose apostrophes, same class
+  of false-positive as Batch A's mssql `queries.ts` fix); live pg tier GREEN (2 files / 81 tests) post-bless; **mssql
+  (Batch A state)/mysql/sqlite sources AND goldens byte-identical (HARD STOP)** — verified via `git status`; leak-scan clean;
+  nothing pushed. COMMIT `feat(pg): declared column-lineage via view_column_usage with parsed→declared flip + materialized/owner degrade`.
 
 ## Batch C: impact precision + `consumes:` render + mysql/sqlite degrade + final re-bless + DoD
 

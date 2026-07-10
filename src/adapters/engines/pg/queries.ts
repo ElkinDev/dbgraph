@@ -350,6 +350,38 @@ ORDER BY n.nspname, c.relname
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// View consumed-column set (DOG-3 D5) — information_schema.view_column_usage
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-view source-column lineage via `information_schema.view_column_usage` (DOG-3 design D5).
+ * Unlike mssql (a per-view TVF loop), pg exposes this as a single flat catalog view: one row
+ * per (view, source table, source column) triple, joinable in ONE query (no per-object loop
+ * needed). HONEST caveats inherited from the catalog itself (never worked around):
+ *   - covers only sources the VIEW OWNER also owns (an "owner visibility" gap for cross-owner
+ *     sources — those rows are simply ABSENT, never fabricated);
+ *   - does NOT cover MATERIALIZED views (relkind 'm') — matview rows are STRUCTURALLY ABSENT.
+ * Both absences degrade the covered (view, table) pair by omission (D4) — map.ts merges ONLY
+ * the pairs this query actually returns; nothing is guessed. Catalog SELECT only (US-031
+ * write-verb scanner). ADR-008: explicit ORDER BY for a stable row order.
+ * Optional $1 scopes to a single VIEW schema (NULL = all non-system schemas).
+ */
+export const SQL_PG_VIEW_COLUMN_USAGE = `
+SELECT
+  vcu.view_schema                  AS view_schema,
+  vcu.view_name                    AS view_name,
+  vcu.table_schema                 AS table_schema,
+  vcu.table_name                   AS table_name,
+  vcu.column_name                  AS column_name
+FROM information_schema.view_column_usage vcu
+WHERE vcu.view_schema NOT IN ('pg_catalog', 'information_schema')
+  AND vcu.view_schema NOT LIKE 'pg_toast%'
+  AND vcu.view_schema NOT LIKE 'pg_temp%'
+  AND ($1::text IS NULL OR vcu.view_schema = $1::text)
+ORDER BY vcu.view_schema, vcu.view_name, vcu.table_schema, vcu.table_name, vcu.column_name
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Fingerprint
 // ─────────────────────────────────────────────────────────────────────────────
 

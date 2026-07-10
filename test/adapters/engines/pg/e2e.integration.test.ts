@@ -380,6 +380,58 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(dstNames).toEqual(['order_items', 'products']);
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 B.7 — LIVE view_column_usage coverage + materialized-view exclusion
+    // (design D5/D4). Runs over the real materialized torture.sql catalog via the SAME
+    // extract -> normalizeCatalog pipeline as every other assertion in this file.
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('DOG-3: v_order_summary covered edges are declared with their EXACT dstColumns (view_column_usage coverage, L-009)', () => {
+      const viewNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'v_order_summary',
+      );
+      expect(viewNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === viewNode!.id,
+      );
+      const byTargetName = new Map(
+        depEdges.map((e) => [
+          normResult.graph.nodes.find((n) => n.id === e.dst)?.name ?? '',
+          e,
+        ]),
+      );
+
+      const ordersEdge = byTargetName.get('orders');
+      expect(ordersEdge).toBeDefined();
+      expect(ordersEdge!.confidence).toBe('declared');
+      expect(ordersEdge!.attrs.dstColumns).toStrictEqual(['customer_id', 'order_id', 'status']);
+
+      const itemsEdge = byTargetName.get('order_items');
+      expect(itemsEdge).toBeDefined();
+      expect(itemsEdge!.confidence).toBe('declared');
+      expect(itemsEdge!.attrs.dstColumns).toStrictEqual(['item_id', 'order_id', 'total_price']);
+
+      // negatives — columns the view does NOT read never appear
+      expect(itemsEdge!.attrs.dstColumns).not.toContain('qty');
+      expect(itemsEdge!.attrs.dstColumns).not.toContain('product_id');
+    });
+
+    it('DOG-3: mv_product_stats edges stay parsed with NO dstColumns (materialized-view exclusion, negative)', () => {
+      const mvNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'mv_product_stats',
+      );
+      expect(mvNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === mvNode!.id,
+      );
+      expect(depEdges.length).toBe(2);
+      for (const e of depEdges) {
+        expect(e.confidence).toBe('parsed');
+        expect(e.attrs.dstColumns).toBeUndefined();
+        expect('dstColumns' in e.attrs).toBe(false);
+      }
+    });
+
     it('proc_cancel_order has EXACTLY 1 writes_to edge (orders) + 0 reads_from', () => {
       const procNode = normResult.graph.nodes.find(
         (n) => n.kind === 'procedure' && n.name === 'proc_cancel_order',

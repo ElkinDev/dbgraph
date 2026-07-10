@@ -195,6 +195,22 @@ export interface SequenceRow {
 }
 
 /**
+ * One row of `information_schema.view_column_usage` (DOG-3 design D5): a single (view, source
+ * table, source column) triple. Unlike the mssql per-view TVF loop, the pg catalog view already
+ * returns ALL view rows in ONE query — no per-object loop, no per-call error handling needed
+ * (a plain catalog SELECT either succeeds or the whole extract() call fails, same as every
+ * other pg query). Materialized-view rows and owner-invisible-source rows are STRUCTURALLY
+ * ABSENT from this result (the catalog itself omits them) — map.ts merges ONLY what is present.
+ */
+export interface ViewColumnUsageRow {
+  readonly view_schema: string;
+  readonly view_name: string;
+  readonly table_schema: string;
+  readonly table_name: string;
+  readonly column_name: string;
+}
+
+/**
  * Full set of pre-fetched pg_catalog row arrays passed to buildPgRawCatalog.
  * In production: populated by the adapter from PgReadonlyDriver queries.
  * In tests: populated directly from JSON fixtures (no live DB).
@@ -210,6 +226,11 @@ export interface PgRowInput {
   readonly routines: readonly RoutineRow[];
   readonly triggers: readonly TriggerRow[];
   readonly sequences: readonly SequenceRow[];
+  // DOG-3 (design D5): flat `information_schema.view_column_usage` rows. OPTIONAL — pre-DOG-3
+  // fixtures/callers leave it UNSET, so every view dep stays object grain BYTE-IDENTICAL. When
+  // present, buildViews merges it onto each covered view dependency `columns` and flips that
+  // dependency to `confidence: 'declared'`.
+  readonly viewColumnUsage?: readonly ViewColumnUsageRow[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,6 +280,64 @@ function buildColumnNameMap(rows: readonly ColumnNameRow[]): Map<string, string>
 
 function tableKey(schema: string, name: string): string {
   return `${schema}.${name}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-3 (D4/D5): group view_column_usage rows and merge onto covered view deps
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Coerces flat `information_schema.view_column_usage` rows into a `view qname` → `target table
+ * qname` → ordered-unique `Set` of consumed source columns. A materialized view or an
+ * owner-invisible source is simply ABSENT from `rows` (a real catalog fact), so it never gets a
+ * group here — the caller lookup naturally misses and the dependency stays object grain
+ * (degrade-by-absence, D4). Insertion order follows the query ORDER BY (ADR-008 stable); the
+ * normalizer re-sorts code-point ascending for the edge attr (D3), so this does NOT sort.
+ * Exported for the B.1 recorded-rows shape test.
+ */
+export function groupViewColumnUsage(
+  rows: readonly ViewColumnUsageRow[],
+): Map<string, Map<string, Set<string>>> {
+  const groups = new Map<string, Map<string, Set<string>>>();
+  for (const r of rows) {
+    const viewKey = tableKey(r.view_schema, r.view_name);
+    const targetKey = tableKey(r.table_schema, r.table_name);
+    let byTarget = groups.get(viewKey);
+    if (byTarget === undefined) {
+      byTarget = new Map();
+      groups.set(viewKey, byTarget);
+    }
+    let cols = byTarget.get(targetKey);
+    if (cols === undefined) {
+      cols = new Set();
+      byTarget.set(targetKey, cols);
+    }
+    cols.add(r.column_name);
+  }
+  return groups;
+}
+
+/**
+ * Enriches a view tokenizer-derived `RawDependency` list with the source columns
+ * `view_column_usage` attributed to each COVERED (view, table) pair. A covered dep GAINS
+ * `columns` and FLIPS to `confidence: 'declared'` (a catalog-confirmed pair IS declared, D5); an
+ * uncovered dep (materialized view / owner-visibility gap / any source the catalog omits) is
+ * returned UNCHANGED — object grain, `columns` UNSET, still `parsed` (degrade-by-absence, D4).
+ * NEVER fabricates a column from the body.
+ */
+function enrichViewDeps(
+  deps: readonly RawDependency[],
+  viewSchema: string,
+  viewName: string,
+  viewColumnGroups: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>,
+): readonly RawDependency[] {
+  const byTarget = viewColumnGroups.get(tableKey(viewSchema, viewName));
+  if (byTarget === undefined || byTarget.size === 0) return deps;
+  return deps.map((dep) => {
+    const cols = byTarget.get(tableKey(dep.target.schema ?? '', dep.target.name));
+    if (cols === undefined || cols.size === 0) return dep;
+    return { ...dep, confidence: 'declared' as const, columns: Array.from(cols) };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -506,6 +585,7 @@ function buildViews(
   input: PgRowInput,
   scope: ExtractionScope,
   potentialDeps: readonly { schema: string; name: string }[],
+  viewColumnGroups: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>,
 ): RawObject[] {
   const level = scope.levels.views;
   if (level === 'off') return [];
@@ -524,7 +604,10 @@ function buildViews(
       // as read or write by scanning the body.
       const result = tokenizePgBody(body, potentialDeps);
       if (result.dependencies.length > 0) {
-        dependencies = result.dependencies;
+        // DOG-3 (D5): merge information_schema.view_column_usage onto the covered pairs (flip
+        // to declared + attach columns). Materialized views / owner-gap sources are naturally
+        // absent from viewColumnGroups → returned UNCHANGED (degrade-by-absence, D4).
+        dependencies = enrichViewDeps(result.dependencies, viewRow.schema_name, viewRow.view_name, viewColumnGroups);
       }
     }
 
@@ -775,13 +858,17 @@ export function buildPgRawCatalog(
     ...input.views.map((v) => ({ schema: v.schema_name, name: v.view_name })),
   ];
 
+  // DOG-3 (D5): group the flat view_column_usage rows once, reused by buildViews for every
+  // view. Absent input → an empty Map → every view dep stays object grain (byte-identical).
+  const viewColumnGroups = groupViewColumnUsage(input.viewColumnUsage ?? []);
+
   const objects: RawObject[] = [];
 
   // Tables (always if not 'off')
   objects.push(...buildTables(input, scope, columnNameMap));
 
   // Views (regular + materialized)
-  objects.push(...buildViews(input, scope, potentialDeps));
+  objects.push(...buildViews(input, scope, potentialDeps, viewColumnGroups));
 
   // Routines: functions + procedures (each filtered by its own scope level)
   objects.push(...buildRoutines(input, scope));
