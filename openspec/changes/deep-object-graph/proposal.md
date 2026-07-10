@@ -113,6 +113,18 @@ depends on. DOG-2 is pure-additive payload (no goldens on existing edges shift) 
 with DOG-1 with near-zero collision. DOG-3 is the hardest and benefits from DOG-1's plumbing. DOG-4 is
 XS polish and MAY be folded into DOG-1's PR if convenient.
 
+## Epic Status (as of 2026-07-10)
+
+| Child | Status | Evidence / Archive ref |
+|---|---|---|
+| **DOG-1 `calls` edges** | ✅ SHIPPED | `calls` edge kind + provenance live in canonical `graph-model`, `graph-normalization`, `graph-query` and per-engine extraction specs |
+| **DOG-2 routine parameters** | ✅ SHIPPED | `RoutinePayload.parameters` + per-engine parameter sourcing live in canonical `graph-model`, `schema-extraction`, `mcp-server`, mssql/pg/mysql/sqlite specs |
+| **DOG-3 column lineage (views)** | ✅ DONE — ARCHIVED 2026-07-10 | `openspec/changes/archive/2026-07-10-dog3-column-lineage/`; 9 column-lineage deltas merged into canonical specs; verify verdict ARCHIVE-READY (0 CRITICAL); shipped over `post-v1` (HEAD `287be4a`) |
+| **DOG-4 dynamic-SQL honesty** | ⏳ PENDING | not yet started — promote the `hasDynamicSql` caveat from `full`-only to `normal` detail and mark per-node confidence degradation in `affected` output |
+
+The epic remains OPEN until DOG-4 ships. DOG-3's benchmark column-lineage family is now INSTANTIABLE (the
+edges exist); the labeled benchmark RUN is DEFERRED to its own change (standing precedent), NOT part of DOG-3.
+
 ## Affected Areas
 
 | Area | Impact | Child |

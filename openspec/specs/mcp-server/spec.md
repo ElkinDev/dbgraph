@@ -668,3 +668,69 @@ token-delta note.
 - WHEN each is rendered
 - THEN neither emits a PARAMETERS section
 - AND the existing sqlite-substrate explore/object goldens (TABLE focus) show ZERO drift
+
+### Requirement: precheck and affected surface column-grain view precision (declared engines)
+
+On engines whose view `depends_on` edges carry `attrs.dstColumns` (declared — mssql/pg covered pairs),
+`dbgraph_precheck` (and its `dbgraph affected` CLI sibling) SHALL aggregate a column-drop/alter DDL into
+readers/what-to-test by FILTERING views on `attrs.dstColumns` membership via the SHARED
+`filterReadersByColumn` helper (graph-query): a view whose edge LISTS the dropped column MUST appear; a view
+over the same TABLE whose edge does NOT list it (or whose edge carries no `attrs.dstColumns`) is handled per
+the three-arm impact rule — excluded when the set is present-but-excludes, included when the set is absent
+(degrade-include). Every parse-derived item MUST stay tagged `confidence: 'parsed'` (the DDL identifiers are
+parsed even though the underlying view edges are declared). Non-matchable identifiers MUST be reported
+unmatched, never guessed. On degraded engines, view impact stays object grain (unchanged).
+
+#### Scenario: mssql column-drop precheck surfaces only the consuming view (exact set)
+
+- GIVEN the mssql torture graph and a DDL dropping `dbo.order_items.product_id`
+- WHEN `dbgraph_precheck({ ddl })` runs over that graph
+- THEN `whatToTest` includes `dbo.v_order_summary` in the READERS section (its edge lists `product_id` in `attrs.dstColumns`), tagged `confidence: 'parsed'`
+- AND a DDL dropping `dbo.order_items.region_id` does NOT surface `dbo.v_order_summary` (its edge does not list `region_id`)
+
+#### Scenario: affected mirrors the precision via the shared engine
+
+- GIVEN a `.sql` script dropping `dbo.order_items.product_id` over the mssql torture graph
+- WHEN `dbgraph affected script.sql --json` runs
+- THEN its `whatToTest` includes `dbo.v_order_summary` (inherited from the shared precheck engine) and exits with code 1
+- AND a script dropping only `dbo.order_items.region_id` does NOT list `dbo.v_order_summary` as a view consumer
+
+### Requirement: explore and object render a view's consumed source columns at full detail, honest
+
+The shared payload-render helper (`src/core/present/payload.ts`, backing BOTH `formatExplore` and
+`formatObject`) SHALL render, for a VIEW focus node whose `depends_on` edges carry `attrs.dstColumns`, the
+source columns the view CONSUMES — gated to `full` detail ONLY (NOT `brief`, NOT `normal`; budget honesty:
+the consumed-column list is a full-detail concern for wide views). CLI and MCP MUST render BYTE-IDENTICAL
+bytes for the same node (one shared helper, no per-surface branch). Each rendered line MUST follow the PINNED
+SHAPE `consumes: <source-table>.<column>` — a LOWERCASE inline `consumes:` key followed by a `table.column`
+reference. There is NO uppercase section HEADER for this feature: unlike the DOG-2 `PARAMETERS` section and
+the `COLUMNS`/`[PK]`/`[FK→]` uppercase-marker convention, the consumed-column lines are inline lowercase
+`consumes:` entries (an uppercase `CONSUMES` header or `[CONSUMES]` marker is a SPEC VIOLATION). Lines list
+the consumed source columns in the canonical code-point order (graph-normalization) and MUST name ONLY source
+columns CONSUMED — NEVER pair an output column to a source column (ADR-007). A view whose `depends_on` edges
+carry NO `attrs.dstColumns` (degraded engines / uncovered pg) MUST render NO consumes lines. The EXACT label
+TEXT and byte layout within the pinned `consumes:` shape are pinned at apply as a DELIBERATE golden bless with
+a matching `docs/format-spec.md` §6 token-delta note; the ceiling POLICY (measured numbers, spec-edit +
+token-delta on every golden change) is UNCHANGED.
+
+#### Scenario: view focus renders its consumed source columns at full only
+
+- GIVEN a VIEW focus node whose `depends_on` edges carry `attrs.dstColumns`, rendered at `brief`, `normal`, and `full`
+- WHEN the shared helper renders it inside BOTH `explore` and `object`
+- THEN `full` renders `consumes: <table>.<column>` lines (lowercase inline key, code-point order); `brief` and `normal` render NONE (object grain only)
+- AND the two surfaces are byte-identical (shared source); the exact label text and bytes within the pinned `consumes:` shape are golden-locked at apply plus a `docs/format-spec.md` §6 token-delta note
+- AND NO uppercase `CONSUMES` header and NO `[CONSUMES]` marker is emitted (the shape is the lowercase inline `consumes:` key)
+
+#### Scenario: render names source columns consumed, never an output mapping (honesty)
+
+- GIVEN a view whose SELECT renames or computes outputs
+- WHEN its consumes lines render at `full`
+- THEN the lines assert ONLY which source columns the view reads
+- AND NO line pairs an output column to a source column
+
+#### Scenario: degraded-engine view renders no consumes lines (negative)
+
+- GIVEN a mysql or sqlite view (edges carry no `attrs.dstColumns`) at `full`
+- WHEN `explore`/`object` render it
+- THEN NO `consumes:` line appears (object-grain dependencies only)
+- AND the existing sqlite explore/object goldens show ZERO drift from this feature

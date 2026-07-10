@@ -670,3 +670,73 @@ an empty parameters array.
 - WHEN parameters are added
 - THEN the pg goldens are re-blessed DELIBERATELY to carry the pinned arrays; every unrelated byte is unchanged
 - AND `SQL_PG_ROUTINES` still passes the engines write-verb scanner (catalog `SELECT` only)
+
+### Requirement: Declared consumed-column set for regular views via view_column_usage, with confidence flip
+
+The pg adapter SHALL run a NEW catalog `SELECT` over `information_schema.view_column_usage` to source, per
+regular view, the set of `(source table, source column)` pairs it reads, threaded onto
+`RawDependency.columns` and merged into the tokenizer-derived dependencies. For each (view, source table)
+pair the catalog COVERS, the view→table `depends_on` edge MUST FLIP `confidence: 'parsed'` → `'declared'`
+(a catalog-confirmed pair IS declared) AND gain `attrs.dstColumns` (the sorted-unique consumed source
+columns). The `depends_on` edge is UNCHANGED in identity; it flips confidence and gains the set — NO separate
+per-column edge is emitted. The emission is a SOURCE-COLUMN SET; the adapter MUST NOT assert any output↔source
+mapping. The new query MUST issue only a catalog `SELECT` (engines write-verb scanner green). This is the
+SAME parsed→declared flip mechanism mssql applies via its native TVF loop (mssql-extraction).
+
+#### Scenario: v_order_summary flips to declared and emits its EXACT consumed-column set
+
+- GIVEN the torture view `reporting.v_order_summary` selecting `o.order_id, o.customer_id, o.status, COUNT(oi.item_id), SUM(oi.total_price)` from `app.orders o` LEFT JOIN `app.order_items oi ON oi.order_id = o.order_id`, grouped by `o.order_id, o.customer_id, o.status`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN the view→`app.orders` `depends_on` edge carries `attrs.dstColumns = [customer_id, order_id, status]` and the view→`app.order_items` edge carries `attrs.dstColumns = [item_id, order_id, total_price]` (each sorted code-point ascending), each FLIPPED to `confidence: 'declared'`
+- AND the observable consumed set is EXACTLY `{ app.orders.order_id, app.orders.customer_id, app.orders.status, app.order_items.order_id, app.order_items.item_id, app.order_items.total_price }`
+- AND no column the view does not read (e.g. `app.order_items.qty`, `app.order_items.product_id`) appears in any `attrs.dstColumns` (negative)
+
+### Requirement: Sources absent from view_column_usage stay parsed object grain (degrade-by-absence), never guessed
+
+Where `information_schema.view_column_usage` OMITS a source — because the view is a MATERIALIZED view (not
+covered by `view_column_usage`) OR because the view owner does not own the referenced object (owner
+visibility) — the pg adapter MUST leave that view→table `depends_on` edge at its tokenizer `confidence:
+'parsed'` object grain with NO `attrs.dstColumns` (degrade-by-absence — NO per-edge marker, no
+`attrs.degraded`). It MUST NOT fabricate a column from the body. The golden MUST pin the EXACT OBSERVABLE
+covered set the catalog returns — NEVER a fabricated "complete" set inferred from the body (ADR-006/007).
+
+#### Scenario: materialized view stays parsed object grain (concrete negative)
+
+- GIVEN the torture MATERIALIZED view `reporting.mv_product_stats` reading `app.products` and `app.order_items` (materialized views are absent from `information_schema.view_column_usage`)
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN its `depends_on` edges to `app.products` and `app.order_items` carry NO `attrs.dstColumns` and stay `confidence: 'parsed'` (no flip)
+- AND no column is fabricated from its body text
+
+#### Scenario: owner-visibility gap degrades honestly
+
+- GIVEN a regular view reading from a table the view owner does NOT own (absent from `view_column_usage`)
+- WHEN the catalog is normalized
+- THEN that view→table `depends_on` edge carries NO `attrs.dstColumns` and stays `parsed` object grain
+- AND the golden pins the exact covered set the catalog observably returns, never a guessed full set
+
+### Requirement: pg capability note corrected; view-column goldens re-blessed with the confidence flip
+
+`PG_CAPABILITIES.supportsDependencyHints` MUST remain `false` (it denotes body-derived read/write dep-hints,
+which pg still lacks — `view_column_usage` is a DISTINCT, view-scoped catalog). A new
+`supportsColumnLineage: true` capability (with the owner caveat in its note) MUST record that a DECLARED
+view-column source now feeds regular-view lineage. Per-edge coverage MUST be read from the EDGE
+(`attrs.dstColumns` present-or-absent), NEVER inferred from `supportsColumnLineage`: a covered edge (declared,
+with `dstColumns`) MUST be able to COEXIST with an uncovered edge (parsed, without) on the SAME pg engine. The
+golden-pinned `RawCatalog` and impact goldens MUST be re-blessed DELIBERATELY with L-009 exact sets: the
+`v_order_summary` covered edges pinned at `confidence: 'declared'` with their `attrs.dstColumns` (the
+parsed→declared FLIP is an intentional re-bless), AND the `mv_product_stats` edges pinned at `parsed` with NO
+`attrs.dstColumns`; every unrelated byte unchanged.
+
+#### Scenario: supportsDependencyHints stays false while covered regular-view pairs flip to declared
+
+- GIVEN `PG_CAPABILITIES` after DOG-3
+- WHEN `supportsDependencyHints` and `supportsColumnLineage` are read and the capability note is inspected
+- THEN `supportsDependencyHints` is STILL `false` (no body dep-hint catalog) and `supportsColumnLineage` is `true`
+- AND the note records that `information_schema.view_column_usage` supplies DECLARED source columns for covered regular-view pairs (materialized/uncovered stay parsed)
+- AND the re-blessed goldens pin the `v_order_summary` covered edges at `confidence: 'declared'` with their `attrs.dstColumns` (the deliberate parsed→declared flip) and the `mv_product_stats` edges at `parsed` with no `dstColumns`, byte-identical on re-run (ADR-008)
+
+#### Scenario: a covered and an uncovered edge coexist on the same pg engine (per-edge coverage)
+
+- GIVEN a pg graph carrying `reporting.v_order_summary` covered edges (declared, with `dstColumns`) alongside `reporting.mv_product_stats` uncovered edges (parsed, without)
+- WHEN coverage is determined for each edge
+- THEN it is read from the EDGE (`attrs.dstColumns` present-or-absent), NEVER inferred from the engine `supportsColumnLineage` flag

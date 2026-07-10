@@ -41,9 +41,23 @@ inbound `calls` edges, while WRITE impact remains `writes_to`-only (a call is no
 MUST be bounded by a `depth` argument (default 3) with a truncation warning when the limit is hit, and
 MUST terminate on cyclic graphs via a visited set. If any object in a chain carries `has_dynamic_sql`,
 the result MUST include an "impact possibly incomplete" warning.
+
+Where a view's `depends_on` edge carries a consumed source-column set (`attrs.dstColumns`, declared on
+mssql/pg — graph-model), an impact query pivoted on a COLUMN node MUST FILTER the dependent views by
+column MEMBERSHIP: a view whose `depends_on` edge INCLUDES the pivot column in `attrs.dstColumns` is
+affected; a view whose edge EXCLUDES it MUST be ABSENT (column-grain precision); a view whose
+`depends_on` edge carries NO `attrs.dstColumns` (degraded engines mysql/sqlite, or uncovered pg pairs)
+MUST be INCLUDED at object grain (absence = conservative include, no false negative). This three-arm rule
+is realized by ONE shared pure helper (`filterReadersByColumn`) reused by `getImpact`'s first hop and by
+precheck/affected (mcp-server). Impact pivoted on a TABLE node MUST be UNCHANGED — the view→table
+`depends_on` edge still surfaces every dependent view regardless of `attrs.dstColumns`. Output MUST remain
+deterministic and byte-identical on re-run (ADR-008).
 (Previously: `IMPACT_EDGE_KINDS` traversed inbound `writes_to`/`reads_from`/`depends_on`/`references`
 only; a routine invoking another routine was unmodeled, so altering a called routine did NOT surface
 its callers in the impact closure — the caller was invisible to `getImpact`.)
+(Previously: a column-node pivot surfaced EVERY view over the column's table — `getImpact` did NOT filter
+view `depends_on` edges by `attrs.dstColumns`, so dropping a column marked every view over the table as
+affected, even views that never read it.)
 
 #### Scenario: Impact separates read from write with visible chain
 
@@ -77,6 +91,32 @@ its callers in the impact closure — the caller was invisible to `getImpact`.)
 - THEN its READ impact is EXACTLY `{dbo.usp_refresh_totals}`, reached through the inbound `calls` edge
 - AND `dbo.usp_refresh_totals` appears in NO write-impact set (a `calls` edge is READ-impact, not write)
 - AND the output is byte-identical on re-run (ADR-008)
+
+#### Scenario: dropping a consumed column surfaces the consuming view (exact set)
+
+- GIVEN the mssql torture graph where `dbo.v_order_summary`'s `depends_on` edge to `dbo.order_items` carries `attrs.dstColumns` INCLUDING `product_id`, `confidence: 'declared'`
+- WHEN impact is requested on the COLUMN node `dbo.order_items.product_id`
+- THEN the affected views are EXACTLY `{dbo.v_order_summary}` (it reads `product_id` via `COUNT(oi.product_id)`), reported in READ impact
+- AND the output is byte-identical on re-run (ADR-008)
+
+#### Scenario: dropping a non-consumed column of the same table excludes the view (negative, precision)
+
+- GIVEN the same graph; `dbo.v_order_summary`'s `depends_on` edge to `dbo.order_items` does NOT list `region_id` in `attrs.dstColumns`
+- WHEN impact is requested on the COLUMN node `dbo.order_items.region_id`
+- THEN `dbo.v_order_summary` is ABSENT from the affected views (column-grain precision)
+- AND under the pre-DOG-3 table-grain behavior it WOULD have surfaced — this is a DELIBERATE precision improvement, re-blessed with justification
+
+#### Scenario: table pivot impact is unchanged
+
+- GIVEN the same graph
+- WHEN impact is requested on the TABLE node `dbo.order_items`
+- THEN `dbo.v_order_summary` is surfaced (unchanged object-grain impact via its view→table `depends_on` edge, regardless of `attrs.dstColumns`)
+
+#### Scenario: degraded engine keeps table-grain view impact
+
+- GIVEN a mysql or sqlite graph (view `depends_on` edges carry no `attrs.dstColumns`)
+- WHEN impact is requested on a column node of a table that a view reads
+- THEN view impact resolves at object grain (every view over the table) — the honest degrade-by-absence, unchanged
 
 ### Requirement: Shortest join path with hop join columns
 

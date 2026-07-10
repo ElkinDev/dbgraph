@@ -52,6 +52,12 @@ drives the conservative-include rule). mysql/sqlite edges stay byte-identical �
 
 ### Decision: Confidence — mssql declared as-is; pg upgrades covered pairs
 
+> **⚠ ERRATA (reconciler d, archive 2026-07-10):** this decision's premise is FACTUALLY WRONG. The mssql
+> view `depends_on` deps are emitted by the body tokenizer at `confidence: 'parsed'` (exactly like pg),
+> NOT "already declared". The shipped implementation FLIPS `parsed`→`declared` on COVERED view deps in
+> BOTH mssql and pg. The observable end state (declared + `dstColumns`) is correct; only this "no flip"
+> narrative is wrong. See "## Reconciliation notes (archive-time)" below. Canonical specs state the flip.
+
 **Choice**: mssql view `depends_on` is ALREADY `declared` → attach the native-TVF-loop set (D8), no flip. pg: `view_column_usage`
 is a CATALOG dependency signal — covered (view,table) pairs flip `parsed`→`declared` + gain `dstColumns`;
 uncovered (owner-visibility gap / SELECT* / non-owned source) keep the tokenizer's `parsed` object grain.
@@ -154,3 +160,22 @@ Batches: **A** model+seam+mssql · **B** pg (declared, owner degrade) · **C** i
 - [ ] Render wording for mssql SELECT* (capable-but-columnless) vs sqlite (incapable) — capability text only, or a lightweight per-dep hint? (Batch C render; leaning capability-only.)
 - [ ] `object.ts` full-detail budget ceiling for very wide views (cap the consumed-column list at N?) — tasks to pin against format-spec.
 - [ ] Confirm `impact` command (US-014) needs column pivots, or is column precision precheck/affected-only? (leaning: helper shared, `getImpact` first-hop opt-in.)
+
+## Reconciliation notes (archive-time)
+
+These notes reconcile drift between the planning artifacts and the shipped implementation, recorded at
+archive so the canonical specs merge correctly. They join the earlier reconciler rulings (a) capability
+flag is an impl detail, never a per-edge coverage oracle; (b) proposal's "make the singular
+`srcColumn/dstColumn` load-bearing" is superseded by D2's new plural `dstColumns`; (c) the mssql column
+source is `sys.dm_sql_referenced_entities` (D8), not the inert `sys.sql_expression_dependencies.referenced_minor_id`
+named in the proposal — all recorded in `tasks.md`.
+
+- **(d) The D5 "mssql already declared → no flip" premise was factually wrong.** The tokenizer emits
+  `confidence: 'parsed'` for mssql view `depends_on` deps (exactly as it does for pg); the shipped
+  implementation FLIPS `parsed`→`declared` on COVERED view deps in BOTH mssql and pg (the covered edge
+  gains `attrs.dstColumns` at the same moment it flips). Uncovered / unbindable / sqlcmd-or-dump mssql
+  deps and uncovered / materialized / owner-gap pg deps STAY `parsed` object grain (degrade-by-absence).
+  The observable end state every test pins (`declared` + sorted-unique `dstColumns` on covered edges) is
+  CORRECT and unchanged; only D5's and the `mssql-extraction` delta's narrative of HOW confidence
+  reaches `declared` was wrong. **The canonical specs MUST state the flip, NEVER "already declared".**
+  (Surfaced independently as verify WARNING-1; recorded 2026-07-10.)

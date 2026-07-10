@@ -195,3 +195,67 @@ be fabricated where the catalog cannot express it.
 - GIVEN one engine exposing a catalog default flag and another exposing NO default column
 - WHEN parameters are mapped
 - THEN `hasDefault` is present only for the former; the latter OMITS the field entirely (never fabricated)
+
+### Requirement: Consumed source-column set on view depends_on via attrs.dstColumns
+
+Where a catalog sources it, the model SHALL represent a view's read dependency at COLUMN grain by carrying
+the sorted-unique SET of consumed source columns as `EdgeAttrs.dstColumns` on the EXISTING
+view→source-table `depends_on` edge — NOT as separate per-column edges and NOT as column-node targets. The
+view→table `depends_on` edge is UNCHANGED in identity (`edgeId`, endpoints); it merely GAINS
+`attrs.dstColumns`. The edge's `confidence` MUST be `declared` where a catalog sources the columns (mssql;
+pg covered pairs). Because the view `depends_on` dependency is first emitted by the body tokenizer at
+`confidence: 'parsed'`, a COVERED pair FLIPS `parsed`→`declared` at the moment it gains the set — on BOTH
+mssql (native `dm_sql_referenced_entities`) and pg (`view_column_usage`); see mssql-extraction and
+pg-extraction (the model NEVER treats the covered edge as "already declared"). The represented
+relationship is a SOURCE-COLUMN SET — the columns the view READS — and MUST NOT be described, rendered,
+or asserted as an OUTPUT-column ↔ source-column MAPPING (ADR-007: the SELECT-list grammar parse a true
+mapping needs is OUT of scope). A `depends_on` edge with no sourced column MUST leave `attrs.dstColumns`
+UNSET → byte-identical to today's object-grain edge (`attrs {}`).
+
+#### Scenario: A view carries attrs.dstColumns for its exact consumed columns
+
+- GIVEN a view that reads source columns `{c1, c2}` from table `t`, sourced by the catalog
+- WHEN its `depends_on` edge to `t` is inspected
+- THEN the edge carries `attrs.dstColumns = [c1, c2]` (sorted-unique, code-point order) and `confidence: 'declared'`
+- AND no column of `t` absent from `{c1, c2}` appears in `attrs.dstColumns` (negative)
+- AND NO separate per-column `depends_on` edge and NO column-node target is emitted (Model A)
+
+#### Scenario: The relationship is a source-column SET, never an output mapping (honesty)
+
+- GIVEN a view whose SELECT list renames or computes outputs from source columns
+- WHEN its `depends_on` edges are inspected
+- THEN `attrs.dstColumns` asserts ONLY which source `table.column`s the view consumes
+- AND NO attribute asserts a correspondence from an OUTPUT column to a source column
+
+#### Scenario: Non-sourced dependency stays byte-identical object grain (unset signal)
+
+- GIVEN a `depends_on` dependency for which no catalog sources a column
+- WHEN its edge is emitted
+- THEN `attrs.dstColumns` is UNSET and the edge is byte-identical to the pre-DOG-3 object-grain edge
+
+### Requirement: Per-engine column provenance and honest degradation-by-absence, never blurred
+
+The model SHALL make column-grain view lineage PROVENANCE-EXPLICIT and per-engine. Where a catalog sources
+the columns (mssql `sys.dm_sql_referenced_entities`, native path — see mssql-extraction; pg
+`information_schema.view_column_usage`) the view→table `depends_on` edge carries `attrs.dstColumns` at
+`confidence: 'declared'` (flipped from the tokenizer's `parsed` on covered pairs). Where NO column catalog
+exists (mysql, sqlite) OR the catalog OMITS a source (pg materialized views / owner-visibility gaps /
+whole-object `SELECT *`; mssql-via-sqlcmd or manual dump / unbindable views), the edge MUST leave
+`attrs.dstColumns` UNSET — degradation is expressed by ABSENCE of the set, NOT by a per-edge marker (there
+is NO `attrs.degraded` stamp); the per-engine capability (`supportsColumnLineage`) documents WHY. The model
+MUST NEVER synthesize a column the catalog cannot supply (ADR-006/007) — degradation is stated plainly,
+never back-filled by a body parse. mongodb has no views → the capability is absent, not fabricated.
+
+#### Scenario: Declared where catalog-sourced, absent where not
+
+- GIVEN one view on a catalog-sourcing engine and one on a non-sourcing engine
+- WHEN their view `depends_on` edges are inspected
+- THEN the sourcing engine's edge carries `attrs.dstColumns` at `confidence: 'declared'`
+- AND the non-sourcing engine's edge leaves `attrs.dstColumns` UNSET (degrade-by-absence, no marker) and is byte-identical to its pre-DOG-3 object-grain edge
+
+#### Scenario: No fabricated column under degradation (negative)
+
+- GIVEN a view on mysql or sqlite (no view-column catalog)
+- WHEN its `depends_on` edges are enumerated
+- THEN NO `attrs.dstColumns` is present (no body-parsed guess) and NO per-column edge exists
+- AND the object-grain edge names only the source TABLE
