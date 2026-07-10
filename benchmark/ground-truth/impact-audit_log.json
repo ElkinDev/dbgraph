@@ -1,0 +1,10 @@
+{
+  "whatToTest": [
+    "trg_emp_after_delete",
+    "trg_emp_after_insert",
+    "trg_emp_before_insert",
+    "trg_emp_before_update",
+    "trg_emp_salary_update"
+  ],
+  "source_ddl_ref": "test/fixtures/sqlite/torture.sql:L58"
+}

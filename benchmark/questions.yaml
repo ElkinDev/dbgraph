@@ -5,17 +5,17 @@
 version: 1
 substrate: sqlite-torture
 perFamily: 1
-n: 5
+n: 6
 familiesIncluded:
   - fk-path
   - column-type
   - impact
   - trigger-inventory
+  - view-dependency
   - constraint-semantics
 familiesExcluded:
-  - view-dependency
 notes:
-  view-dependency: "held out of the frozen set — N is pinned at 5. The SQLite adapter now derives view depends_on edges from bodies (sqlite-view-deps), so the enumerator yields candidates; instantiating them into the committed set is deferred to its own labeled run."
+  view-dependency: "INCLUDED as of the N=6 run-3 set. The SQLite adapter derives view depends_on edges from bodies (sqlite-view-deps); benchmark-guard-precision made the no-leak guard alphanumeric-adjacency-precise, unblocking this family for its own labeled run — this pre-registration."
 questions:
   - qid: column-type-assignments.dept_id
     family: column-type
@@ -29,11 +29,15 @@ questions:
     family: fk-path
     question: "What foreign-key join path connects the tables assignments and employees?"
     answerFormat: "Semicolon-separated join atoms fromTable.fromColumn=toTable.toColumn using unqualified table names; order does not matter (e.g. \"orders.cust_id=customers.id; orders.region=customers.region\")."
-  - qid: impact-departments
+  - qid: impact-audit_log
     family: impact
-    question: "A developer proposes the following DDL change:\nALTER TABLE main.departments DROP COLUMN dept_id;\nWhich existing database objects should be re-tested as a result of this change?"
+    question: "A developer proposes the following DDL change:\nALTER TABLE main.audit_log DROP COLUMN log_id;\nWhich existing database objects should be re-tested as a result of this change?"
     answerFormat: "Comma-separated, alphabetically sorted list of unqualified object names (e.g. \"orders, shipments\")."
   - qid: trigger-inventory-active_departments
     family: trigger-inventory
     question: "Which triggers are defined on active_departments? For each trigger give its name, timing, and the events it fires on."
     answerFormat: "Comma-separated tuples name:timing:events, where events is a |-separated sorted list; tuple order does not matter (e.g. \"trg_x:AFTER:INSERT|UPDATE\")."
+  - qid: view-dependency-active_departments
+    family: view-dependency
+    question: "Which tables or objects does the view active_departments read from (its direct dependencies)?"
+    answerFormat: "Comma-separated, alphabetically sorted list of unqualified object names the view reads from (e.g. \"orders, products\")."

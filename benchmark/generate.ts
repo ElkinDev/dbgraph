@@ -13,11 +13,12 @@
  * [5,10], every ground-truth key carries a `source_ddl_ref`, and no answer value leaks into
  * its question text (D5 leakage guard).
  *
- * SUBSTRATE NOTE: on SQLite the `view-dependency` family is now INSTANTIABLE — the SQLite
+ * SUBSTRATE NOTE: on SQLite the `view-dependency` family is INSTANTIABLE — the SQLite
  * schema adapter derives view `depends_on` edges from bodies via the shared presence-gate
- * tokenizer (sqlite-view-deps), so the enumerator yields candidates. This committed set,
- * however, HOLDS N pinned at 5 with `view-dependency` excluded; instantiating it (N=5→6,
- * a fresh labeled run) is DEFERRED to its own run — `--per-family 1` here still gives N=5.
+ * tokenizer (sqlite-view-deps), so the enumerator yields candidates. The committed set is
+ * the run-3 pre-registered N=6 set with `view-dependency` INCLUDED: its formerly-deferred
+ * labeled run is THIS one, unblocked by benchmark-guard-precision (the no-leak guard's
+ * alphanumeric-adjacency precision) — `--per-family 1` here gives N=6.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -407,7 +408,7 @@ function renderQuestionsYaml(
   for (const f of excluded) lines.push(`  - ${f}`);
   lines.push('notes:');
   lines.push(
-    `  view-dependency: ${yamlString('held out of the frozen set — N is pinned at 5. The SQLite adapter now derives view depends_on edges from bodies (sqlite-view-deps), so the enumerator yields candidates; instantiating them into the committed set is deferred to its own labeled run.')}`,
+    `  view-dependency: ${yamlString('INCLUDED as of the N=6 run-3 set. The SQLite adapter derives view depends_on edges from bodies (sqlite-view-deps); benchmark-guard-precision made the no-leak guard alphanumeric-adjacency-precise, unblocking this family for its own labeled run — this pre-registration.')}`,
   );
   lines.push('questions:');
   for (const q of questions) {
