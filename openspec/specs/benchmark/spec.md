@@ -52,7 +52,13 @@ The pinned derivation rule per family MUST be: (a) join-query / FK-path question
 graph's foreign-key EDGE table; (b) column-type questions derived from node FIELD payloads; (c)
 rename-impact questions derived from the shipped `affected` command's output. Each question MUST carry a
 machine-checkable ground truth held SEPARATELY from the question text, and NO question may embed its own
-answer. The question text MUST be pre-registered (fixed) BEFORE any run and served IDENTICALLY to both
+answer. The no-embed (no-answer-leak) check MUST treat a ground-truth key value as embedded in the
+question text ONLY when it occurs as a STANDALONE token — an occurrence NOT flanked on EITHER side by an
+alphanumeric-or-underscore character (`[a-z0-9_]`), the project's alphanumeric-adjacency convention
+(deliberately NOT a `\b` regex, so answer tokens containing punctuation are compared as literal strings,
+never as a pattern). A key value that appears ONLY as a substring of a larger identifier (e.g.
+`departments` within the view name `active_departments`) is NOT a leak; a free-standing occurrence IS.
+The question text MUST be pre-registered (fixed) BEFORE any run and served IDENTICALLY to both
 conditions.
 
 #### Scenario: Each family's ground truth is derived by its pinned rule
@@ -71,7 +77,19 @@ conditions.
 
 - GIVEN each question's text and its separately-held ground-truth key
 - WHEN the harness checks for overlap
-- THEN NO ground-truth key value appears verbatim in the question text or in either condition's prompt
+- THEN NO ground-truth key value appears as a STANDALONE occurrence — one not flanked by `[a-z0-9_]` — in the question text or in either condition's prompt
+
+#### Scenario: A key value embedded inside a larger identifier is NOT a leak
+
+- GIVEN the question `view-dependency-active_departments`, whose text names the view `active_departments`, and whose ground-truth dependency answer includes the token `departments`
+- WHEN the no-answer-leak guard checks `departments` against the question text
+- THEN it does NOT abort, because every occurrence of `departments` is flanked by `[a-z0-9_]` (the `_` in `active_departments`) and is therefore NOT a standalone leak — the previously-blocked N=6 generation now proceeds
+
+#### Scenario: A real standalone answer occurrence still aborts (L-009 negative)
+
+- GIVEN a question whose text contains its ground-truth answer token as a FREE-STANDING word (flanked by whitespace or punctuation, not by `[a-z0-9_]`)
+- WHEN the no-answer-leak guard runs
+- THEN it aborts LOUDLY, naming the qid — the guard is strictly MORE precise for identifier-embedded tokens while remaining fully sensitive to a genuine standalone leak
 
 ### Requirement: Two condition protocols differ ONLY in schema access under one fixed token boundary
 
@@ -278,9 +296,16 @@ are body-derived (the flag denotes cheap catalog hints, which SQLite lacks).
 identifiers from its family-typed ground truth and ASSERT each identifier appears in the generated
 WITHOUT DDL dump. A miss MUST abort with exit code 1. This turns the existing "WITHOUT dump is fair,
 from the same source of truth" scenario into a build-time MACHINE guarantee rather than a prose
-expectation. The failure output MUST name the missing OBJECT and the qid, and MUST NOT contain any
-ground-truth key VALUE — a bare schema OBJECT identifier is safe (it already appears un-redacted in
-the dump), whereas a COMPOSED answer value (e.g. a full FK path) is NOT.
+expectation. Coverage matching for FK-path, trigger-inventory, column-type, constraint-semantics, and
+view-dependency targets MUST be KIND-AWARE (`kind:name`). Coverage matching for IMPACT-derived targets
+MUST be KIND-AGNOSTIC (by NAME only): because the `affected` command's `whatToTest` may name objects of
+ANY kind — tables, views, OR triggers — the assertion's PURPOSE (catch a dump from the WRONG database)
+requires only that the NAMED object be DEFINED in the dump, not that its declared kind match. A schema
+object name is unique within its schema, so a name-only match cannot yield a FALSE pass on the correct
+substrate; a name genuinely ABSENT from a wrong-DB dump still MISSES and aborts. The failure output MUST
+name the missing OBJECT and the qid, and MUST NOT contain any ground-truth key VALUE — a bare schema
+OBJECT identifier is safe (it already appears un-redacted in the dump), whereas a COMPOSED answer value
+(e.g. a full FK path) is NOT.
 
 #### Scenario: Correct dump covers every target — build succeeds
 
@@ -300,12 +325,25 @@ the dump), whereas a COMPOSED answer value (e.g. a full FK path) is NOT.
 - WHEN target identifiers are derived
 - THEN they come from these fields ONLY:
 
-| Family | Target identifier source |
-|--------|--------------------------|
-| fk-path | ground-truth `fromTable` and `toTable` |
-| trigger-inventory | ground-truth `triggerQname` |
-| impact | ground-truth `whatToTest` |
-| column-type / constraint-semantics | the table encoded in the `qid` |
+| Family | Target identifier source | Match mode |
+|--------|--------------------------|------------|
+| fk-path | ground-truth `fromTable` and `toTable` | kind-aware (`kind:name`) |
+| trigger-inventory | ground-truth `triggerQname` | kind-aware (`kind:name`) |
+| impact | ground-truth `whatToTest` | KIND-AGNOSTIC (name only) |
+| column-type / constraint-semantics | the table encoded in the `qid` | kind-aware (`kind:name`) |
+| view-dependency | the view encoded in the `qid` | kind-aware (`kind:name`) |
+
+#### Scenario: Impact whatToTest naming views/triggers is covered by the correct dump
+
+- GIVEN an impact question whose ground-truth `whatToTest` names triggers and/or views (e.g. `impact-audit_log` → five triggers), and a WITHOUT dump generated from the SAME source of truth in which those objects appear as `CREATE TRIGGER` / `CREATE VIEW`
+- WHEN `build-packets.ts` runs the coverage assertion
+- THEN every impact-derived target is found by NAME regardless of its declared kind, the coverage check returns empty, and packets are written with exit 0
+
+#### Scenario: Impact target name genuinely absent still aborts (L-009 negative)
+
+- GIVEN an impact question whose `whatToTest` names an object ABSENT from a wrong-DB WITHOUT dump under EVERY kind
+- WHEN the coverage assertion runs
+- THEN it still aborts with exit code 1, naming the missing object and the qid — the kind-agnostic match is strictly MORE precise for view/trigger targets, never blind to a genuine miss
 
 #### Scenario: Failure output leaks no key VALUE
 
