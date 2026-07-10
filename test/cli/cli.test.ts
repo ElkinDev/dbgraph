@@ -318,20 +318,20 @@ describe('cli — --version / -v (task 1.1, design D6)', () => {
     }
   });
 
-  it('DBGRAPH_VERSION placeholder is still exactly "1.0.0" (fallback anchor for the smoke)', () => {
-    expect(DBGRAPH_VERSION).toBe('1.0.0');
+  it('DBGRAPH_VERSION placeholder is still exactly "1.1.0" (fallback anchor for the smoke)', () => {
+    expect(DBGRAPH_VERSION).toBe('1.1.0');
   });
 
-  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.0.0\\n" and returns 0', async () => {
+  it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.1.0\\n" and returns 0', async () => {
     const code = await runCli(['--version']);
     expect(code).toBe(0);
-    expect(stdout.join('')).toBe('1.0.0\n');
+    expect(stdout.join('')).toBe('1.1.0\n');
   });
 
-  it('runCli(["-v"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.0.0\\n" and returns 0', async () => {
+  it('runCli(["-v"]) with DBGRAPH_BUILD_VERSION unset prints EXACTLY "1.1.0\\n" and returns 0', async () => {
     const code = await runCli(['-v']);
     expect(code).toBe(0);
-    expect(stdout.join('')).toBe('1.0.0\n');
+    expect(stdout.join('')).toBe('1.1.0\n');
   });
 
   it('runCli(["--version"]) with DBGRAPH_BUILD_VERSION set to "9.9.9" prints EXACTLY "9.9.9\\n" and returns 0', async () => {

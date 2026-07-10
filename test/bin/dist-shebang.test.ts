@@ -57,10 +57,10 @@ describe.skipIf(!distBuilt)('dist bins carry exactly one shebang (build regressi
     expect(lines(indexLib).filter((l) => l === SHEBANG)).toHaveLength(0);
   });
 
-  it('node dist/cli.js --version prints 1.0.0 and exits 0 (bin actually runs)', () => {
+  it('node dist/cli.js --version prints 1.1.0 and exits 0 (bin actually runs)', () => {
     const r = spawnSync(process.execPath, [cliBin, '--version'], { encoding: 'utf-8' });
     expect(r.status, `stderr: ${r.stderr}`).toBe(0);
-    expect(r.stdout.trim()).toBe('1.0.0');
+    expect(r.stdout.trim()).toBe('1.1.0');
     // A returned double-shebang would surface here as a parse-time SyntaxError.
     expect(r.stderr).not.toMatch(/SyntaxError/);
   });

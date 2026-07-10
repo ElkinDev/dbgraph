@@ -1,6 +1,6 @@
 {
   "name": "@elkindev/dbgraph",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Database schema graph for AI agents — index your database catalog into a local graph, served over MCP",
   "type": "module",
   "license": "MIT",

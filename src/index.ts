@@ -6,7 +6,7 @@
  * Consumers: import from '@niklerk23/dbgraph' — never from internal sub-paths.
  */
 
-export const DBGRAPH_VERSION = '1.0.0';
+export const DBGRAPH_VERSION = '1.1.0';
 
 // ── Infrastructure utilities (composition seam — task 2.1/2.2, phase-5-mcp-server) ─
 // openConnections is re-exported here so both CLI and MCP can consume it without
