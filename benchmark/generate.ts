@@ -40,6 +40,7 @@ const { createSqliteGraphStore } = (await import(
   '../dist/index.js' as string
 )) as typeof import('../src/index.js');
 import type { Family, FkHop, TriggerTuple } from './scorer/index.js';
+import { occursStandalone } from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deterministic helpers (ADR-008 — locale-independent, no randomness)
@@ -446,7 +447,11 @@ function assertNoAnswerLeak(questions: readonly QuestionRecord[]): void {
     const haystack = q.question.toLowerCase();
     for (const token of q.answerTokens) {
       const needle = token.trim().toLowerCase();
-      if (needle.length >= 2 && haystack.includes(needle)) {
+      // A leak is a STANDALONE occurrence — one NOT flanked by an alphanumeric-or-underscore
+      // char (`[a-z0-9_]`, the project's alphanumeric-adjacency convention, NOT a `\b` regex).
+      // A key value that appears ONLY inside a larger identifier (e.g. `departments` within
+      // `active_departments`) is NOT a leak; `occursStandalone` matches the token literally.
+      if (needle.length >= 2 && occursStandalone(haystack, needle)) {
         throw new Error(
           `SELF-CHECK FAILED: answer value "${token}" leaks into the question text of ${q.qid} (D5 leakage guard).`,
         );

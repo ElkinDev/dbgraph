@@ -17,9 +17,37 @@
 
 import type { Family } from './scorer/index.ts';
 
+// ── No-answer-leak overlap (Gap 1 / D5) ──────────────────────────────────────
+
+/** Alphanumeric-adjacency flank: an occurrence touching one of these is NOT standalone. */
+const LEAK_FLANK_RE = /[a-z0-9_]/;
+
+/**
+ * True iff `needle` occurs in `haystack` as a STANDALONE token — an occurrence NOT flanked, on
+ * either side, by an alphanumeric-or-underscore character (`[a-z0-9_]`). This is the project's
+ * alphanumeric-adjacency convention, deliberately NOT a `\b` regex: the needle is matched as a
+ * LITERAL string via `indexOf`, so answer tokens holding punctuation (dots, commas, parens — e.g.
+ * a composed FK path) are compared verbatim and never treated as a pattern. Every occurrence is
+ * scanned: a token embedded in one place AND free-standing in another still leaks. Case-insensitive
+ * (lowercases both sides; idempotent when the caller already lowercased).
+ */
+export function occursStandalone(haystack: string, needle: string): boolean {
+  if (needle.length === 0) return false;
+  const h = haystack.toLowerCase();
+  const n = needle.toLowerCase();
+  for (let from = 0; ; ) {
+    const at = h.indexOf(n, from);
+    if (at === -1) return false;
+    const before = at > 0 ? h[at - 1]! : '';
+    const after = at + n.length < h.length ? h[at + n.length]! : '';
+    if (!LEAK_FLANK_RE.test(before) && !LEAK_FLANK_RE.test(after)) return true;
+    from = at + 1; // keep scanning; overlapping/repeat occurrences allowed
+  }
+}
+
 // ── Coverage targets (D2) ────────────────────────────────────────────────────
 
-export type ObjectKind = 'table' | 'view' | 'trigger';
+export type ObjectKind = 'table' | 'view' | 'trigger' | 'any'; // 'any' = kind-agnostic (name-only)
 
 export interface CoverageTarget {
   readonly kind: ObjectKind;
@@ -62,9 +90,12 @@ export function deriveCoverageTargets(
       return triggers.map((t) => ({ kind: 'trigger', name: t.triggerQname }));
     }
     case 'impact': {
-      // Committed shape: whatToTest is a FLAT array of bare table-name strings (D2-shape).
+      // Committed shape: whatToTest is a FLAT array of bare object-name strings (D2-shape).
+      // `affected` may name a table, VIEW, or TRIGGER, so match by NAME only, KIND-AGNOSTIC
+      // (`kind:'any'`) — a name-only match cannot false-pass (names are unique per schema),
+      // yet a name absent from a wrong-DB dump still MISSES (see verifyDumpCoverage / Gap 2).
       const names = (gt['whatToTest'] ?? []) as readonly string[];
-      return names.map((name) => ({ kind: 'table', name }));
+      return names.map((name) => ({ kind: 'any', name }));
     }
     case 'column-type':
     case 'constraint-semantics': {
@@ -106,21 +137,34 @@ function normalizeObjectName(raw: string): string {
 }
 
 /**
- * Return the targets NOT DEFINED in the dump (empty ⇒ full coverage). A target is covered iff
- * its `kind:name` appears in the set of `CREATE (TABLE|VIEW|TRIGGER|INDEX)` statements — a bare
- * `REFERENCES x` or a column named like the target does NOT cover it (D3). Pure.
+ * Return the targets NOT DEFINED in the dump (empty ⇒ full coverage). A CONCRETE-kind target is
+ * covered iff its `kind:name` appears in the set of `CREATE (TABLE|VIEW|TRIGGER|INDEX)` statements
+ * — a bare `REFERENCES x` or a column named like the target does NOT cover it (D3). A KIND-AGNOSTIC
+ * target (`kind:'any'`, emitted for impact whatToTest) is covered iff its NAME is defined under ANY
+ * kind — because `affected` may name a table/view/trigger, and object names are unique per schema, a
+ * name-only match cannot false-pass on the correct substrate yet still misses a wrong-DB dump (Gap 2).
+ * Pure.
  */
 export function verifyDumpCoverage(
   ddlDump: string,
   targets: readonly CoverageTarget[],
 ): readonly CoverageTarget[] {
   const defined = new Set<string>();
+  const definedNames = new Set<string>();
   for (const match of ddlDump.matchAll(CREATE_OBJECT_RE)) {
     const kind = (match[1] ?? '').toLowerCase();
     const name = normalizeObjectName(match[2] ?? '');
-    if (name.length > 0) defined.add(`${kind}:${name}`);
+    if (name.length > 0) {
+      defined.add(`${kind}:${name}`);
+      definedNames.add(name);
+    }
   }
-  return targets.filter((t) => !defined.has(`${t.kind}:${normalizeObjectName(t.name)}`));
+  return targets.filter((t) => {
+    const name = normalizeObjectName(t.name);
+    return t.kind === 'any'
+      ? !definedNames.has(name) // kind-agnostic: name present under ANY kind
+      : !defined.has(`${t.kind}:${name}`); // concrete kind: exact kind:name (UNCHANGED)
+  });
 }
 
 // ── Manifest hash join (D4 / OQ1) ────────────────────────────────────────────
