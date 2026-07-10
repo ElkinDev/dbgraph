@@ -22,6 +22,7 @@ import {
   renderTriggers,
   renderParameters,
   renderConsumedColumns,
+  renderDynamicSqlCaveat,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +111,16 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   if (parameterLines.length > 0) {
     lines.push('');
     lines.push(...parameterLines);
+  }
+
+  // ── Dynamic-SQL caveat (normal + full) — DOG-4 D3/r1 ──────────────────────
+  // Placed AFTER PARAMETERS and BEFORE the normal early-return so it renders at
+  // normal AND full (never brief). The shared helper emits the SAME bytes explore
+  // pushes → the caveat line is byte-identical across surfaces (no per-surface branch).
+  const caveatLines = renderDynamicSqlCaveat(view.node);
+  if (caveatLines.length > 0) {
+    lines.push('');
+    lines.push(...caveatLines);
   }
 
   if (detail === 'normal') {

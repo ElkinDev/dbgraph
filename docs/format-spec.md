@@ -387,6 +387,17 @@ golden-file-pinned). Token cost: a covered view at `full` gains `~11 bytes` per 
 `table.column` pair (`consumes: ` prefix + the qualified name); a degraded/uncovered view gains
 `0 bytes` (absence). Zero cost at `brief`/`normal` (not rendered).
 
+### 6.2 Token-delta note — DOG-4 `[DYNAMIC SQL]` caveat (dog4-dynamic-sql)
+
+A routine focus whose payload carries `hasDynamicSql` gains the ONE shared caveat line
+`[DYNAMIC SQL] impact analysis may be incomplete` at `normal`+`full` in `explore`/`object`
+(and the per-node `  [DYNAMIC SQL]` suffix / named-block line in `precheck`/`impact`); a
+non-degraded routine and every node at `brief` gain `0 bytes` (absence). No EXISTING committed
+golden changed: every `test/core/present/golden/` and `test/mcp/golden/` fixture is SQLite-backed
+and SQLite has no dynamic-SQL statement form, so the caveat never renders in a measured golden and
+the `budget.test.ts` ceilings are untouched (freeze proof: the full present/mcp golden + budget
+suites pass unchanged).
+
 ---
 
 ## 7. Purity Contract

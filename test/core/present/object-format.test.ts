@@ -17,6 +17,7 @@ import {
   type ObjectView,
   type ObjectDetail,
 } from '../../../src/core/present/object.js';
+import { formatExplore } from '../../../src/core/present/explore.js';
 import type { GraphNode } from '../../../src/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -378,4 +379,70 @@ describe('formatObject — goldens', () => {
       expect(actual).toBe(golden);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 (task 5.2) — shared dynamic-SQL caveat in object at normal + full, and the
+// caveat line is BYTE-IDENTICAL to explore's (both push the SAME shared helper, no
+// per-surface branch). Negatives: brief never renders it; a plain routine never carries
+// it. ObjectView and ExploreView are structurally identical, so the same view drives both.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CAVEAT_LINE = '[DYNAMIC SQL] impact analysis may be incomplete';
+
+const DYN_PROC_NODE: GraphNode = {
+  id: 'node-dyn-proc',
+  kind: 'procedure',
+  schema: 'acme',
+  name: 'run_report',
+  qname: 'acme.run_report',
+  level: 'full',
+  missing: false,
+  excluded: false,
+  bodyHash: 'dyn-hash',
+  payload: { signature: 'run_report()', hasDynamicSql: true, body: 'BEGIN EXEC(@sql); END' },
+};
+
+const PLAIN_PROC_NODE: GraphNode = {
+  ...DYN_PROC_NODE,
+  id: 'node-plain-proc',
+  name: 'touch_totals',
+  qname: 'acme.touch_totals',
+  payload: { signature: 'touch_totals()', hasDynamicSql: false, body: 'BEGIN UPDATE t SET x=1; END' },
+};
+
+const DYN_PROC_VIEW: ObjectView = { node: DYN_PROC_NODE, neighbors: {} };
+const PLAIN_PROC_VIEW: ObjectView = { node: PLAIN_PROC_NODE, neighbors: {} };
+
+function caveatLineOf(output: string): string | undefined {
+  return output.split('\n').find((l) => l.includes('[DYNAMIC SQL]'));
+}
+
+describe('formatObject — dynamic-SQL caveat (DOG-4 task 5.2)', () => {
+  it('POSITIVE: renders the exact caveat line at normal', () => {
+    expect(formatObject(DYN_PROC_VIEW, 'normal')).toContain(CAVEAT_LINE);
+  });
+
+  it('POSITIVE: renders the exact caveat line at full', () => {
+    expect(formatObject(DYN_PROC_VIEW, 'full')).toContain(CAVEAT_LINE);
+  });
+
+  it('NEGATIVE: brief NEVER renders the caveat', () => {
+    expect(formatObject(DYN_PROC_VIEW, 'brief')).not.toContain('[DYNAMIC SQL]');
+  });
+
+  it('NEGATIVE: a plain routine never carries the caveat at any detail', () => {
+    for (const detail of ['brief', 'normal', 'full'] as ObjectDetail[]) {
+      expect(formatObject(PLAIN_PROC_VIEW, detail)).not.toContain('[DYNAMIC SQL]');
+    }
+  });
+
+  it('the caveat line is BYTE-IDENTICAL to explore (shared helper, no per-surface branch)', () => {
+    for (const detail of ['normal', 'full'] as const) {
+      const objLine = caveatLineOf(formatObject(DYN_PROC_VIEW, detail));
+      const expLine = caveatLineOf(formatExplore(DYN_PROC_VIEW, detail));
+      expect(objLine).toBe(CAVEAT_LINE);
+      expect(objLine).toBe(expLine);
+    }
+  });
 });

@@ -16,6 +16,7 @@
 
 import type { GraphNode } from '../model/node.js';
 import type { ImpactResult } from '../ports/graph-store.js';
+import { DYNAMIC_SQL_MARKER } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -104,7 +105,17 @@ export function formatImpact(view: ImpactView, detail: ImpactDetail): string {
   }
   if (result.dynamicSqlWarning) {
     lines.push('');
+    // PRESERVED VERBATIM (D5/r3): the blanket warning is untouched for compatibility.
     lines.push('  ⚠  Impact possibly incomplete — chain contains dynamic SQL');
+    // DOG-4 (D5/r3): NAME each degraded routine below the blanket warning — one line
+    // per routine (resolved qname + marker), sorted by qname. Naming identifies nodes
+    // already in the closure; it adds NO edge and fabricates NO target (ADR-007).
+    const degradedQnames = result.degradedNodeIds
+      .map((id) => view.resolve(id))
+      .sort((a, b) => a.localeCompare(b));
+    for (const qname of degradedQnames) {
+      lines.push(`  ${qname}  ${DYNAMIC_SQL_MARKER}`);
+    }
   }
 
   lines.push('');

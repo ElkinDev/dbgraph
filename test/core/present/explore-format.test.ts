@@ -627,3 +627,76 @@ describe('formatExplore — calls neighbor section (DOG-1 C.3, S33)', () => {
     expect(actual).toBe(readFileSync(goldenPath, 'utf-8'));
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 (task 5.1) — shared dynamic-SQL caveat in explore at normal + full.
+// The exact caveat line (r1) renders for a routine focus carrying hasDynamicSql,
+// at normal AND full, NEVER at brief; a plain routine never carries it; static
+// neighbors/edges stay untouched (marker is a node caveat, never an edge). L-009 exact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CAVEAT_LINE = '[DYNAMIC SQL] impact analysis may be incomplete';
+
+const DYN_ROUTINE: GraphNode = {
+  id: 'n-dyn-routine',
+  kind: 'procedure',
+  schema: 'acme',
+  name: 'run_report',
+  qname: 'acme.run_report',
+  level: 'full',
+  missing: false,
+  excluded: false,
+  bodyHash: 'dynhash',
+  payload: { hasDynamicSql: true },
+};
+
+const PLAIN_ROUTINE: GraphNode = {
+  ...DYN_ROUTINE,
+  id: 'n-plain-routine',
+  name: 'touch_totals',
+  qname: 'acme.touch_totals',
+  payload: { hasDynamicSql: false },
+};
+
+const ROUTINE_NEIGHBORS: NeighborGroups = {
+  writes_to: {
+    out: [{ node: tableNode('n-totals-tbl', 'acme.order_totals'), edge: plainEdge('writes_to', 'n-dyn-routine', 'n-totals-tbl') }],
+    in: [],
+  },
+};
+
+describe('formatExplore — dynamic-SQL caveat (DOG-4 task 5.1)', () => {
+  it('POSITIVE: renders the exact caveat line at normal', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'normal');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('POSITIVE: renders the exact caveat line at full', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'full');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('NEGATIVE: brief NEVER renders the caveat', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'brief');
+    expect(out).not.toContain('[DYNAMIC SQL]');
+  });
+
+  it('NEGATIVE: a plain routine (hasDynamicSql:false) never carries the caveat', () => {
+    for (const detail of ['brief', 'normal', 'full'] as ExploreDetail[]) {
+      const out = formatExplore({ node: PLAIN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, detail);
+      expect(out).not.toContain('[DYNAMIC SQL]');
+    }
+  });
+
+  it('static neighbors/edges still render unchanged alongside the caveat', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'normal');
+    expect(out).toContain('writes_to');
+    expect(out).toContain('→ acme.order_totals  [table]');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('the OLD full-only emoji warning line is deleted (no duplicate warning)', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'full');
+    expect(out).not.toContain('⚠  hasDynamicSql');
+  });
+});

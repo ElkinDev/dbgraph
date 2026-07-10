@@ -141,6 +141,8 @@ export {
   renderIndexes,
   renderTriggers,
   renderFocusPayload,
+  renderDynamicSqlCaveat,
+  DYNAMIC_SQL_MARKER,
   type ColumnAnnotations,
   type NeighborEntry,
 } from './present/payload.js';

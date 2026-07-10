@@ -229,3 +229,81 @@ describe('formatPrecheck — goldens', () => {
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 (task 6.1) — per-node [DYNAMIC SQL] suffix on degraded precheck items.
+// The two-space-separated marker is appended AFTER the (confidence: …) suffix (r2),
+// gated detail !== 'brief'. The brief matched-objects list stays byte-identical (no
+// suffix). Non-degraded items carry no suffix; confidence stays 'parsed'. L-009 exact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DYN_VIEW: PrecheckView = {
+  matchedObjects: [
+    { qname: 'acme.run_report', kind: 'procedure', confidence: 'parsed', hasDynamicSql: true },
+    { qname: 'acme.touch_totals', kind: 'procedure', confidence: 'parsed' },
+  ],
+  impact: {
+    triggers: [],
+    writers: [],
+    readers: [{ qname: 'acme.fn_exec_stmt', kind: 'function', confidence: 'parsed', hasDynamicSql: true }],
+    constraintsAndIndexes: [],
+    whatToTest: [],
+  },
+  unmatchedIdentifiers: [],
+};
+
+/** Same view with the degradation flags stripped — the brief byte-identity baseline. */
+const DYN_VIEW_PLAIN: PrecheckView = {
+  matchedObjects: [
+    { qname: 'acme.run_report', kind: 'procedure', confidence: 'parsed' },
+    { qname: 'acme.touch_totals', kind: 'procedure', confidence: 'parsed' },
+  ],
+  impact: {
+    triggers: [],
+    writers: [],
+    readers: [{ qname: 'acme.fn_exec_stmt', kind: 'function', confidence: 'parsed' }],
+    constraintsAndIndexes: [],
+    whatToTest: [],
+  },
+  unmatchedIdentifiers: [],
+};
+
+describe('formatPrecheck — dynamic-SQL marker (DOG-4 task 6.1)', () => {
+  it('POSITIVE: normal appends the marker after the item (matched + reader)', () => {
+    const out = formatPrecheck(DYN_VIEW, 'normal');
+    expect(out).toContain('  [procedure]  acme.run_report  [DYNAMIC SQL]');
+    expect(out).toContain('  [function]  acme.fn_exec_stmt  [DYNAMIC SQL]');
+  });
+
+  it('POSITIVE: full appends the marker AFTER the (confidence: …) suffix', () => {
+    const out = formatPrecheck(DYN_VIEW, 'full');
+    expect(out).toContain('  [procedure]  acme.run_report  (confidence: parsed)  [DYNAMIC SQL]');
+    expect(out).toContain('  [function]  acme.fn_exec_stmt  (confidence: parsed)  [DYNAMIC SQL]');
+  });
+
+  it('NEGATIVE: a non-degraded item carries NO marker', () => {
+    const normal = formatPrecheck(DYN_VIEW, 'normal');
+    expect(normal).toContain('  [procedure]  acme.touch_totals');
+    expect(normal).not.toContain('acme.touch_totals  [DYNAMIC SQL]');
+    const full = formatPrecheck(DYN_VIEW, 'full');
+    expect(full).not.toContain('acme.touch_totals  (confidence: parsed)  [DYNAMIC SQL]');
+  });
+
+  it('NEGATIVE: brief matched-objects list is byte-identical (NO suffix)', () => {
+    expect(formatPrecheck(DYN_VIEW, 'brief')).not.toContain('[DYNAMIC SQL]');
+    // byte-identical to the flag-stripped baseline — the marker never leaks into brief
+    expect(formatPrecheck(DYN_VIEW, 'brief')).toBe(formatPrecheck(DYN_VIEW_PLAIN, 'brief'));
+  });
+
+  it('degraded items still tagged confidence: parsed (marker is orthogonal)', () => {
+    for (const item of [...DYN_VIEW.matchedObjects, ...DYN_VIEW.impact.readers]) {
+      expect(item.confidence).toBe('parsed');
+    }
+  });
+
+  it('the marker is a suffix on the item line, never a standalone edge line', () => {
+    const out = formatPrecheck(DYN_VIEW, 'normal');
+    const standalone = out.split('\n').some((l) => l.trim() === '[DYNAMIC SQL]');
+    expect(standalone).toBe(false);
+  });
+});

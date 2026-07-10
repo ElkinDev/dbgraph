@@ -66,6 +66,9 @@ const DYNAMIC_SQL_RESULT: ImpactResult = {
   ...BASIC_RESULT,
   truncated: false,
   dynamicSqlWarning: true,
+  // Two degraded closure nodes; the named block renders them SORTED BY QNAME:
+  //   node-view → dbo.order_summary  (<) node-read-proc → dbo.usp_GetOrdersByStatus
+  degradedNodeIds: ['node-read-proc', 'node-view'],
 };
 
 const EMPTY_RESULT: ImpactResult = {
@@ -216,4 +219,49 @@ describe('formatImpact — goldens', () => {
       expect(actual).toBe(golden);
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 (task 7.1) — named degraded-node block below the PRESERVED blanket warning.
+// One line per degraded routine (resolved qname + [DYNAMIC SQL]), sorted by qname, at
+// normal+full. The verbatim blanket "impact possibly incomplete / dynamic SQL" line is
+// UNTOUCHED (interpretation note 3 — do NOT reword to match the caveat prose). L-009 exact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('formatImpact — named degraded-node block (DOG-4 task 7.1)', () => {
+  it('POSITIVE: normal names each degraded routine with the marker', () => {
+    const out = formatImpact(DYNAMIC_SQL_VIEW, 'normal');
+    expect(out).toContain('  dbo.order_summary  [DYNAMIC SQL]');
+    expect(out).toContain('  dbo.usp_GetOrdersByStatus  [DYNAMIC SQL]');
+  });
+
+  it('POSITIVE: full names each degraded routine with the marker', () => {
+    const out = formatImpact(DYNAMIC_SQL_VIEW, 'full');
+    expect(out).toContain('  dbo.order_summary  [DYNAMIC SQL]');
+    expect(out).toContain('  dbo.usp_GetOrdersByStatus  [DYNAMIC SQL]');
+  });
+
+  it('the named block is sorted by qname', () => {
+    const out = formatImpact(DYNAMIC_SQL_VIEW, 'normal');
+    expect(out.indexOf('dbo.order_summary  [DYNAMIC SQL]')).toBeLessThan(
+      out.indexOf('dbo.usp_GetOrdersByStatus  [DYNAMIC SQL]'),
+    );
+  });
+
+  it('the PRESERVED blanket warning stays VERBATIM alongside the named block', () => {
+    const out = formatImpact(DYNAMIC_SQL_VIEW, 'normal');
+    expect(out).toContain('Impact possibly incomplete — chain contains dynamic SQL');
+  });
+
+  it('NEGATIVE: empty degradedNodeIds → no named block AND no warning', () => {
+    const out = formatImpact(BASIC_VIEW, 'normal');
+    expect(out).not.toContain('[DYNAMIC SQL]');
+    expect(out).not.toContain('dynamic SQL');
+  });
+
+  it('NEGATIVE: brief keeps the blanket warning but shows NO named block', () => {
+    const out = formatImpact(DYNAMIC_SQL_VIEW, 'brief');
+    expect(out).toContain('incomplete');
+    expect(out).not.toContain('[DYNAMIC SQL]');
+  });
 });
