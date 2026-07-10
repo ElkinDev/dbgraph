@@ -16,6 +16,8 @@ import {
   renderIndexes,
   renderTriggers,
   renderFocusPayload,
+  renderDynamicSqlCaveat,
+  DYNAMIC_SQL_MARKER,
   deriveColumnAnnotations,
   type ColumnAnnotations,
   type NeighborEntry,
@@ -465,5 +467,50 @@ describe('payload.renderFocusPayload (B.3)', () => {
 
   it('returns [] for a container kind (table) that has no own focus payload line', () => {
     expect(renderFocusPayload(tableNode('main.employees'))).toStrictEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 — DYNAMIC_SQL_MARKER + renderDynamicSqlCaveat (task 1.1, r1 exact bytes)
+// Shared caveat helper backing explore/object/precheck/impact. Degrade-by-absence:
+// the caveat renders ONLY when payload.hasDynamicSql === true (positive), and returns
+// [] for flag=false, flag unset, and non-routine nodes (negatives). L-009 exact strings.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A routine (procedure/function) node with an explicit hasDynamicSql payload flag. */
+function routineNode(name: string, hasDynamicSql: boolean | undefined): GraphNode {
+  const payload: Record<string, unknown> = {};
+  if (hasDynamicSql !== undefined) payload['hasDynamicSql'] = hasDynamicSql;
+  return baseNode('procedure', name, payload);
+}
+
+describe('DYNAMIC_SQL_MARKER (DOG-4 D2)', () => {
+  it('is the exact pinned marker string', () => {
+    expect(DYNAMIC_SQL_MARKER).toBe('[DYNAMIC SQL]');
+  });
+});
+
+describe('renderDynamicSqlCaveat (DOG-4 task 1.1)', () => {
+  it('POSITIVE: a routine with hasDynamicSql=true yields the exact single caveat line', () => {
+    expect(renderDynamicSqlCaveat(routineNode('usp_run_report', true))).toStrictEqual([
+      '[DYNAMIC SQL] impact analysis may be incomplete',
+    ]);
+  });
+
+  it('POSITIVE: the caveat line is exactly the marker + fixed suffix (r1)', () => {
+    const [line] = renderDynamicSqlCaveat(routineNode('usp_run_report', true));
+    expect(line).toBe(`${DYNAMIC_SQL_MARKER} impact analysis may be incomplete`);
+  });
+
+  it('NEGATIVE: a routine with hasDynamicSql=false yields []', () => {
+    expect(renderDynamicSqlCaveat(routineNode('usp_touch_totals', false))).toStrictEqual([]);
+  });
+
+  it('NEGATIVE: a routine with the flag unset yields []', () => {
+    expect(renderDynamicSqlCaveat(routineNode('usp_touch_totals', undefined))).toStrictEqual([]);
+  });
+
+  it('NEGATIVE: a non-routine table node (no flag) yields []', () => {
+    expect(renderDynamicSqlCaveat(tableNode('main.employees'))).toStrictEqual([]);
   });
 });

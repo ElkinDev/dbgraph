@@ -74,7 +74,8 @@ export interface ImpactResult {
   readonly readImpact: readonly ImpactChain[];
   readonly writeImpact: readonly ImpactChain[];
   readonly truncated: boolean;
-  readonly dynamicSqlWarning: boolean;
+  readonly dynamicSqlWarning: boolean;        // KEPT — derived: degradedNodeIds.length > 0 (DOG-4 r3)
+  readonly degradedNodeIds: readonly string[];// NEW (DOG-4) — closure node ids carrying hasDynamicSql, sorted + deduped
 }
 
 export interface PathQuery {

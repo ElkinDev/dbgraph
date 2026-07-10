@@ -25,6 +25,33 @@ import type { GraphNode, RoutineParameter } from '../model/node.js';
 import type { GraphEdge } from '../model/edge.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Dynamic-SQL honesty marker (DOG-4) — one exported constant + shared caveat helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The pinned dynamic-SQL blind-spot marker (DOG-4 D2 / spec r1). UPPERCASE bracket
+ * family, one internal space — consistent with the DOG-2 `[OUT]`/`[INOUT]`/`[DEFAULT]`
+ * markers. It is a NODE-attribute caveat, ORTHOGONAL to `confidence` (no new tier):
+ * a routine's static edges are real, but its dynamic-string targets are unknowable.
+ * NEVER an edge, NEVER a fabricated target (ADR-007). ONE constant → zero drift across
+ * the four render surfaces (explore, object, precheck, impact).
+ */
+export const DYNAMIC_SQL_MARKER = '[DYNAMIC SQL]';
+
+/**
+ * Renders the shared dynamic-SQL caveat line for a focus node (DOG-4 D3 / spec r1).
+ * Returns the EXACT single line `[DYNAMIC SQL] impact analysis may be incomplete`
+ * when the node's payload carries `hasDynamicSql === true`, else `[]` (degrade-by-absence).
+ * Both `formatExplore` and `formatObject` push this so the caveat bytes are BYTE-IDENTICAL
+ * across surfaces (no per-surface branch). Deterministic (ADR-008); reads only the payload flag.
+ */
+export function renderDynamicSqlCaveat(node: GraphNode): string[] {
+  return node.payload['hasDynamicSql'] === true
+    ? [`${DYNAMIC_SQL_MARKER} impact analysis may be incomplete`]
+    : [];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
 

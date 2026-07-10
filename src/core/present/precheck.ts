@@ -26,6 +26,13 @@ export interface PrecheckItem {
   readonly qname: string;
   readonly kind: string;
   readonly confidence: 'parsed';
+  /**
+   * DOG-4 (r2): degradation marker — PRESENT (`true`) ONLY on an item whose subject
+   * routine carries `hasDynamicSql`, OMITTED otherwise (degrade-by-absence,
+   * `exactOptionalPropertyTypes`-clean). The `--json` key is additive; consumers MUST
+   * treat absence as false. Orthogonal to `confidence` (no new tier).
+   */
+  readonly hasDynamicSql?: true;
 }
 
 /**

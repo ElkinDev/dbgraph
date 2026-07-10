@@ -53,6 +53,7 @@ const BASIC_RESULT: ImpactResult = {
   ],
   truncated: false,
   dynamicSqlWarning: false,
+  degradedNodeIds: [],
 };
 
 const TRUNCATED_RESULT: ImpactResult = {
@@ -72,6 +73,7 @@ const EMPTY_RESULT: ImpactResult = {
   writeImpact: [],
   truncated: false,
   dynamicSqlWarning: false,
+  degradedNodeIds: [],
 };
 
 const BASIC_VIEW: ImpactView = { node: STATUS_COL, result: BASIC_RESULT, resolve: resolveNodeId };

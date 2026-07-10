@@ -46,8 +46,8 @@ const IMPACT_EDGE_KINDS: readonly EdgeKind[] = [
  * 5. After BFS, classify each chain into readImpact or writeImpact based on
  *    the last hop's edge kind. A chain may contribute to both if its edges mix
  *    (the terminal hop decides the bucket).
- * 6. Set `dynamicSqlWarning` if any node in any surfaced chain has
- *    `payload.hasDynamicSql === true`.
+ * 6. Collect `degradedNodeIds` (sorted+deduped) for every closure node whose
+ *    `payload.hasDynamicSql === true`; derive `dynamicSqlWarning` from its non-emptiness.
  * 7. Sort chains and their nodes deterministically.
  */
 export async function getImpact(
@@ -195,23 +195,28 @@ export async function getImpact(
     }
   }
 
-  // ── Dynamic-SQL warning ────────────────────────────────────────────────────
-  let dynamicSqlWarning = false;
+  // ── Dynamic-SQL degraded nodes (DOG-4 r3) ──────────────────────────────────
+  // Collect the ids of closure nodes whose payload carries hasDynamicSql === true —
+  // the specific blind-spot routines. Sorted ascending + deduped (ADR-008). The
+  // legacy boolean `dynamicSqlWarning` is DERIVED for compatibility. This identifies
+  // nodes already in the closure; it adds NO edge and fabricates NO target (ADR-007).
+  const degradedSet = new Set<string>();
   const allNodeIds = new Set(
     completedChains.flatMap((c) => c.chainNodes),
   );
   for (const nodeId of allNodeIds) {
-    if (dynamicSqlWarning) break;
     const node = await store.getNode(nodeId);
     if (node !== null && node.payload['hasDynamicSql'] === true) {
-      dynamicSqlWarning = true;
+      degradedSet.add(nodeId);
     }
   }
+  const degradedNodeIds = [...degradedSet].sort((a, b) => a.localeCompare(b));
+  const dynamicSqlWarning = degradedNodeIds.length > 0;
 
   // ── Sort chains deterministically (ADR-008) ────────────────────────────────
   const chainSortKey = (c: ImpactChain): string => c.nodes.join('>');
   readImpact.sort((a, b) => chainSortKey(a).localeCompare(chainSortKey(b)));
   writeImpact.sort((a, b) => chainSortKey(a).localeCompare(chainSortKey(b)));
 
-  return { readImpact, writeImpact, truncated, dynamicSqlWarning };
+  return { readImpact, writeImpact, truncated, dynamicSqlWarning, degradedNodeIds };
 }
