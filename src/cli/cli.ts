@@ -32,6 +32,7 @@ Commands:
   query     Search the graph index for a term
   explore   Explore a node and its neighbors in the graph
   object    Show one object in full (columns, constraints, indexes, triggers)
+  viz       Export a self-contained interactive graph HTML (--mermaid ER, --out path, --full all nodes)
   diff      Compare two snapshots of the graph index
   affected  Analyze DDL to show impacted objects (--json for machine output)
   install   Wire dbgraph-mcp into supported MCP agents (--project for project scope, --remove to undo)

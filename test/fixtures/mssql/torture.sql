@@ -3,7 +3,7 @@
 -- Each DDL statement that requires its own batch is separated by GO.
 --
 -- Objects exercised:
---   tables            : products, orders, order_items, audit_log, regions
+--   tables            : products, orders, order_items, audit_log, regions, order_totals
 --   computed column   : orders.total_amount = (quantity * unit_price)
 --   composite FK      : order_items (product_id, region_id) -> products (product_id, region_id)
 --   PK/UNIQUE/CHECK   : every table has PK; products has UNIQUE; orders has CHECK
@@ -16,6 +16,11 @@
 --   stored proc       : sp_place_order -- writes orders + order_items, reads products
 --   AFTER UPDATE trig : trg_audit_order_update -- writes audit_log
 --   dynamic SQL proc  : sp_dynamic_search -- uses sp_executesql
+--   routine-calls-routine (DOG-1):
+--     usp_refresh_totals -- UPDATE order_totals + EXEC usp_log_change  (calls usp_log_change, declared)
+--     usp_log_change     -- INSERT audit_log                            (writes_to audit_log; ZERO calls)
+--     fn_net_amount      -- RETURN dbo.fn_round_money(@x)               (calls fn_round_money, declared)
+--     fn_round_money     -- ROUND(@x, 2)                                (leaf routine)
 --
 -- All names are deterministic (no NEWID(), no GETDATE() in DDL).
 -- US-027, ADR-008.
@@ -201,5 +206,60 @@ BEGIN
     SET @sql = N'SELECT order_id, customer_id, status FROM dbo.orders WHERE status = @p_status'
 
     EXEC sp_executesql @sql, N'@p_status nvarchar(20)', @p_status = @status
+END
+GO
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- DOG-1: routine-calls-routine fixture (neutral names). Exercises the catalog-declared
+-- `calls` edge path and the regression that a proc→proc invocation must NOT mint a
+-- phantom `[table]` stub for the callee.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE dbo.order_totals (
+    order_id     int            NOT NULL,
+    total_amount decimal(12, 2) NOT NULL CONSTRAINT DF_order_totals_amount DEFAULT (0),
+    CONSTRAINT PK_order_totals PRIMARY KEY (order_id)
+)
+GO
+
+CREATE FUNCTION dbo.fn_round_money (@amount decimal(12, 2))
+RETURNS decimal(12, 2)
+AS
+BEGIN
+    RETURN ROUND(@amount, 2)
+END
+GO
+
+CREATE FUNCTION dbo.fn_net_amount (@gross decimal(12, 2))
+RETURNS decimal(12, 2)
+AS
+BEGIN
+    RETURN dbo.fn_round_money(@gross)
+END
+GO
+
+CREATE PROCEDURE dbo.usp_log_change
+    @order_id   int,
+    @new_status nvarchar(20)
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    INSERT INTO dbo.audit_log (order_id, new_status)
+    VALUES (@order_id, @new_status)
+END
+GO
+
+CREATE PROCEDURE dbo.usp_refresh_totals
+    @order_id int
+AS
+BEGIN
+    SET NOCOUNT ON
+
+    UPDATE dbo.order_totals
+    SET total_amount = total_amount
+    WHERE order_id = @order_id
+
+    EXEC dbo.usp_log_change @order_id, N'refreshed'
 END
 GO

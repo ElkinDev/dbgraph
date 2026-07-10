@@ -14,6 +14,8 @@
  *   full   — normal + confidence tags, unmatched identifiers
  */
 
+import { DYNAMIC_SQL_MARKER } from './payload.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,6 +28,13 @@ export interface PrecheckItem {
   readonly qname: string;
   readonly kind: string;
   readonly confidence: 'parsed';
+  /**
+   * DOG-4 (r2): degradation marker — PRESENT (`true`) ONLY on an item whose subject
+   * routine carries `hasDynamicSql`, OMITTED otherwise (degrade-by-absence,
+   * `exactOptionalPropertyTypes`-clean). The `--json` key is additive; consumers MUST
+   * treat absence as false. Orthogonal to `confidence` (no new tier).
+   */
+  readonly hasDynamicSql?: true;
 }
 
 /**
@@ -47,6 +56,25 @@ export interface PrecheckView {
   readonly matchedObjects: readonly PrecheckItem[];
   readonly impact: PrecheckImpactSection;
   readonly unmatchedIdentifiers: readonly string[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Item line renderer — shared by matched + every impact section
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Renders one precheck item line. The `(confidence: …)` suffix appears at `full`.
+ * DOG-4 (r2): a degraded item (`hasDynamicSql === true`) additionally gets the
+ * `  [DYNAMIC SQL]` marker appended AFTER the confidence suffix, gated `normal`+`full`
+ * (never `brief` — the brief matched-objects list stays byte-identical). The marker is
+ * a NODE caveat; it is never a separate edge line.
+ */
+function renderPrecheckItemLine(item: PrecheckItem, detail: PrecheckDetail): string {
+  const base =
+    detail === 'full'
+      ? `  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`
+      : `  [${item.kind}]  ${item.qname}`;
+  return item.hasDynamicSql === true && detail !== 'brief' ? `${base}  ${DYNAMIC_SQL_MARKER}` : base;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,11 +104,7 @@ export function formatPrecheck(view: PrecheckView, detail: PrecheckDetail): stri
   } else {
     const sorted = [...view.matchedObjects].sort((a, b) => a.qname.localeCompare(b.qname));
     for (const item of sorted) {
-      if (detail === 'full') {
-        lines.push(`  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`);
-      } else {
-        lines.push(`  [${item.kind}]  ${item.qname}`);
-      }
+      lines.push(renderPrecheckItemLine(item, detail));
     }
   }
 
@@ -98,11 +122,7 @@ export function formatPrecheck(view: PrecheckView, detail: PrecheckDetail): stri
     lines.push('TRIGGERS FIRING ON AFFECTED OBJECTS');
     const sorted = [...impact.triggers].sort((a, b) => a.qname.localeCompare(b.qname));
     for (const item of sorted) {
-      if (detail === 'full') {
-        lines.push(`  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`);
-      } else {
-        lines.push(`  [${item.kind}]  ${item.qname}`);
-      }
+      lines.push(renderPrecheckItemLine(item, detail));
     }
   }
 
@@ -112,11 +132,7 @@ export function formatPrecheck(view: PrecheckView, detail: PrecheckDetail): stri
     lines.push('WRITERS');
     const sorted = [...impact.writers].sort((a, b) => a.qname.localeCompare(b.qname));
     for (const item of sorted) {
-      if (detail === 'full') {
-        lines.push(`  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`);
-      } else {
-        lines.push(`  [${item.kind}]  ${item.qname}`);
-      }
+      lines.push(renderPrecheckItemLine(item, detail));
     }
   }
 
@@ -126,11 +142,7 @@ export function formatPrecheck(view: PrecheckView, detail: PrecheckDetail): stri
     lines.push('READERS');
     const sorted = [...impact.readers].sort((a, b) => a.qname.localeCompare(b.qname));
     for (const item of sorted) {
-      if (detail === 'full') {
-        lines.push(`  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`);
-      } else {
-        lines.push(`  [${item.kind}]  ${item.qname}`);
-      }
+      lines.push(renderPrecheckItemLine(item, detail));
     }
   }
 
@@ -140,11 +152,7 @@ export function formatPrecheck(view: PrecheckView, detail: PrecheckDetail): stri
     lines.push('CONSTRAINTS AND INDEXES AFFECTED');
     const sorted = [...impact.constraintsAndIndexes].sort((a, b) => a.qname.localeCompare(b.qname));
     for (const item of sorted) {
-      if (detail === 'full') {
-        lines.push(`  [${item.kind}]  ${item.qname}  (confidence: ${item.confidence})`);
-      } else {
-        lines.push(`  [${item.kind}]  ${item.qname}`);
-      }
+      lines.push(renderPrecheckItemLine(item, detail));
     }
   }
 

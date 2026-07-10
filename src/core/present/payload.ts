@@ -21,8 +21,35 @@
  * ADR-008: deterministic — same input → byte-identical string[]. No Date/env/random/I/O.
  */
 
-import type { GraphNode } from '../model/node.js';
+import type { GraphNode, RoutineParameter } from '../model/node.js';
 import type { GraphEdge } from '../model/edge.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic-SQL honesty marker (DOG-4) — one exported constant + shared caveat helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The pinned dynamic-SQL blind-spot marker (DOG-4 D2 / spec r1). UPPERCASE bracket
+ * family, one internal space — consistent with the DOG-2 `[OUT]`/`[INOUT]`/`[DEFAULT]`
+ * markers. It is a NODE-attribute caveat, ORTHOGONAL to `confidence` (no new tier):
+ * a routine's static edges are real, but its dynamic-string targets are unknowable.
+ * NEVER an edge, NEVER a fabricated target (ADR-007). ONE constant → zero drift across
+ * the four render surfaces (explore, object, precheck, impact).
+ */
+export const DYNAMIC_SQL_MARKER = '[DYNAMIC SQL]';
+
+/**
+ * Renders the shared dynamic-SQL caveat line for a focus node (DOG-4 D3 / spec r1).
+ * Returns the EXACT single line `[DYNAMIC SQL] impact analysis may be incomplete`
+ * when the node's payload carries `hasDynamicSql === true`, else `[]` (degrade-by-absence).
+ * Both `formatExplore` and `formatObject` push this so the caveat bytes are BYTE-IDENTICAL
+ * across surfaces (no per-surface branch). Deterministic (ADR-008); reads only the payload flag.
+ */
+export function renderDynamicSqlCaveat(node: GraphNode): string[] {
+  return node.payload['hasDynamicSql'] === true
+    ? [`${DYNAMIC_SQL_MARKER} impact analysis may be incomplete`]
+    : [];
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -190,6 +217,55 @@ export function renderIndexes(indexes: readonly NeighborEntry[]): string[] {
   return lines;
 }
 
+/**
+ * PARAMETERS section: one row per routine parameter, ascending ordinal (DOG-2 §3.3 D3).
+ * Grammar mirrors renderColumns exactly — `  <name>  <dataType>` (2-space indent, double-space
+ * gap) then UPPERCASE bracket markers joined by two spaces, matching the COLUMNS convention
+ * [PK]/[FK→]/[NN]. An `in` parameter renders NO direction marker (the default, like a nullable
+ * column shows no [NN]). [DEFAULT] is a PRESENCE marker only — the parameter default VALUE is
+ * out of scope, so parameters expose only the flag (unlike COLUMNS' DEFAULT <value>). Returns []
+ * when parameters is UNSET or EMPTY → honest absence, no section (SQLite renders nothing).
+ */
+export function renderParameters(node: GraphNode): string[] {
+  const params = node.payload['parameters'] as readonly RoutineParameter[] | undefined;
+  if (params === undefined || params.length === 0) return [];
+
+  const sorted = [...params].sort((a, b) => a.ordinal - b.ordinal);
+  const lines: string[] = ['PARAMETERS'];
+  for (const p of sorted) {
+    const parts: string[] = [`  ${p.name}  ${p.dataType}`];
+    if (p.direction === 'out') parts.push('[OUT]');
+    else if (p.direction === 'inout') parts.push('[INOUT]');
+    if (p.hasDefault === true) parts.push('[DEFAULT]');
+    lines.push(parts.join('  '));
+  }
+  return lines;
+}
+
+/**
+ * CONSUMES lines (VIEW focus, FULL detail ONLY — design D7): one `consumes: <table>.<column>`
+ * line per source column a `depends_on` edge attributes to the view (`edge.attrs.dstColumns`,
+ * already sorted code-point ascending by the normalizer, D3 — this renderer does NOT re-sort
+ * WITHIN a table's column list, only ACROSS multiple depended-on tables, by target qname, for
+ * determinism, ADR-008). PINNED SHAPE per mcp-server spec — no separate uppercase header (unlike
+ * COLUMNS/PARAMETERS): each line self-labels via the `consumes:` prefix. An edge with NO
+ * `attrs.dstColumns` (degraded engines / uncovered pg pairs) contributes NO line — SOURCE-COLUMN
+ * SET only, NEVER an output-column <-> source-column pairing (ADR-007). Returns [] when no edge
+ * carries a set — degrade-by-absence, no marker (D4).
+ */
+export function renderConsumedColumns(dependsOn: readonly NeighborEntry[]): string[] {
+  const sorted = [...dependsOn].sort((x, y) => x.node.qname.localeCompare(y.node.qname));
+  const lines: string[] = [];
+  for (const entry of sorted) {
+    const cols = entry.edge?.attrs.dstColumns;
+    if (cols === undefined || cols.length === 0) continue;
+    for (const col of cols) {
+      lines.push(`consumes: ${entry.node.qname}.${col}`);
+    }
+  }
+  return lines;
+}
+
 /** TRIGGERS section: one row per trigger with timing + events (from the fires_on.in group). */
 export function renderTriggers(triggers: readonly NeighborEntry[]): string[] {
   if (triggers.length === 0) return [];
@@ -232,6 +308,12 @@ export function renderFocusPayload(node: GraphNode, a?: ColumnAnnotations): stri
       return renderIndexes(single);
     case 'trigger':
       return renderTriggers(single);
+    case 'procedure':
+    case 'function':
+      // DOG-2 §3.4 D3: a routine focus renders its PARAMETERS section via the ONE shared
+      // helper — explore (+ MCP dbgraph_explore) inherits it here for free (explore.ts routes
+      // non-container focus through renderFocusPayload). formatObject wires the SAME helper.
+      return renderParameters(node);
     default:
       return [];
   }

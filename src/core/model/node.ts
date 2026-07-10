@@ -93,12 +93,29 @@ export interface IndexPayload {
   method?: string;
 }
 
+/**
+ * A single routine (procedure/function) parameter — the accessor view over the opaque
+ * JSON payload. Mirrors RawParameter (catalog.ts), the durable adapter→core contract.
+ * DOG-2 §3.1 D2. dataType is the RAW engine type STRING, verbatim (NO cross-engine
+ * normalization); direction/hasDefault are emitted ONLY from a real catalog signal.
+ */
+export interface RoutineParameter {
+  name: string;                       // raw catalog name, VERBATIM (mssql keeps '@', pg/mysql bare)
+  dataType: string;                   // raw engine type STRING, verbatim — NO normalization
+  direction: 'in' | 'out' | 'inout';
+  hasDefault?: boolean;               // ONLY when a real catalog flag sources it; else OMITTED
+  ordinal: number;                    // 1-based position, deterministic render order (ADR-008)
+}
+
 export interface RoutinePayload {
   signature?: string;
   returns?: string;
   body?: string;             // present only when level='full'
   hasDynamicSql: boolean;   // US-007 / US-014 propagation
   comment?: string;
+  // DOG-2 §3.1: ordinal-sorted parameter view. OPTIONAL — an engine with no parameter
+  // catalog (e.g. SQLite) leaves it UNSET, distinguishing "unknown" from "known-zero".
+  parameters?: readonly RoutineParameter[];
 }
 
 export interface TriggerPayload {

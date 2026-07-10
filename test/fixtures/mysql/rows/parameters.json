@@ -1,0 +1,6 @@
+[
+  { "routine_schema": "app", "routine_name": "place_order", "ordinal_position": 1, "parameter_name": "p_customer",   "parameter_mode": "IN", "data_type": "varchar(100)" },
+  { "routine_schema": "app", "routine_name": "place_order", "ordinal_position": 2, "parameter_name": "p_product_id", "parameter_mode": "IN", "data_type": "int" },
+  { "routine_schema": "app", "routine_name": "place_order", "ordinal_position": 3, "parameter_name": "p_qty",        "parameter_mode": "IN", "data_type": "int" },
+  { "routine_schema": "app", "routine_name": "log_audit",   "ordinal_position": 1, "parameter_name": "p_event",     "parameter_mode": null, "data_type": "varchar(50)" }
+]

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dbgraph — graph viz</title>
+<!--
+  Self-contained, offline dbgraph graph viz. All CSS + JS are inlined below; the file
+  makes ZERO network requests. Vendored d3-force/d3-quadtree/d3-dispatch/d3-timer are ISC
+  (Copyright 2010-2021 Mike Bostock) — see the vendor block comments and PROVENANCE.md.
+-->
+<style>/*__DBGRAPH_CSS__*/</style>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <header id="brand">
+      <strong>dbgraph</strong> <span class="muted">graph viz</span>
+    </header>
+    <section class="panel">
+      <input id="search" type="search" placeholder="Search nodes…" autocomplete="off" spellcheck="false">
+    </section>
+    <section class="panel">
+      <label class="row"><span>Min degree</span> <output id="min-degree-out">0</output></label>
+      <input id="min-degree" type="range" min="0" max="20" step="1" value="0">
+    </section>
+    <section class="panel">
+      <h2>Communities</h2>
+      <ul id="community-list" class="legend"></ul>
+    </section>
+    <section class="panel">
+      <h2>Kinds</h2>
+      <ul id="kind-list" class="legend"></ul>
+    </section>
+    <section class="panel">
+      <h2>Schemas</h2>
+      <ul id="schema-list" class="legend"></ul>
+    </section>
+    <footer id="stats" class="muted"></footer>
+  </aside>
+  <main id="stage">
+    <canvas id="graph"></canvas>
+    <div id="hint" class="muted">Drag to pan · scroll to zoom · click a node for detail</div>
+  </main>
+  <section id="detail" aria-hidden="true">
+    <header>
+      <span id="detail-title"></span>
+      <button id="detail-close" type="button" aria-label="Close">&times;</button>
+    </header>
+    <pre id="detail-body"></pre>
+  </section>
+</div>
+<script id="dbgraph-data" type="application/json">/*__DBGRAPH_DATA__*/</script>
+<script>/*__DBGRAPH_VENDOR__*/</script>
+<script>/*__DBGRAPH_VIEWER__*/</script>
+</body>
+</html>

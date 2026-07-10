@@ -152,6 +152,21 @@ BEGIN
     DEALLOCATE PREPARE stmt;
 END;
 
+-- DOG-1: routine-calls-routine pair (neutral names) — body-parsed `calls` edge.
+-- proc_step (callee) writes audit_log; proc_orchestrate (caller) CALLs app.proc_step()
+-- (procedure → procedure, no PREPARE/EXECUTE). ROUTINE_DEFINITION is body-only, but the
+-- self-exclusion filter is applied uniformly (D4) — proc_orchestrate never `calls` itself.
+CREATE PROCEDURE proc_step()
+BEGIN
+    INSERT INTO audit_log (order_id, old_status, new_status)
+    VALUES (0, 'a', 'b');
+END;
+
+CREATE PROCEDURE proc_orchestrate()
+BEGIN
+    CALL app.proc_step();
+END;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Triggers
 -- ─────────────────────────────────────────────────────────────────────────────

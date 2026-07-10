@@ -318,3 +318,78 @@ hardcoded `dependencies: []`, so view and trigger nodes carried no `depends_on`/
 - GIVEN the same materialized torture catalog extracted twice
 - WHEN both edge sets are serialized
 - THEN they are byte-identical (ADR-008) — same catalog yields the identical view/trigger dependency edge set
+
+### Requirement: SQLite emits no calls edges (capability honestly absent)
+
+Because the SQLite `CapabilityMatrix` declares procedures and functions UNSUPPORTED, the SQLite
+adapter MUST NOT emit any `calls` edge under any circumstance: there is no routine node to originate or
+receive one. A trigger body naming an identifier that looks like a function invocation MUST NOT be
+turned into a `calls` edge (SQLite has no stored routine to resolve against; host-registered UDFs are
+not catalog objects). The `CapabilityMatrix` MUST remain UNCHANGED — procedures and functions stay
+unsupported. No new fixture object is added for `calls`.
+
+#### Scenario: SQLite torture graph contains zero calls edges
+
+- GIVEN the existing SQLite torture graph (tables, views, triggers — no routines)
+- WHEN the adapter extracts it and the catalog is normalized
+- THEN the graph contains ZERO edges of kind `calls`
+- AND the SQLite `CapabilityMatrix` still reports procedures and functions as unsupported
+
+#### Scenario: a function-like token in a trigger body invents no calls edge (negative)
+
+- GIVEN a SQLite trigger whose action body references a function-like identifier (e.g. `some_udf(x)`)
+- WHEN the catalog is normalized
+- THEN NO `calls` edge is fabricated (no routine node exists to resolve the invocation against)
+- AND no routine stub is minted for the identifier
+
+### Requirement: SQLite emits no routine parameters (capability honestly absent)
+
+Because the SQLite `CapabilityMatrix` declares procedures and functions UNSUPPORTED, the SQLite adapter
+MUST NOT populate `RawObject.parameters` under any circumstance — there is no routine node to carry
+them. `parameters` MUST remain UNSET on every SQLite `RawObject` (honest absence, declared — NEVER an
+empty array, never fabricated). The `CapabilityMatrix` MUST remain UNCHANGED and NO fixture object is
+added.
+
+#### Scenario: SQLite catalog carries no parameters field
+
+- GIVEN the existing SQLite torture catalog (tables, views, triggers — no routines)
+- WHEN the adapter extracts it
+- THEN no `RawObject` carries a `parameters` field (the field is UNSET, not `[]`)
+- AND the SQLite `CapabilityMatrix` still reports procedures and functions unsupported
+
+#### Scenario: SQLite present/MCP goldens show zero drift (negative)
+
+- GIVEN the existing sqlite-substrate explore/object goldens (focusing a TABLE, `main.employees`)
+- WHEN DOG-2 is applied
+- THEN those goldens are byte-identical — the parameters feature adds NO SQLite output (no routine node, no PARAMETERS section)
+
+### Requirement: View column lineage degrades by absence (no catalog, no body-parsed columns)
+
+Because SQLite has no dependency/view-column catalog, the sqlite adapter MUST leave `RawDependency.columns`
+UNSET for every view dependency, so its view `depends_on` edges carry NO `attrs.dstColumns` — degradation is
+expressed by ABSENCE (NO per-edge marker, no `attrs.degraded`). The presence-gated body tokenizer that
+derives the object-grain view edges MUST NOT be extended to mint a column from the body text (ADR-007); the
+absence of column lineage is stated plainly (HONESTY). The view `depends_on` edges stay BYTE-IDENTICAL to
+pre-DOG-3 (zero drift). A new `supportsColumnLineage: false` capability documents WHY; the existing
+object-grain view edge set is otherwise UNCHANGED. Coverage is read from the EDGE, never inferred from the flag.
+
+#### Scenario: sqlite views keep object-grain depends_on, zero dstColumns, byte-identical
+
+- GIVEN the torture views `main.active_departments` and `main.employee_summary`
+- WHEN the adapter extracts and the catalog is normalized
+- THEN they RETAIN their object-grain `depends_on` edges (`main.active_departments → {main.departments, main.employees}` and `main.employee_summary → {main.employees, main.departments}`), each `confidence: 'parsed'` with NO `attrs.dstColumns`
+- AND those edges are byte-identical to their pre-DOG-3 form (degrade-by-absence, no marker)
+
+#### Scenario: no fabricated column pair (negative)
+
+- GIVEN the same view bodies naming specific columns of their source tables
+- WHEN the catalog is normalized
+- THEN the adapter MUST NOT mint an `attrs.dstColumns` entry from the body text (ADR-007)
+- AND no column claim appears on any view edge
+
+#### Scenario: existing sqlite goldens show zero drift
+
+- GIVEN the sqlite raw-catalog and e2e goldens
+- WHEN DOG-3 is applied
+- THEN the view-edge goldens are BYTE-IDENTICAL (no `attrs.dstColumns`, no marker, no new object); the only additive change is the `supportsColumnLineage: false` capability flag
+- AND the edge set stays deterministic and byte-identical on re-run (ADR-008)

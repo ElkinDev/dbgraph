@@ -232,6 +232,38 @@ ORDER BY ROUTINE_TYPE, ROUTINE_NAME
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Routine parameters (DOG-2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Routine (procedure / function) parameters from information_schema.PARAMETERS.
+ * One row per parameter — a SEPARATE family joined to routines by SPECIFIC_NAME in map.ts.
+ * DOG-2 §4.3.
+ *
+ * - PARAMETER_MODE: IN → 'in', OUT → 'out', INOUT → 'inout'. A NULL mode (MySQL reports NULL
+ *   for FUNCTION parameters, which are implicitly IN) maps to 'in'.
+ * - DTD_IDENTIFIER = the FULL declared type (int, varchar(20)), composed IDENTICALLY to the
+ *   adapter's COLUMN dataType — mysql keeps precision (unlike pg's typmod-less function args).
+ * - ORDINAL_POSITION = 0 (FUNCTION return row, NULL PARAMETER_NAME) is EXCLUDED here (WHERE
+ *   ORDINAL_POSITION > 0) — it is not a call parameter.
+ * - information_schema.PARAMETERS exposes NO default column, so hasDefault is NEVER emitted.
+ * Read-only catalog SELECT (write-verb scanner stays green). ADR-008: explicit ORDER BY.
+ */
+export const SQL_MYSQL_PARAMETERS = `
+SELECT
+  SPECIFIC_SCHEMA  AS routine_schema,
+  SPECIFIC_NAME    AS routine_name,
+  ORDINAL_POSITION AS ordinal_position,
+  PARAMETER_NAME   AS parameter_name,
+  PARAMETER_MODE   AS parameter_mode,
+  DTD_IDENTIFIER   AS data_type
+FROM information_schema.PARAMETERS
+WHERE SPECIFIC_SCHEMA = DATABASE()
+  AND ORDINAL_POSITION > 0
+ORDER BY SPECIFIC_NAME, ORDINAL_POSITION
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Triggers
 // ─────────────────────────────────────────────────────────────────────────────
 

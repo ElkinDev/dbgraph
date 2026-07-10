@@ -235,6 +235,32 @@ describe.skipIf(!mysqlIntegrationEnabled())(
       expect(dstNode?.name).toBe('audit_log');
     });
 
+    // DOG-2 1.5 — INTEGRATION tier: L-009 exact-set parameter pins over the real materialized
+    // mysql torture catalog. Proves FULL DTD_IDENTIFIER types (varchar(20)), NULL function-mode
+    // ⇒ 'in', ORDINAL_POSITION=0 return row excluded, no fabricated hasDefault, empty [].
+    it('fn_audit_write parameters pinned exactly — FULL types, all in, no hasDefault (DOG-2 MY-2)', () => {
+      const fnNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_audit_write',
+      );
+      expect(fnNode).toBeDefined();
+      expect(fnNode!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'int', direction: 'in', ordinal: 1 },
+        { name: 'p_old_status', dataType: 'varchar(20)', direction: 'in', ordinal: 2 },
+        { name: 'p_new_status', dataType: 'varchar(20)', direction: 'in', ordinal: 3 },
+      ]);
+    });
+
+    it('proc_orchestrate / proc_step carry parameters:[] (real empty) (DOG-2 MY-1)', () => {
+      for (const name of ['proc_orchestrate', 'proc_step']) {
+        const node = normResult.graph.nodes.find(
+          (n) => n.kind === 'procedure' && n.name === name,
+        );
+        expect(node, name).toBeDefined();
+        // buildPayload elides an empty array → no parameters key (honest known-zero render).
+        expect(node!.payload['parameters']).toBeUndefined();
+      }
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // proc_dynamic_query: hasDynamicSql + ZERO edges (no fabricated edges)
     // ─────────────────────────────────────────────────────────────────────
@@ -332,6 +358,47 @@ describe.skipIf(!mysqlIntegrationEnabled())(
         to: products.id,
       });
       expect(result.found).toBe(true);
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-1: proc_orchestrate → proc_step body-parsed `calls` edge (L-009 exact, no self)
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('proc_orchestrate calls proc_step EXACTLY once at confidence parsed (no read/write, no self) [DOG-1 B.6]', () => {
+      const orch = normResult.graph.nodes.find(
+        (n) => n.kind === 'procedure' && n.name === 'proc_orchestrate',
+      );
+      expect(orch).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === orch!.id,
+      );
+      expect(callEdges.length).toBe(1);
+      expect(callEdges[0]!.confidence).toBe('parsed');
+      const dst = normResult.graph.nodes.find((n) => n.id === callEdges[0]!.dst);
+      expect(dst?.kind).toBe('procedure');
+      expect(dst?.qname).toBe('app.proc_step');
+      // The CALL is NOT a read/write edge to the callee.
+      const rw = normResult.graph.edges.filter(
+        (e) => (e.kind === 'reads_from' || e.kind === 'writes_to') && e.src === orch!.id && e.dst === callEdges[0]!.dst,
+      );
+      expect(rw.length).toBe(0);
+      // No self-`calls` (uniform self-exclusion, D4).
+      expect(callEdges.find((e) => e.dst === orch!.id)).toBeUndefined();
+    });
+
+    it('proc_step emits ZERO calls edges and writes app.audit_log [DOG-1 B.6]', () => {
+      const step = normResult.graph.nodes.find(
+        (n) => n.kind === 'procedure' && n.name === 'proc_step',
+      );
+      expect(step).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === step!.id,
+      );
+      expect(callEdges.length).toBe(0);
+      const writeDst = normResult.graph.edges
+        .filter((e) => e.kind === 'writes_to' && e.src === step!.id)
+        .map((e) => normResult.graph.nodes.find((n) => n.id === e.dst)?.qname);
+      expect(writeDst).toContain('app.audit_log');
     });
 
     // ─────────────────────────────────────────────────────────────────────

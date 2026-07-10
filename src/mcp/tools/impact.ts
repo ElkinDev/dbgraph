@@ -97,6 +97,10 @@ export async function runImpactTool(
   for (const chain of [...result.readImpact, ...result.writeImpact]) {
     for (const id of chain.nodes) allIds.add(id);
   }
+  // DOG-4 (D1 wiring): also pre-cache every degraded node id so the named block resolves
+  // each degraded id to its qname (not a raw id) — a defensive guarantee for any degraded
+  // id that is not otherwise surfaced in a read/write chain.
+  for (const id of result.degradedNodeIds) allIds.add(id);
   await Promise.all([...allIds].map((id) => resolve(id)));
 
   // Build synchronous resolve function (all ids pre-cached)

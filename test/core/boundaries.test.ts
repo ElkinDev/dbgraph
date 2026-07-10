@@ -116,6 +116,7 @@ const projectRoot = resolve(__dirname, '../..');
 const coreSrcDir = join(projectRoot, 'src', 'core');
 const adapterSrcDir = join(projectRoot, 'src', 'adapters', 'storage', 'sqlite');
 const infraSrcDir = join(projectRoot, 'src', 'infra');
+const vizSrcDir = join(projectRoot, 'src', 'core', 'viz');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
@@ -183,6 +184,66 @@ describe('hexagonal boundary: src/adapters/storage/sqlite must not import mcp/cl
       );
     }
 
+    expect(violations).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// graph-viz Batch 1 (task 1.8) — src/core/viz/** is pure: no adapters/cli/mcp/
+// drivers AND no I/O (node:fs). ADR-004 (pure core) + ADR-008 (deterministic).
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The general core-boundary scan above already covers src/core/viz/ by inclusion.
+// This focused test additionally forbids ANY filesystem I/O import, pinning that the
+// deterministic viz core never reads/writes files (the impure HTML shell assembly and
+// readFileSync/writeFileSync live ONLY in src/cli/commands/viz.ts — Batch 3).
+
+/** Filesystem I/O modules the pure viz core must never import. */
+const FORBIDDEN_IO_MODULES = ['node:fs', 'node:fs/promises', 'fs', 'fs/promises'];
+
+describe('hexagonal boundary: src/core/viz is pure (no adapters/cli/mcp/drivers, no I/O)', () => {
+  const vizFiles = collectTsFiles(vizSrcDir);
+
+  it('finds the viz core TypeScript files to scan', () => {
+    expect(vizFiles.length).toBeGreaterThan(0);
+  });
+
+  it('no viz file imports adapters, cli, mcp, or DB drivers (ADR-004)', () => {
+    const violations: string[] = [];
+    for (const filePath of vizFiles) {
+      const source = readFileSync(filePath, 'utf-8');
+      for (const spec of extractImportSpecifiers(source)) {
+        if (isForbiddenForCore(spec)) {
+          violations.push(`${filePath}\n  → imports "${spec}"`);
+        }
+      }
+    }
+    if (violations.length > 0) {
+      expect.fail(
+        `viz core boundary violations:\n${violations.join('\n')}\n\n` +
+          'Fix: src/core/viz must import only core sub-modules + node type-only builtins (ADR-004).',
+      );
+    }
+    expect(violations).toHaveLength(0);
+  });
+
+  it('no viz file imports any filesystem I/O module (pure/deterministic — ADR-008)', () => {
+    const violations: string[] = [];
+    for (const filePath of vizFiles) {
+      const source = readFileSync(filePath, 'utf-8');
+      for (const spec of extractImportSpecifiers(source)) {
+        if (FORBIDDEN_IO_MODULES.includes(spec)) {
+          violations.push(`${filePath}\n  → imports "${spec}"`);
+        }
+      }
+    }
+    if (violations.length > 0) {
+      expect.fail(
+        `viz core I/O violations:\n${violations.join('\n')}\n\n` +
+          'Fix: the pure viz core must not touch the filesystem. HTML assembly (readFileSync/' +
+          'writeFileSync) belongs in src/cli/commands/viz.ts (Batch 3).',
+      );
+    }
     expect(violations).toHaveLength(0);
   });
 });

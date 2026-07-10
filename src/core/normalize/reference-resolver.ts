@@ -124,6 +124,49 @@ export function resolveTriggerTarget(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Routine-target resolution for `calls` edges (Design D5, DOG-1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The two NodeKinds that a `calls` edge may connect. */
+const ROUTINE_KINDS: readonly NodeKind[] = ['procedure', 'function'];
+
+/**
+ * Type guard: is this dependency target a routine (`procedure`/`function`)?
+ * Undefined (the common non-routine case) is false, so the existing read/write
+ * branch is preserved byte-for-byte for every table/view target.
+ */
+export function isRoutineKind(kind: NodeKind | undefined): kind is 'procedure' | 'function' {
+  return kind === 'procedure' || kind === 'function';
+}
+
+/**
+ * Resolves a routine-invocation target to the ACTUAL existing routine node, mirroring
+ * `resolveTriggerTarget` but CROSS-KIND over `['procedure', 'function']` and — critically —
+ * WITHOUT ever creating a stub (Design D5 / ADR-007). A `calls` edge is only meaningful when
+ * the target routine really exists; a builtin (`count()`), a same-named variable, or a
+ * table-named-like-a-function resolves to NO real routine node and yields `null`, so the
+ * caller emits NO edge and mints NO phantom `[table]`/`missing` stub — the exact bug class
+ * DOG-1 kills.
+ *
+ * Probe order is procedure-before-function only for determinism; a real node of either kind
+ * wins. Missing/excluded stub nodes are ignored (only REAL routines resolve).
+ */
+export function resolveRoutineTarget(
+  targetSchema: string | null,
+  targetName: string,
+  nodeMap: NodeMap,
+): GraphNode | null {
+  const qname = canonicalQName(targetSchema, targetName);
+  for (const kind of ROUTINE_KINDS) {
+    const node = nodeMap.get(nodeMapKey(kind, qname));
+    if (node !== undefined && !node.missing && !node.excluded) {
+      return node;
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FK constraint → references edges (design §5.2)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -262,6 +305,26 @@ export function buildFiresOnEdges(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Consumed source-column set — centralized deterministic ordering (ADR-008, D3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * DOG-3 (Model A / design D3): reduce a raw source-column list to the SORTED-UNIQUE set
+ * carried as `attrs.dstColumns`. `[...new Set(cols)].sort()` is code-point ASCENDING and
+ * deduplicated, applied ONCE here so every engine is consistent regardless of adapter row
+ * order — `stableStringify` preserves array order, so the sort is MANDATORY (ADR-008).
+ * Returns `undefined` for an empty/absent list so the caller OMITS the key (unset ≠ `[]`) and
+ * the edge stays byte-identical to the pre-DOG-3 object grain.
+ */
+function sortedUniqueColumns(
+  columns: readonly string[] | undefined,
+): readonly string[] | undefined {
+  if (columns === undefined || columns.length === 0) return undefined;
+  const set = [...new Set(columns)].sort();
+  return set.length > 0 ? set : undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Dependency edges (reads_from / writes_to / depends_on) — design §5.3
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -281,6 +344,26 @@ export function buildDependencyEdges(
   const edges: GraphEdge[] = [];
 
   for (const dep of dependencies) {
+    // Routine invocation (Design D5): a routine-target dependency becomes a `calls` edge
+    // resolved to the REAL routine node, carrying dep.confidence UNCHANGED. An unresolved
+    // routine target (builtin / dynamic blindness) emits NO edge and NO stub (ADR-007) —
+    // NEVER the read/write-over-`[table]`-stub default that minted the phantom bug.
+    if (isRoutineKind(dep.target.kind)) {
+      const routineNode = resolveRoutineTarget(dep.target.schema, dep.target.name, nodeMap);
+      if (routineNode === null) continue; // no real routine → no edge, no stub
+      const callsId = edgeId('calls', srcNode.id, routineNode.id, '');
+      edges.push({
+        id: callsId,
+        kind: 'calls',
+        src: srcNode.id,
+        dst: routineNode.id,
+        confidence: dep.confidence,
+        score: null,
+        attrs: {},
+      });
+      continue;
+    }
+
     const targetKind: NodeKind = dep.target.kind ?? 'table';
     const targetResult = resolveOrStub(
       targetKind,
@@ -309,6 +392,12 @@ export function buildDependencyEdges(
     }
 
     const id = edgeId(edgeKind, srcNode.id, targetNode.id, '');
+    // DOG-3 (Model A / D1/D3): stamp the consumed source-column SET, sorted-unique, onto the
+    // EXISTING view→source-table `depends_on` edge as `attrs.dstColumns`. The edge identity is
+    // UNCHANGED (same id, endpoints) — it merely GAINS the array. An absent/empty set leaves the
+    // key OMITTED → `attrs {}`, byte-identical to the pre-DOG-3 object grain. NO per-column edge
+    // and NO column-node target is ever emitted (the column grain rides SOLELY in this attr).
+    const dstColumns = sortedUniqueColumns(dep.columns);
     const edge: GraphEdge = {
       id,
       kind: edgeKind,
@@ -316,7 +405,7 @@ export function buildDependencyEdges(
       dst: targetNode.id,
       confidence: dep.confidence,
       score: null,
-      attrs: {},
+      attrs: dstColumns !== undefined ? { dstColumns } : {},
     };
     edges.push(edge);
   }

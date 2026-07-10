@@ -1,0 +1,8 @@
+[
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "orders", "column_name": "customer_id" },
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "orders", "column_name": "order_id" },
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "orders", "column_name": "status" },
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "order_items", "column_name": "item_id" },
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "order_items", "column_name": "order_id" },
+  { "view_schema": "reporting", "view_name": "v_order_summary", "table_schema": "app", "table_name": "order_items", "column_name": "total_price" }
+]

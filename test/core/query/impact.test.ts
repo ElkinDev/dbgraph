@@ -64,6 +64,8 @@ function makeFakeStore(
     getNodeByQName: async () => null,
     getEdgesFrom: async (id) => edgesFrom[id] ?? [],
     getEdgesTo: async (id) => edgesTo[id] ?? [],
+    getAllNodes: async () => nodes,
+    getAllEdges: async () => [],
     searchFts: async () => ({ hits: [], total: 0 }),
     putSnapshot: async () => {},
     listSnapshots: async () => [],
@@ -263,6 +265,83 @@ describe('getImpact', () => {
       const r1 = await getImpact(store, { nodeId: 'col-id' });
       const r2 = await getImpact(store, { nodeId: 'col-id' });
       expect(JSON.stringify(r1)).toBe(JSON.stringify(r2));
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // DOG-4 (task 2.2) — degradedNodeIds names the EXACT dynamic-SQL closure nodes.
+  // Neutral acme_* fixtures. L-009: exact sets, positive + negative, sorted+deduped
+  // (ADR-008), and a proof that marking a node degraded fabricates ZERO edges/targets.
+  // ───────────────────────────────────────────────────────────────────────────
+  describe('degradedNodeIds (DOG-4)', () => {
+    // acme.orders.status pivot; two routines read it (one dynamic, one plain) + a plain view.
+    const acmeCol = makeNode('acme-col', 'column', 'acme.orders.status');
+    const acmeDynProc = makeNode('acme-dyn-proc', 'procedure', 'acme.run_report', true);
+    const acmeDynFn = makeNode('acme-dyn-fn', 'function', 'acme.fn_exec_stmt', true);
+    const acmeView = makeNode('acme-view', 'view', 'acme.order_summary');
+
+    const dynProcReads = makeEdge('e-dp', 'reads_from', 'acme-dyn-proc', 'acme-col');
+    const dynFnReads = makeEdge('e-df', 'reads_from', 'acme-dyn-fn', 'acme-col');
+    const viewReads = makeEdge('e-v', 'reads_from', 'acme-view', 'acme-col');
+
+    function storeWith(dynamic: boolean): GraphStore {
+      // acmeDynProc is dynamic-or-not depending on `dynamic`; acmeView is always plain.
+      const proc = makeNode('acme-dyn-proc', 'procedure', 'acme.run_report', dynamic);
+      return makeFakeStore(
+        [acmeCol, proc, acmeView],
+        {},
+        { 'acme-col': [dynProcReads, viewReads] },
+      );
+    }
+
+    it('POSITIVE: names exactly the dynamic-SQL node id, warning true', async () => {
+      const result = await getImpact(storeWith(true), { nodeId: 'acme-col' });
+      expect(result.degradedNodeIds).toEqual(['acme-dyn-proc']);
+      expect(result.dynamicSqlWarning).toBe(true);
+    });
+
+    it('NEGATIVE: no dynamic-SQL node → empty set and warning false', async () => {
+      const result = await getImpact(storeWith(false), { nodeId: 'acme-col' });
+      expect(result.degradedNodeIds).toEqual([]);
+      expect(result.dynamicSqlWarning).toBe(false);
+    });
+
+    it('multiple dynamic nodes → sorted ascending + deduped (ADR-008)', async () => {
+      const store = makeFakeStore(
+        [acmeCol, acmeDynProc, acmeDynFn, acmeView],
+        {},
+        { 'acme-col': [dynFnReads, dynProcReads, viewReads] },
+      );
+      const result = await getImpact(store, { nodeId: 'acme-col' });
+      // ids: 'acme-dyn-fn' < 'acme-dyn-proc'; the plain view/col are absent
+      expect(result.degradedNodeIds).toEqual(['acme-dyn-fn', 'acme-dyn-proc']);
+    });
+
+    it('every degraded id is a real closure node (never fabricated)', async () => {
+      const result = await getImpact(storeWith(true), { nodeId: 'acme-col' });
+      const closureNodes = new Set(
+        [...result.readImpact, ...result.writeImpact].flatMap((c) => c.nodes),
+      );
+      for (const id of result.degradedNodeIds) {
+        expect(closureNodes.has(id)).toBe(true);
+      }
+    });
+
+    it('marking a node degraded fabricates ZERO edges/targets (chains identical)', async () => {
+      const dyn = await getImpact(storeWith(true), { nodeId: 'acme-col' });
+      const plain = await getImpact(storeWith(false), { nodeId: 'acme-col' });
+      // The ONLY difference between the two stores is the hasDynamicSql flag; the
+      // read/write chains (nodes + edges) MUST be byte-for-byte identical — the marker
+      // is a node caveat, never an edge.
+      expect(JSON.stringify(dyn.readImpact)).toBe(JSON.stringify(plain.readImpact));
+      expect(JSON.stringify(dyn.writeImpact)).toBe(JSON.stringify(plain.writeImpact));
+    });
+
+    it('deterministic: byte-identical degradedNodeIds on re-run', async () => {
+      const store = storeWith(true);
+      const r1 = await getImpact(store, { nodeId: 'acme-col' });
+      const r2 = await getImpact(store, { nodeId: 'acme-col' });
+      expect(JSON.stringify(r1.degradedNodeIds)).toBe(JSON.stringify(r2.degradedNodeIds));
     });
   });
 

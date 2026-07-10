@@ -42,6 +42,8 @@ function makeFakeStore(opts: {
     async getNodeByQName() { return null; },
     async getEdgesFrom() { return []; },
     async getEdgesTo() { return []; },
+    async getAllNodes() { return nodes; },
+    async getAllEdges() { return []; },
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     async searchFts(_q, _opts) { return { hits, total }; },
     async putSnapshot() {},

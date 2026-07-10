@@ -203,6 +203,25 @@ BEGIN
 END;
 $$;
 
+-- DOG-1: routine-calls-routine pair (neutral names) — body-parsed `calls` edge.
+-- fn_inner (callee) reads app.orders; fn_wrapper (caller) SELECTs app.fn_inner()
+-- (function → function, no dynamic EXECUTE). Exercises the self-excluded routine
+-- candidate list: pg_get_functiondef emits the CREATE FUNCTION header, so each body
+-- contains its OWN qname — the self-exclusion filter must drop it (no self-`calls`).
+CREATE OR REPLACE FUNCTION app.fn_inner()
+RETURNS bigint
+LANGUAGE sql
+AS $$
+    SELECT count(*) FROM app.orders;
+$$;
+
+CREATE OR REPLACE FUNCTION app.fn_wrapper()
+RETURNS bigint
+LANGUAGE sql
+AS $$
+    SELECT app.fn_inner();
+$$;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- Trigger
 -- ─────────────────────────────────────────────────────────────────────────────

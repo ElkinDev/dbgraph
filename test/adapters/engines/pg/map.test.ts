@@ -349,6 +349,22 @@ describe('buildPgRawCatalog', () => {
       expect(proc!.kind).toBe('procedure');
     });
 
+    // DOG-2: recorded routines.json arg arrays decode into parameters (regtype-name types, D5/D6).
+    it('routine parameters are decoded from the recorded pg_proc arg arrays (L-009)', () => {
+      const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
+      // process_order(p_order_id integer) → single IN integer
+      expect(findObject(catalog.objects, 'function', 'process_order')!.parameters).toStrictEqual([
+        { name: 'p_order_id', dataType: 'integer', direction: 'in', ordinal: 1 },
+      ]);
+      // dynamic_query(tbl text) → single IN text
+      expect(findObject(catalog.objects, 'function', 'dynamic_query')!.parameters).toStrictEqual([
+        { name: 'tbl', dataType: 'text', direction: 'in', ordinal: 1 },
+      ]);
+      // fn_inner()/fn_wrapper() → real empty signature []
+      expect(findObject(catalog.objects, 'function', 'fn_inner')!.parameters).toStrictEqual([]);
+      expect(findObject(catalog.objects, 'function', 'fn_wrapper')!.parameters).toStrictEqual([]);
+    });
+
     it('function body is included at full level', () => {
       const catalog = buildPgRawCatalog(buildFixtureInput(), FULL_SCOPE);
       const fn = findObject(catalog.objects, 'function', 'process_order');

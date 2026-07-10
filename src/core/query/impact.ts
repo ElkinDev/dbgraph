@@ -7,6 +7,7 @@
 
 import type { GraphStore, ImpactQuery, ImpactResult, ImpactChain } from '../ports/graph-store.js';
 import type { EdgeKind } from '../model/edge.js';
+import { filterReadersByColumn } from './column-pivot.js';
 
 /** Edge kinds that count as WRITE impact when walking inbound edges. */
 const WRITE_KINDS = new Set<EdgeKind>(['writes_to']);
@@ -17,12 +18,19 @@ const WRITE_KINDS = new Set<EdgeKind>(['writes_to']);
 /** Default BFS depth cap (design §6.2). */
 const DEFAULT_DEPTH = 3;
 
-/** All edge kinds traversed for impact (union of read + write). */
+/**
+ * All edge kinds traversed for impact (union of read + write).
+ * `calls` is a READ-impact kind (DOG-1 D6): it is NOT in `WRITE_KINDS`, so a caller
+ * depends on its callee like a read — altering a called routine reaches its CALLERS
+ * through inbound `calls` edges, while WRITE impact stays `writes_to`-only (a call is
+ * not a mutation). SQLite/mongodb emit no `calls` edges → zero traversal drift there.
+ */
 const IMPACT_EDGE_KINDS: readonly EdgeKind[] = [
   'writes_to',
   'reads_from',
   'depends_on',
   'references',
+  'calls',
 ];
 
 /**
@@ -38,8 +46,8 @@ const IMPACT_EDGE_KINDS: readonly EdgeKind[] = [
  * 5. After BFS, classify each chain into readImpact or writeImpact based on
  *    the last hop's edge kind. A chain may contribute to both if its edges mix
  *    (the terminal hop decides the bucket).
- * 6. Set `dynamicSqlWarning` if any node in any surfaced chain has
- *    `payload.hasDynamicSql === true`.
+ * 6. Collect `degradedNodeIds` (sorted+deduped) for every closure node whose
+ *    `payload.hasDynamicSql === true`; derive `dynamicSqlWarning` from its non-emptiness.
  * 7. Sort chains and their nodes deterministically.
  */
 export async function getImpact(
@@ -47,6 +55,29 @@ export async function getImpact(
   q: ImpactQuery,
 ): Promise<ImpactResult> {
   const depth = q.depth ?? DEFAULT_DEPTH;
+
+  // DOG-3 (design D6): a COLUMN-node pivot resolves to its owning TABLE (via the inbound
+  // has_column containment edge), remembering the pivot COLUMN NAME so the FIRST hop of
+  // inbound depends_on edges can be filtered by attrs.dstColumns membership
+  // (filterReadersByColumn). A TABLE-node (or any non-column) pivot is UNCHANGED — no
+  // resolution, no filtering, byte-identical to pre-DOG-3 behavior.
+  let startNodeId = q.nodeId;
+  let pivotColumnName: string | undefined;
+  const pivotNode = await store.getNode(q.nodeId);
+  if (pivotNode !== null && pivotNode.kind === 'column') {
+    // Defensive re-filter: some GraphStore implementations (and older test fakes predating
+    // this kinds-filtered call) may not narrow by `kinds` — re-check the edge kind explicitly
+    // so a column with NO real has_column containment edge falls through UNCHANGED rather than
+    // mis-resolving to an unrelated inbound edge's source.
+    const ownerEdges = (await store.getEdgesTo(q.nodeId, ['has_column'])).filter(
+      (e) => e.kind === 'has_column',
+    );
+    const owner = ownerEdges[0];
+    if (owner !== undefined) {
+      startNodeId = owner.src;
+      pivotColumnName = pivotNode.name;
+    }
+  }
 
   // ── BFS state ──────────────────────────────────────────────────────────────
   // Each frontier item carries the chain built so far (node ids + edge kinds).
@@ -56,9 +87,9 @@ export async function getImpact(
     chainEdges: readonly EdgeKind[];
   }
 
-  const visited = new Set<string>([q.nodeId]);
+  const visited = new Set<string>([startNodeId]);
   let frontier: FrontierItem[] = [
-    { nodeId: q.nodeId, chainNodes: [q.nodeId], chainEdges: [] },
+    { nodeId: startNodeId, chainNodes: [startNodeId], chainEdges: [] },
   ];
 
   const completedChains: { chainNodes: readonly string[]; chainEdges: readonly EdgeKind[]; lastEdgeKind: EdgeKind | null }[] = [];
@@ -97,9 +128,23 @@ export async function getImpact(
       const inbound = await store.getEdgesTo(item.nodeId, IMPACT_EDGE_KINDS);
 
       // Sort for determinism
-      const sortedInbound = [...inbound]
+      let sortedInbound = [...inbound]
         .filter((e) => IMPACT_EDGE_KINDS.includes(e.kind))
         .sort((a, b) => a.src.localeCompare(b.src));
+
+      // DOG-3 (D6): at the FIRST hop from a resolved column pivot ONLY (item.nodeId ===
+      // startNodeId), filter inbound depends_on edges by column membership — a view whose
+      // edge lists the pivot column is affected; one whose edge excludes it is dropped
+      // (precision); one with NO attrs.dstColumns (degraded engine) stays included (no false
+      // negative). Deeper hops are UNCHANGED — column precision applies only at the view
+      // first-hop, per design (the "Dependency bottlenecks" note in tasks.md).
+      if (pivotColumnName !== undefined && item.nodeId === startNodeId) {
+        const depOnly = sortedInbound.filter((e) => e.kind === 'depends_on');
+        const nonDepOnly = sortedInbound.filter((e) => e.kind !== 'depends_on');
+        sortedInbound = [...filterReadersByColumn(depOnly, pivotColumnName), ...nonDepOnly].sort(
+          (a, b) => a.src.localeCompare(b.src),
+        );
+      }
 
       for (const edge of sortedInbound) {
         if (visited.has(edge.src)) continue;
@@ -150,23 +195,28 @@ export async function getImpact(
     }
   }
 
-  // ── Dynamic-SQL warning ────────────────────────────────────────────────────
-  let dynamicSqlWarning = false;
+  // ── Dynamic-SQL degraded nodes (DOG-4 r3) ──────────────────────────────────
+  // Collect the ids of closure nodes whose payload carries hasDynamicSql === true —
+  // the specific blind-spot routines. Sorted ascending + deduped (ADR-008). The
+  // legacy boolean `dynamicSqlWarning` is DERIVED for compatibility. This identifies
+  // nodes already in the closure; it adds NO edge and fabricates NO target (ADR-007).
+  const degradedSet = new Set<string>();
   const allNodeIds = new Set(
     completedChains.flatMap((c) => c.chainNodes),
   );
   for (const nodeId of allNodeIds) {
-    if (dynamicSqlWarning) break;
     const node = await store.getNode(nodeId);
     if (node !== null && node.payload['hasDynamicSql'] === true) {
-      dynamicSqlWarning = true;
+      degradedSet.add(nodeId);
     }
   }
+  const degradedNodeIds = [...degradedSet].sort((a, b) => a.localeCompare(b));
+  const dynamicSqlWarning = degradedNodeIds.length > 0;
 
   // ── Sort chains deterministically (ADR-008) ────────────────────────────────
   const chainSortKey = (c: ImpactChain): string => c.nodes.join('>');
   readImpact.sort((a, b) => chainSortKey(a).localeCompare(chainSortKey(b)));
   writeImpact.sort((a, b) => chainSortKey(a).localeCompare(chainSortKey(b)));
 
-  return { readImpact, writeImpact, truncated, dynamicSqlWarning };
+  return { readImpact, writeImpact, truncated, dynamicSqlWarning, degradedNodeIds };
 }

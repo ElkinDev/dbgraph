@@ -29,6 +29,17 @@ interface ResolveResult {
 }
 
 /**
+ * Builds a PrecheckItem, attaching the DOG-4 (r2) dynamic-SQL degradation marker ONLY
+ * when the subject routine is degraded — OMITTED otherwise (`exactOptionalPropertyTypes`
+ * present-only). The marker is a NODE caveat; it fabricates no edge/target.
+ */
+function buildPrecheckItem(qname: string, kind: string, hasDynamicSql: boolean): PrecheckItem {
+  return hasDynamicSql
+    ? { qname, kind, confidence: 'parsed', hasDynamicSql: true }
+    : { qname, kind, confidence: 'parsed' };
+}
+
+/**
  * Tries to resolve each identifier against the graph by calling
  * getNodeByQName across all NodeKind values. The FIRST match wins.
  * Tags every matched item with confidence:'parsed'.
@@ -45,7 +56,10 @@ async function resolveIdentifiers(
     for (const kind of NODE_KINDS as readonly NodeKind[]) {
       const node = await store.getNodeByQName(kind, id);
       if (node !== null) {
-        matched.push({ qname: node.qname, kind: node.kind, confidence: 'parsed' });
+        // DOG-4 (D1): precheck holds the full node here — read the degradation flag
+        // in place. An ISOLATED dynamic routine (no inbound edges) is flagged HERE,
+        // not via the impact section, so it is never a false negative.
+        matched.push(buildPrecheckItem(node.qname, node.kind, node.payload['hasDynamicSql'] === true));
         found = true;
         break;
       }
@@ -99,10 +113,15 @@ async function buildImpactSection(
 
     const impact = await getImpact(store, { nodeId, depth: 3 });
 
-    // Resolve each chain's node ids to qname + kind
-    const resolveNode = async (id: string): Promise<{ qname: string; kind: string } | null> => {
+    // Resolve each chain's node ids to qname + kind + the DOG-4 degradation flag
+    // (the node is already in hand here — no extra read).
+    const resolveNode = async (
+      id: string,
+    ): Promise<{ qname: string; kind: string; hasDynamicSql: boolean } | null> => {
       const node = await store.getNode(id);
-      return node !== null ? { qname: node.qname, kind: node.kind } : null;
+      return node !== null
+        ? { qname: node.qname, kind: node.kind, hasDynamicSql: node.payload['hasDynamicSql'] === true }
+        : null;
     };
 
     // Walk write chains
@@ -113,7 +132,7 @@ async function buildImpactSection(
         if (id === undefined) continue;
         const n = await resolveNode(id);
         if (n === null) continue;
-        const pItem: PrecheckItem = { qname: n.qname, kind: n.kind, confidence: 'parsed' };
+        const pItem = buildPrecheckItem(n.qname, n.kind, n.hasDynamicSql);
         whatToTestSet.add(n.qname);
         if (n.kind === 'trigger') {
           triggersMap.set(n.qname, pItem);
@@ -132,7 +151,7 @@ async function buildImpactSection(
         if (id === undefined) continue;
         const n = await resolveNode(id);
         if (n === null) continue;
-        const pItem: PrecheckItem = { qname: n.qname, kind: n.kind, confidence: 'parsed' };
+        const pItem = buildPrecheckItem(n.qname, n.kind, n.hasDynamicSql);
         whatToTestSet.add(n.qname);
         if (n.kind === 'trigger') {
           triggersMap.set(n.qname, pItem);

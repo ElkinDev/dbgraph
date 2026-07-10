@@ -1,7 +1,0 @@
-{
-  "whatToTest": [
-    "assignments",
-    "employees"
-  ],
-  "source_ddl_ref": "test/fixtures/sqlite/torture.sql:L12"
-}

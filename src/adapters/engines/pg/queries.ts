@@ -244,6 +244,15 @@ ORDER BY n.nspname, c.relname
  * pg_get_functiondef returns the full CREATE FUNCTION/PROCEDURE body.
  * prokind: 'f'=function, 'p'=procedure, 'a'=aggregate, 'w'=window (a/w excluded).
  * Optional $1 scopes to a single schema.
+ *
+ * DOG-2 §4.2: argument metadata lives INLINE on the pg_proc row, so this query is EXTENDED
+ * (not a second query). arg_type NAMES are decoded IN SQL via ::regtype[]::text[] — exact,
+ * verbatim (integer / numeric), no JS pg_type round-trip. NOTE regtype is TYPMOD-LESS for
+ * function args (numeric, NOT numeric(10,2)) — pg stores no per-argument typmod; the precision
+ * is physically absent and MUST NOT be fabricated. proargmodes is internally "char"[]; cast to
+ * text[] so node-postgres returns a parsed array ({i,o,b,v,t}) rather than a "{i,o}" string.
+ * proallargtypes (all args incl. OUT/INOUT/TABLE) is NULL when only IN args exist → COALESCE
+ * falls back to proargtypes (IN args only, decoded via string_to_array — the version-safe idiom).
  */
 export const SQL_PG_ROUTINES = `
 SELECT
@@ -251,7 +260,12 @@ SELECT
   p.proname                                         AS routine_name,
   p.prokind                                         AS routine_kind,
   pg_catalog.pg_get_functiondef(p.oid)              AS routine_def,
-  obj_description(p.oid, 'pg_proc')                AS comment
+  obj_description(p.oid, 'pg_proc')                AS comment,
+  p.proargnames                                     AS arg_names,
+  p.proargmodes::text[]                             AS arg_modes,
+  COALESCE(p.proallargtypes::oid[],
+           string_to_array(p.proargtypes::text, ' ')::oid[])::regtype[]::text[] AS arg_type_names,
+  p.pronargdefaults                                 AS num_defaults
 FROM pg_catalog.pg_proc p
 JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace
 WHERE p.prokind IN ('f', 'p')
@@ -333,6 +347,38 @@ WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND n.nspname NOT LIKE 'pg_temp%'
   AND ($1::text IS NULL OR n.nspname = $1::text)
 ORDER BY n.nspname, c.relname
+`.trim();
+
+// ─────────────────────────────────────────────────────────────────────────────
+// View consumed-column set (DOG-3 D5) — information_schema.view_column_usage
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-view source-column lineage via `information_schema.view_column_usage` (DOG-3 design D5).
+ * Unlike mssql (a per-view TVF loop), pg exposes this as a single flat catalog view: one row
+ * per (view, source table, source column) triple, joinable in ONE query (no per-object loop
+ * needed). HONEST caveats inherited from the catalog itself (never worked around):
+ *   - covers only sources the VIEW OWNER also owns (an "owner visibility" gap for cross-owner
+ *     sources — those rows are simply ABSENT, never fabricated);
+ *   - does NOT cover MATERIALIZED views (relkind 'm') — matview rows are STRUCTURALLY ABSENT.
+ * Both absences degrade the covered (view, table) pair by omission (D4) — map.ts merges ONLY
+ * the pairs this query actually returns; nothing is guessed. Catalog SELECT only (US-031
+ * write-verb scanner). ADR-008: explicit ORDER BY for a stable row order.
+ * Optional $1 scopes to a single VIEW schema (NULL = all non-system schemas).
+ */
+export const SQL_PG_VIEW_COLUMN_USAGE = `
+SELECT
+  vcu.view_schema                  AS view_schema,
+  vcu.view_name                    AS view_name,
+  vcu.table_schema                 AS table_schema,
+  vcu.table_name                   AS table_name,
+  vcu.column_name                  AS column_name
+FROM information_schema.view_column_usage vcu
+WHERE vcu.view_schema NOT IN ('pg_catalog', 'information_schema')
+  AND vcu.view_schema NOT LIKE 'pg_toast%'
+  AND vcu.view_schema NOT LIKE 'pg_temp%'
+  AND ($1::text IS NULL OR vcu.view_schema = $1::text)
+ORDER BY vcu.view_schema, vcu.view_name, vcu.table_schema, vcu.table_name, vcu.column_name
 `.trim();
 
 // ─────────────────────────────────────────────────────────────────────────────

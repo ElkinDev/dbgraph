@@ -1,0 +1,9 @@
+dbo.usp_mixed  [procedure]
+──────────────────────────
+
+PARAMETERS
+  @order_id  int
+  @new_status  nvarchar  [OUT]
+  @rowcount  int  [INOUT]
+  @amount  decimal  [DEFAULT]
+

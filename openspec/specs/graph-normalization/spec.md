@@ -77,6 +77,51 @@ table yields `writes_to`. A trigger that writes a table MUST produce `writes_to`
 - WHEN it is normalized
 - THEN `fires_on(trigger → orders, event = UPDATE)` and `writes_to(trigger → audit)` exist
 
+### Requirement: Routine-target dependencies become calls edges resolved to real routines
+
+The normalizer SHALL branch on `RawDependency.target.kind`. When the target kind is a routine
+(`procedure` or `function`), the normalizer MUST emit a `calls` edge from the source routine to the
+target routine, carrying the `RawDependency.confidence` UNCHANGED (`declared` for mssql, `parsed` for
+pg/mysql). The target MUST be resolved against an ACTUAL routine node; when no such routine node
+exists the normalizer MUST emit NO edge and MUST NOT mint any stub (ADR-007 — a builtin such as
+`count()` or a table-named-like-a-function yields nothing). A routine-target dependency MUST NOT
+produce a `reads_from`/`writes_to` edge nor a `missing: true` `[table]` stub. Every NON-routine
+target MUST keep the existing read/write resolution unchanged. Emitted `calls` edges MUST be ordered
+deterministically so the graph is golden-pinnable (ADR-008). A `calls` self-edge MUST be emitted ONLY
+when a routine genuinely invokes itself (real recursion), never fabricated otherwise.
+(Previously: `buildDependencyEdges` defaulted `targetKind = dep.target.kind ?? 'table'`, so a routine
+invoking a routine became a `reads_from` edge to a non-existent table and minted a spurious `missing`
+`[table]` stub; `calls` did not exist.)
+
+#### Scenario: proc→proc yields exactly one calls edge and zero table stub (regression byte-pin)
+
+- GIVEN a `RawCatalog` where procedure `dbo.usp_refresh_totals` carries a `RawDependency` to `dbo.usp_log_change` with `target.kind: 'procedure'`, and both routine nodes exist
+- WHEN it is normalized
+- THEN the edge set contains EXACTLY one edge `dbo.usp_refresh_totals → dbo.usp_log_change` of kind `calls`
+- AND there is ZERO `reads_from`/`writes_to` edge from `dbo.usp_refresh_totals` to `dbo.usp_log_change`
+- AND ZERO `missing: true` `[table] usp_log_change` stub appears (its phantom-stub count is zero)
+
+#### Scenario: unresolved routine target invents no edge and no stub (negative)
+
+- GIVEN a `RawDependency` whose `target.kind` is a routine but whose name resolves to NO routine node (e.g. a builtin `count`)
+- WHEN it is normalized
+- THEN NO `calls` edge is emitted for it
+- AND NO stub node of any kind is minted for the unresolved target
+
+#### Scenario: routine touching only tables emits zero calls edges (negative)
+
+- GIVEN a routine whose `RawDependency` set targets only TABLES (read and write)
+- WHEN it is normalized
+- THEN its `reads_from`/`writes_to` edges are produced exactly as before with `confidence: parsed`
+- AND ZERO `calls` edge is emitted for it
+
+#### Scenario: self-call emitted only when recursion is real
+
+- GIVEN a routine whose body genuinely invokes itself (`target.kind: routine`, target = the same routine node) and a second routine that does NOT invoke itself
+- WHEN both are normalized
+- THEN exactly one `calls` self-edge is emitted for the recursive routine
+- AND NO `calls` self-edge is emitted for the non-recursive routine
+
 ### Requirement: Dynamic SQL declares blindness
 
 When a module body contains non-analyzable dynamic SQL, the normalizer SHALL mark the module node
@@ -269,3 +314,37 @@ inference engine under `src/core/infer/` SHALL likewise import nothing outside t
 - WHEN a boundary lint runs over it
 - THEN it reports no import outside the core model types (no adapter/driver/cli/mcp/`child_process`/I/O)
 - AND the same input `NodeMap` normalized twice yields a byte-identical `inferred_reference` edge array
+
+### Requirement: buildDependencyEdges stamps the consumed source-column set as sorted-unique attrs.dstColumns
+
+When a `RawDependency` for a view carries a source-column set (`RawDependency.columns` — schema-extraction),
+the normalizer's `buildDependencyEdges` SHALL stamp it, SORTED-UNIQUE, onto the resulting view→source-table
+`depends_on` edge as `attrs.dstColumns`. Ordering MUST be CODE-POINT ASCENDING on the column NAME string,
+deduplicated, so the serialized edge is golden-pinnable and byte-identical on re-run (ADR-008) — because
+`stableStringify` preserves array order, the sort is MANDATORY and centralized in the normalizer, applied
+identically for every engine regardless of adapter row order. A `RawDependency` with NO source-column set
+MUST leave `attrs.dstColumns` UNSET → the edge is byte-identical to the pre-DOG-3 object-grain `depends_on`
+edge (`attrs {}`). The normalizer MUST NOT emit any per-column `depends_on` edge and MUST NOT create any
+column-node target — the column grain is carried SOLELY in `attrs.dstColumns` on the existing view→table edge
+(Model A). This is a stamping seam ONLY; the confidence FLIP on covered pairs (`parsed`→`declared`) is
+performed by the sourcing adapter's `map.ts` (mssql-extraction, pg-extraction), not by the normalizer.
+
+#### Scenario: a view dependency with a source-column set stamps sorted-unique dstColumns
+
+- GIVEN a `RawDependency` from a view to table `t` carrying `columns: ['status', 'order_id', 'order_id', 'customer_id']` (unsorted, with a duplicate)
+- WHEN the catalog is normalized
+- THEN the view→`t` `depends_on` edge carries `attrs.dstColumns = ['customer_id', 'order_id', 'status']` (sorted code-point ascending, deduplicated)
+- AND NO per-column `depends_on` edge and NO column-node target is emitted
+
+#### Scenario: ordering is deterministic and byte-identical on re-run
+
+- GIVEN the same `RawCatalog` normalized twice
+- WHEN the two `depends_on` edge arrays are serialized
+- THEN each `attrs.dstColumns` is in identical code-point ascending order and the two serializations are byte-identical (ADR-008)
+
+#### Scenario: a dependency with no source-column set stays byte-identical object grain
+
+- GIVEN a `RawDependency` for a view whose `columns` is UNSET
+- WHEN the catalog is normalized
+- THEN the resulting `depends_on` edge leaves `attrs.dstColumns` UNSET (`attrs {}`)
+- AND the serialized edge is byte-identical to its pre-DOG-3 form

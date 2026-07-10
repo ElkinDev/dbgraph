@@ -79,6 +79,14 @@ describe('dispatch — known commands', () => {
     }
   });
 
+  it('dispatches "viz" to a handler function (graph-viz 3.4)', () => {
+    const result = dispatch('viz');
+    expect(result.type).toBe('handler');
+    if (result.type === 'handler') {
+      expect(typeof result.handler).toBe('function');
+    }
+  });
+
   it('each known command returns a different handler reference', () => {
     const init = dispatch('init');
     const sync = dispatch('sync');

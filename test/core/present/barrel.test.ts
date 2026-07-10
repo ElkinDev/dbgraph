@@ -64,3 +64,13 @@ describe('src/core/index.ts — payload renderers (explore-payloads Batch A A.5)
     expect(typeof CoreBarrel.deriveColumnAnnotations).toBe('function');
   });
 });
+
+describe('src/core/index.ts — DYNAMIC_SQL_MARKER (DOG-4 task 8.1)', () => {
+  it('exports the DYNAMIC_SQL_MARKER constant with the exact pinned value', () => {
+    expect(CoreBarrel.DYNAMIC_SQL_MARKER).toBe('[DYNAMIC SQL]');
+  });
+
+  it('exports renderDynamicSqlCaveat as a function', () => {
+    expect(typeof CoreBarrel.renderDynamicSqlCaveat).toBe('function');
+  });
+});

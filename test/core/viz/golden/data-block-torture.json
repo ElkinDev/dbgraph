@@ -1,0 +1,127 @@
+{
+  "nodes": [
+    {
+      "i": 0,
+      "label": "main.active_departments",
+      "kind": "view",
+      "community": 0,
+      "degree": 3,
+      "detail": "main.active_departments  [view]  [1 trg!]\n───────────────────────────────\n\nTRIGGERS\n  trg_active_dept_instead_insert  INSTEAD OF INSERT\n\n"
+    },
+    {
+      "i": 1,
+      "label": "main.assignments",
+      "kind": "table",
+      "community": 0,
+      "degree": 1,
+      "detail": "main.assignments  [table]\n─────────────────────────\n\nCOLUMNS\n  project_id  INTEGER  [PK]\n  emp_id  INTEGER  [PK]  [FK→main.employees]\n  dept_id  INTEGER  [PK]  [FK→main.employees]\n  role  TEXT  [NN]  DEFAULT 'contributor'\n\nCONSTRAINTS\n  [FK]  fk_assignments_0  (emp_id, dept_id → main.employees)\n  [PK]  pk_assignments  (project_id, emp_id, dept_id)\n\n"
+    },
+    {
+      "i": 2,
+      "label": "main.audit_log",
+      "kind": "table",
+      "community": 0,
+      "degree": 1,
+      "detail": "main.audit_log  [table]\n───────────────────────\n\nCOLUMNS\n  log_id  INTEGER  [PK]\n  entity  TEXT  [NN]\n  action  TEXT  [NN]\n  old_val  TEXT\n  new_val  TEXT\n\nCONSTRAINTS\n  [PK]  pk_audit_log  (log_id)\n\n"
+    },
+    {
+      "i": 3,
+      "label": "main.counters",
+      "kind": "table",
+      "community": 1,
+      "degree": 0,
+      "detail": "main.counters  [table]\n──────────────────────\n\nCOLUMNS\n  counter_name  TEXT  [PK]\n  bucket  TEXT  [PK]  DEFAULT 'default'\n  value  INTEGER  [NN]  DEFAULT 0\n\nCONSTRAINTS\n  [PK]  pk_counters  (counter_name, bucket)\n\n"
+    },
+    {
+      "i": 4,
+      "label": "main.departments",
+      "kind": "table",
+      "community": 0,
+      "degree": 4,
+      "detail": "main.departments  [table]\n─────────────────────────\n\nCOLUMNS\n  dept_id  INTEGER  [PK]\n  name  TEXT  [NN]\n  budget  REAL\n  active  INTEGER  [NN]  DEFAULT 1\n\nCONSTRAINTS\n  [PK]  pk_departments  (dept_id)\n\n"
+    },
+    {
+      "i": 5,
+      "label": "main.employee_summary",
+      "kind": "view",
+      "community": 0,
+      "degree": 2,
+      "detail": "main.employee_summary  [view]\n─────────────────────────────\n\n"
+    },
+    {
+      "i": 6,
+      "label": "main.employees",
+      "kind": "table",
+      "community": 0,
+      "degree": 5,
+      "detail": "main.employees  [table]  [4 idx, 5 trg!]\n───────────────────────\n\nCOLUMNS\n  emp_id  INTEGER  [PK]\n  full_name  TEXT  [NN]\n  email  TEXT\n  dept_id  INTEGER  [FK→main.departments]  [NN]\n  salary  REAL  [NN]  DEFAULT 0.0\n  hire_date  TEXT\n\nCONSTRAINTS\n  [FK]  fk_employees_0  (dept_id → main.departments)\n  [UNIQUE]  idx_emp_email  (email)\n  [PK]  pk_employees  (emp_id)\n\nINDEXES\n  idx_emp_active_dept  (dept_id)\n  idx_emp_dept  (dept_id, hire_date)\n  idx_emp_email  UNIQUE (email)\n  idx_emp_email_lower  ((expr))\n\nTRIGGERS\n  trg_emp_after_delete  AFTER DELETE\n  trg_emp_after_insert  AFTER INSERT\n  trg_emp_before_insert  BEFORE INSERT\n  trg_emp_before_update  BEFORE UPDATE\n  trg_emp_salary_update  BEFORE UPDATE\n\n"
+    },
+    {
+      "i": 7,
+      "label": "main.projects",
+      "kind": "table",
+      "community": 2,
+      "degree": 0,
+      "detail": "main.projects  [table]\n──────────────────────\n\nCOLUMNS\n  project_id  INTEGER  [PK]\n  title  TEXT  [NN]\n  description  TEXT\n  budget  REAL\n\nCONSTRAINTS\n  [PK]  pk_projects  (project_id)\n\n"
+    }
+  ],
+  "edges": [
+    {
+      "s": 0,
+      "t": 4,
+      "kind": "depends_on"
+    },
+    {
+      "s": 0,
+      "t": 4,
+      "kind": "writes_to"
+    },
+    {
+      "s": 0,
+      "t": 6,
+      "kind": "depends_on"
+    },
+    {
+      "s": 1,
+      "t": 6,
+      "kind": "references"
+    },
+    {
+      "s": 5,
+      "t": 4,
+      "kind": "depends_on"
+    },
+    {
+      "s": 5,
+      "t": 6,
+      "kind": "depends_on"
+    },
+    {
+      "s": 6,
+      "t": 2,
+      "kind": "writes_to"
+    },
+    {
+      "s": 6,
+      "t": 4,
+      "kind": "references"
+    }
+  ],
+  "communities": [
+    {
+      "id": 0,
+      "name": "active",
+      "count": 6
+    },
+    {
+      "id": 1,
+      "name": "counters",
+      "count": 1
+    },
+    {
+      "id": 2,
+      "name": "projects",
+      "count": 1
+    }
+  ]
+}

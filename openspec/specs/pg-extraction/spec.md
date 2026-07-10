@@ -565,3 +565,178 @@ silently. The verified golden encodes: `edgeCount: 47`, `stubCount: 0` (post-rem
 - WHEN the unit matrix runs
 - THEN it does NOT depend on the gated `pg-integration` job
 - AND the `pg-integration` job uses only an ephemeral `postgres:16` container and never connects to any validation database
+
+### Requirement: Body-parsed calls edges for routine invocations
+
+The pg adapter SHALL extend the shared tokenizer's candidate list to include ROUTINE names (functions
+and PG11+ procedures) so a routine-invocation reference in a `pg_get_functiondef` body (`SELECT fn()`
+/ `PERFORM fn()` / `CALL proc()`) that resolves to a REAL routine node produces a `calls` edge from
+the calling routine to the referenced routine with `confidence: 'parsed'`. Emission MUST stay
+PRESENCE-GATED over the dynamic-string-MASKED static body (`maskDynamicStrings` + `bodyContainsRef`):
+a name appearing only in a comment, a string literal, or a dynamic `EXECUTE` string MUST NOT produce
+an edge. A reference to a BUILTIN (e.g. `now()`, `count()`) that resolves to no routine node MUST
+produce NO edge. The adapter MUST NEVER emit a SELF-reference `calls` edge unless the routine is
+genuinely recursive. Extending the candidate list MUST NOT reclassify existing table dependencies —
+routines only ADD candidates.
+
+#### Scenario: function invoking a function yields exactly one parsed calls edge
+
+- GIVEN the torture function `app.fn_wrapper` whose body does `SELECT app.fn_inner()`, and the function `app.fn_inner` whose body does `SELECT ... FROM app.orders`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN `app.fn_wrapper` emits EXACTLY one `calls app.fn_inner` edge with `confidence: 'parsed'` and NO `reads_from`/`writes_to` edge to `app.fn_inner`
+- AND `app.fn_inner` emits `{ reads_from app.orders (parsed) }` and ZERO `calls` edge
+
+#### Scenario: builtin invocation and body-absent routines emit no calls edge (negative)
+
+- GIVEN a routine whose static body invokes only builtins (`now()`, `count()`) and names no user routine
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN ZERO `calls` edge is emitted (no builtin resolves to a routine node)
+- AND no `calls` edge is fabricated for any routine whose name does not appear in the masked static body
+
+#### Scenario: routine name only inside a dynamic EXECUTE string yields no calls edge (negative)
+
+- GIVEN a plpgsql routine that builds `'SELECT app.fn_inner()'` and runs it via the dynamic `EXECUTE` statement
+- WHEN `extract(scope)` runs at `full`
+- THEN the routine is marked `hasDynamicSql: true` and emits NO `calls` edge to `app.fn_inner` (the name is inside the masked dynamic string)
+
+### Requirement: pg torture fixture exercises routine-calls-routine
+
+The committed pg torture `.sql` (`test/fixtures/pg/`) SHALL add `app.fn_wrapper` (invoking
+`app.fn_inner`) and `app.fn_inner`, using NEUTRAL names. The golden-pinned `RawCatalog` and
+end-to-end impact/path goldens MUST be re-blessed DELIBERATELY to include the `calls app.fn_wrapper →
+app.fn_inner` edge (`confidence: 'parsed'`), with L-009 exact-set assertions pinning both endpoints,
+`stubCount: 0`, and no self-reference edge.
+
+#### Scenario: fixture adds the routine-calls-routine objects and re-blessed golden pins the parsed calls edge
+
+- GIVEN the materialized pg torture database with `app.fn_wrapper` and `app.fn_inner`
+- WHEN the adapter extracts it and the pipeline runs extract → normalize → upsert → query
+- THEN the re-blessed goldens contain EXACTLY the edge `app.fn_wrapper → app.fn_inner` of kind `calls`, `confidence: 'parsed'`, with exact endpoints and `stubCount: 0`, byte-identical on re-run (ADR-008)
+
+### Requirement: Decode routine parameters from pg_proc arrays
+
+The pg adapter SHALL extend `SQL_PG_ROUTINES` with `proargnames`, `proargmodes` and `proallargtypes`
+(argument type names decoded via `regtype` in SQL — see design §4.2) and decode them into
+`RawObject.parameters`. For each argument it MUST capture `name` (from `proargnames` by array position;
+NULL when unnamed), `dataType` (the canonical type name as PostgreSQL exposes it for FUNCTION ARGUMENTS —
+the SAME type vocabulary the adapter's COLUMN `dataType` uses, e.g. `integer`, `numeric`; NOTE PostgreSQL
+does NOT store per-argument length/precision typmod, so a `numeric(10,2)` argument HONESTLY surfaces as
+`numeric` — the precision a COLUMN would show is PHYSICALLY absent for a function argument and MUST NOT be
+fabricated), `direction` from `proargmodes` (`i`→`in`, `o`→`out`, `b`→`inout`, `v` VARIADIC→`in` — a
+VARIADIC argument IS an input; `t` TABLE→**EXCLUDED** from `parameters` — `RETURNS TABLE` entries are
+RESULT columns, NOT call parameters, mirroring the mysql `ORDINAL_POSITION = 0` return-row exclusion; they
+belong to the deferred TVF-column-set work), and `ordinal` from array position (contiguous 1..N over the
+EMITTED arguments, after excluding any `t`-mode entry). When `proargmodes` is NULL, ALL arguments are `in`
+(the PostgreSQL encoding for an all-IN routine — the adapter MUST NOT emit `out`/`inout` unless the mode
+array PROVES it). `hasDefault` MAY be set for the trailing `pronargdefaults` arguments ONLY; where it
+cannot be cleanly attributed it MUST be OMITTED, never fabricated. A routine with no arguments MUST carry
+an empty parameters array.
+
+#### Scenario: zero-parameter routines pinned exactly (fn_wrapper/fn_inner)
+
+- GIVEN the torture functions `app.fn_wrapper()` and `app.fn_inner()` (no arguments)
+- WHEN `extract(scope)` runs
+- THEN each carries `parameters: []` (a real empty signature) — NOT unset
+- AND no direction or `hasDefault` is fabricated for either
+
+#### Scenario: NULL proargmodes yields all-IN (fn_place_order)
+
+- GIVEN `app.fn_place_order(p_order_id int, p_customer_id int, p_product_id int, p_qty int)` with `proargmodes = NULL`
+- WHEN `extract(scope)` runs
+- THEN its `parameters` are EXACTLY four entries at ordinals 1..4, each `direction:"in"` and `dataType:"integer"`, names `p_order_id` / `p_customer_id` / `p_product_id` / `p_qty` in order
+- AND NO parameter is emitted as `out` or `inout`
+
+#### Scenario: VARIADIC is an input; RETURNS TABLE columns are excluded (pinned modes)
+
+- GIVEN a routine with a VARIADIC argument (`proargmodes` element `v`) and, separately, a `RETURNS TABLE`
+  routine whose `proargmodes` carries `t` entries
+- WHEN `extract(scope)` runs
+- THEN the VARIADIC argument is emitted with `direction:"in"` (it is an input)
+- AND every `t` (TABLE) entry is EXCLUDED from `parameters` — the result columns are NOT call parameters
+  (mirror of the mysql `ORDINAL_POSITION = 0` return-row exclusion)
+- AND note: no current DOG-1 pg fixture exercises `v` or `t`; unit-fixture coverage for both modes is
+  added at apply so the goldens pin these bytes
+
+#### Scenario: pg parameter dataType carries no fabricated precision (typmod-less args)
+
+- GIVEN a pg routine argument declared with a precision type (e.g. `numeric(10,2)`)
+- WHEN `extract(scope)` runs
+- THEN its `dataType` is the canonical type name `numeric` — NOT `numeric(10,2)` — because PostgreSQL
+  stores no per-argument typmod; the precision is honestly absent, never invented
+
+#### Scenario: pg goldens gain parameters deliberately, scanner stays green
+
+- GIVEN the pg raw-catalog and e2e goldens
+- WHEN parameters are added
+- THEN the pg goldens are re-blessed DELIBERATELY to carry the pinned arrays; every unrelated byte is unchanged
+- AND `SQL_PG_ROUTINES` still passes the engines write-verb scanner (catalog `SELECT` only)
+
+### Requirement: Declared consumed-column set for regular views via view_column_usage, with confidence flip
+
+The pg adapter SHALL run a NEW catalog `SELECT` over `information_schema.view_column_usage` to source, per
+regular view, the set of `(source table, source column)` pairs it reads, threaded onto
+`RawDependency.columns` and merged into the tokenizer-derived dependencies. For each (view, source table)
+pair the catalog COVERS, the view→table `depends_on` edge MUST FLIP `confidence: 'parsed'` → `'declared'`
+(a catalog-confirmed pair IS declared) AND gain `attrs.dstColumns` (the sorted-unique consumed source
+columns). The `depends_on` edge is UNCHANGED in identity; it flips confidence and gains the set — NO separate
+per-column edge is emitted. The emission is a SOURCE-COLUMN SET; the adapter MUST NOT assert any output↔source
+mapping. The new query MUST issue only a catalog `SELECT` (engines write-verb scanner green). This is the
+SAME parsed→declared flip mechanism mssql applies via its native TVF loop (mssql-extraction).
+
+#### Scenario: v_order_summary flips to declared and emits its EXACT consumed-column set
+
+- GIVEN the torture view `reporting.v_order_summary` selecting `o.order_id, o.customer_id, o.status, COUNT(oi.item_id), SUM(oi.total_price)` from `app.orders o` LEFT JOIN `app.order_items oi ON oi.order_id = o.order_id`, grouped by `o.order_id, o.customer_id, o.status`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN the view→`app.orders` `depends_on` edge carries `attrs.dstColumns = [customer_id, order_id, status]` and the view→`app.order_items` edge carries `attrs.dstColumns = [item_id, order_id, total_price]` (each sorted code-point ascending), each FLIPPED to `confidence: 'declared'`
+- AND the observable consumed set is EXACTLY `{ app.orders.order_id, app.orders.customer_id, app.orders.status, app.order_items.order_id, app.order_items.item_id, app.order_items.total_price }`
+- AND no column the view does not read (e.g. `app.order_items.qty`, `app.order_items.product_id`) appears in any `attrs.dstColumns` (negative)
+
+### Requirement: Sources absent from view_column_usage stay parsed object grain (degrade-by-absence), never guessed
+
+Where `information_schema.view_column_usage` OMITS a source — because the view is a MATERIALIZED view (not
+covered by `view_column_usage`) OR because the view owner does not own the referenced object (owner
+visibility) — the pg adapter MUST leave that view→table `depends_on` edge at its tokenizer `confidence:
+'parsed'` object grain with NO `attrs.dstColumns` (degrade-by-absence — NO per-edge marker, no
+`attrs.degraded`). It MUST NOT fabricate a column from the body. The golden MUST pin the EXACT OBSERVABLE
+covered set the catalog returns — NEVER a fabricated "complete" set inferred from the body (ADR-006/007).
+
+#### Scenario: materialized view stays parsed object grain (concrete negative)
+
+- GIVEN the torture MATERIALIZED view `reporting.mv_product_stats` reading `app.products` and `app.order_items` (materialized views are absent from `information_schema.view_column_usage`)
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN its `depends_on` edges to `app.products` and `app.order_items` carry NO `attrs.dstColumns` and stay `confidence: 'parsed'` (no flip)
+- AND no column is fabricated from its body text
+
+#### Scenario: owner-visibility gap degrades honestly
+
+- GIVEN a regular view reading from a table the view owner does NOT own (absent from `view_column_usage`)
+- WHEN the catalog is normalized
+- THEN that view→table `depends_on` edge carries NO `attrs.dstColumns` and stays `parsed` object grain
+- AND the golden pins the exact covered set the catalog observably returns, never a guessed full set
+
+### Requirement: pg capability note corrected; view-column goldens re-blessed with the confidence flip
+
+`PG_CAPABILITIES.supportsDependencyHints` MUST remain `false` (it denotes body-derived read/write dep-hints,
+which pg still lacks — `view_column_usage` is a DISTINCT, view-scoped catalog). A new
+`supportsColumnLineage: true` capability (with the owner caveat in its note) MUST record that a DECLARED
+view-column source now feeds regular-view lineage. Per-edge coverage MUST be read from the EDGE
+(`attrs.dstColumns` present-or-absent), NEVER inferred from `supportsColumnLineage`: a covered edge (declared,
+with `dstColumns`) MUST be able to COEXIST with an uncovered edge (parsed, without) on the SAME pg engine. The
+golden-pinned `RawCatalog` and impact goldens MUST be re-blessed DELIBERATELY with L-009 exact sets: the
+`v_order_summary` covered edges pinned at `confidence: 'declared'` with their `attrs.dstColumns` (the
+parsed→declared FLIP is an intentional re-bless), AND the `mv_product_stats` edges pinned at `parsed` with NO
+`attrs.dstColumns`; every unrelated byte unchanged.
+
+#### Scenario: supportsDependencyHints stays false while covered regular-view pairs flip to declared
+
+- GIVEN `PG_CAPABILITIES` after DOG-3
+- WHEN `supportsDependencyHints` and `supportsColumnLineage` are read and the capability note is inspected
+- THEN `supportsDependencyHints` is STILL `false` (no body dep-hint catalog) and `supportsColumnLineage` is `true`
+- AND the note records that `information_schema.view_column_usage` supplies DECLARED source columns for covered regular-view pairs (materialized/uncovered stay parsed)
+- AND the re-blessed goldens pin the `v_order_summary` covered edges at `confidence: 'declared'` with their `attrs.dstColumns` (the deliberate parsed→declared flip) and the `mv_product_stats` edges at `parsed` with no `dstColumns`, byte-identical on re-run (ADR-008)
+
+#### Scenario: a covered and an uncovered edge coexist on the same pg engine (per-edge coverage)
+
+- GIVEN a pg graph carrying `reporting.v_order_summary` covered edges (declared, with `dstColumns`) alongside `reporting.mv_product_stats` uncovered edges (parsed, without)
+- WHEN coverage is determined for each edge
+- THEN it is read from the EDGE (`attrs.dstColumns` present-or-absent), NEVER inferred from the engine `supportsColumnLineage` flag

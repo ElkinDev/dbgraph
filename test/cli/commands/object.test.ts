@@ -73,6 +73,8 @@ function makeFakeStore(opts: { nodes?: GraphNode[]; edges?: GraphEdge[] } = {}):
     },
     async getEdgesFrom(nodeId) { return edges.filter((e) => e.src === nodeId); },
     async getEdgesTo(nodeId) { return edges.filter((e) => e.dst === nodeId); },
+    async getAllNodes() { return nodes; },
+    async getAllEdges() { return edges; },
     async searchFts() { return { hits: [] as readonly SearchHit[], total: 0 }; },
     async putSnapshot() {},
     async listSnapshots() { return [] as readonly SnapshotRecord[]; },

@@ -58,7 +58,18 @@ const NODE_GLOBALS = {
 
 export default tseslint.config(
   // `build/` holds the generated esbuild bundle + SEA blob (phase-9.5c) — never lint it.
-  { ignores: ['dist/', 'build/', 'coverage/', 'node_modules/'] },
+  // The vendored client d3 (ISC, minified, browser UMD) and the generated embedded-assets
+  // module are committed artifacts, not hand-authored Node source — never lint them.
+  {
+    ignores: [
+      'dist/',
+      'build/',
+      'coverage/',
+      'node_modules/',
+      'src/cli/commands/viz/assets/vendor/**',
+      'src/cli/commands/viz/assets/embedded.generated.ts',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -68,6 +79,16 @@ export default tseslint.config(
       ecmaVersion: 'latest',
       sourceType: 'module',
       globals: NODE_GLOBALS,
+    },
+  },
+  {
+    // The viz client viewer (browser asset) — inlined into the emitted HTML, runs in the
+    // browser, not in Node. Lint it with browser globals (window/document) allowed.
+    files: ['src/cli/commands/viz/assets/viewer.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'script',
+      globals: { window: 'readonly', document: 'readonly' },
     },
   },
   {

@@ -40,6 +40,7 @@ import type {
   MysqlViewRow,
   MysqlRoutineRow,
   MysqlTriggerRow,
+  MysqlParameterRow,
 } from './map.js';
 import {
   SQL_MYSQL_TABLES,
@@ -50,6 +51,7 @@ import {
   SQL_MYSQL_STATISTICS,
   SQL_MYSQL_VIEWS,
   SQL_MYSQL_ROUTINES,
+  SQL_MYSQL_PARAMETERS,
   SQL_MYSQL_TRIGGERS,
   SQL_MYSQL_FINGERPRINT,
 } from './queries.js';
@@ -103,6 +105,7 @@ export class MysqlSchemaAdapter implements SchemaAdapter {
       statistics,
       views,
       routines,
+      parameters,
       triggers,
     ] = await Promise.all([
       this._driver.query(SQL_MYSQL_TABLES),
@@ -113,6 +116,7 @@ export class MysqlSchemaAdapter implements SchemaAdapter {
       this._driver.query(SQL_MYSQL_STATISTICS),
       this._driver.query(SQL_MYSQL_VIEWS),
       this._driver.query(SQL_MYSQL_ROUTINES),
+      this._driver.query(SQL_MYSQL_PARAMETERS),
       this._driver.query(SQL_MYSQL_TRIGGERS),
     ]);
 
@@ -135,6 +139,7 @@ export class MysqlSchemaAdapter implements SchemaAdapter {
         statistics: statistics as unknown as readonly MysqlStatisticsRow[],
         views: views as unknown as readonly MysqlViewRow[],
         routines: routines as unknown as readonly MysqlRoutineRow[],
+        parameters: parameters as unknown as readonly MysqlParameterRow[],
         triggers: triggers as unknown as readonly MysqlTriggerRow[],
       },
       scope,

@@ -102,6 +102,7 @@ beforeAll(() => {
     statistics: loadJson('statistics.json'),
     views: loadJson('views.json'),
     routines: loadJson('routines.json'),
+    parameters: loadJson('parameters.json'),
     triggers: loadJson('triggers.json'),
   };
 });
@@ -376,6 +377,25 @@ describe('buildMysqlRawCatalog — routines', () => {
     const fn = catalog.objects.find((o) => o.kind === 'function' && o.name === 'log_audit');
     expect(fn).toBeDefined();
     expect(fn!.comment).toBe('Logs an audit event');
+  });
+
+  // DOG-2: recorded rows/parameters.json flows through buildMysqlRawCatalog (FULL types, no hasDefault).
+  it('routine parameters are attached from the recorded parameter rows (L-009)', () => {
+    const catalog = buildMysqlRawCatalog(input, FULL_SCOPE);
+    const placeOrder = catalog.objects.find((o) => o.kind === 'procedure' && o.name === 'place_order');
+    expect(placeOrder!.parameters).toStrictEqual([
+      { name: 'p_customer', dataType: 'varchar(100)', direction: 'in', ordinal: 1 },
+      { name: 'p_product_id', dataType: 'int', direction: 'in', ordinal: 2 },
+      { name: 'p_qty', dataType: 'int', direction: 'in', ordinal: 3 },
+    ]);
+    // NULL PARAMETER_MODE (function param) ⇒ 'in'; FULL type; NO hasDefault (mysql omits it).
+    const logAudit = catalog.objects.find((o) => o.kind === 'function' && o.name === 'log_audit');
+    expect(logAudit!.parameters).toStrictEqual([
+      { name: 'p_event', dataType: 'varchar(50)', direction: 'in', ordinal: 1 },
+    ]);
+    // known-zero: a paramless routine carries [] (not unset)
+    const orchestrate = catalog.objects.find((o) => o.kind === 'procedure' && o.name === 'proc_orchestrate');
+    expect(orchestrate!.parameters).toStrictEqual([]);
   });
 
   it('Spec: place_order writes orders and order_items, reads products — EXACT 3 edges', () => {

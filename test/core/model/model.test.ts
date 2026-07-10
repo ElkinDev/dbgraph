@@ -64,6 +64,7 @@ describe('EdgeKind', () => {
     const expected: EdgeKind[] = [
       'references',
       'depends_on',
+      'calls',
       'reads_from',
       'writes_to',
       'fires_on',
@@ -73,7 +74,7 @@ describe('EdgeKind', () => {
       'in_index',
       'inferred_reference',
     ];
-    expect(EDGE_KINDS).toHaveLength(10);
+    expect(EDGE_KINDS).toHaveLength(11);
     for (const k of expected) {
       expect(EDGE_KINDS).toContain(k);
     }

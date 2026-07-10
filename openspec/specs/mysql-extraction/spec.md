@@ -580,3 +580,113 @@ counts AND endpoints, MUST assert `stubCount: 0`, and MUST assert no self-refere
 - WHEN the unit matrix runs
 - THEN it does NOT depend on the gated `mysql-integration` job
 - AND the `mysql-integration` job uses only an ephemeral `mysql:8` container and never connects to any validation database
+
+### Requirement: Body-parsed calls edges for routine invocations, presence-gated with no phantom or self edges
+
+The mysql adapter SHALL extend the shared tokenizer's candidate list to include ROUTINE names
+(procedures and functions) so a routine invocation in a `ROUTINE_DEFINITION` body (`CALL proc()` /
+`SELECT fn()`) that resolves to a REAL routine node produces a `calls` edge from the calling routine
+to the referenced routine with `confidence: 'parsed'`. Emission MUST be PRESENCE-GATED over the
+dynamic-string-MASKED static body (`maskDynamicStrings` + `bodyContainsRef`): a routine name appearing
+only inside a masked `PREPARE`/`EXECUTE` dynamic string, a comment, or a string literal MUST NOT
+produce an edge. The adapter MUST NEVER default-to-`calls` for every catalog routine, and MUST NEVER
+emit a SELF-reference `calls` edge unless the routine is genuinely recursive. Extending the candidate
+list MUST NOT reclassify existing table dependencies.
+
+#### Scenario: proc CALL proc yields exactly one parsed calls edge
+
+- GIVEN the torture procedure `app.proc_orchestrate` whose body does `CALL app.proc_step()`, and the procedure `app.proc_step` whose body does `INSERT INTO app.audit_log ...`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN `app.proc_orchestrate` emits EXACTLY one `calls app.proc_step` edge with `confidence: 'parsed'` and NO `reads_from`/`writes_to` edge to `app.proc_step`
+- AND `app.proc_step` emits `{ writes_to app.audit_log (parsed) }` and ZERO `calls` edge
+
+#### Scenario: routine touching only tables emits zero calls edges (negative)
+
+- GIVEN a procedure whose static body writes/reads only tables and CALLs no routine
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN it emits its `reads_from`/`writes_to` edges as before and ZERO `calls` edge
+- AND no self-reference `calls` edge is emitted
+
+#### Scenario: CALL name only inside a masked dynamic string yields no calls edge (negative)
+
+- GIVEN a procedure that builds `'CALL app.proc_step()'` and runs it via `PREPARE`/`EXECUTE`
+- WHEN `extract(scope)` runs at `full`
+- THEN the procedure is marked `hasDynamicSql: true` and emits NO `calls` edge to `app.proc_step` (the name is inside the masked dynamic string)
+
+### Requirement: mysql torture fixture exercises routine-calls-routine
+
+The committed mysql torture `.sql` (`test/fixtures/mysql/`) SHALL add `app.proc_orchestrate` (CALLing
+`app.proc_step`) and `app.proc_step`, using NEUTRAL names. The golden-pinned `RawCatalog` and
+end-to-end impact/path goldens MUST be re-blessed DELIBERATELY to include the `calls
+app.proc_orchestrate → app.proc_step` edge (`confidence: 'parsed'`), with L-009 exact-set assertions
+pinning both endpoints, exact edge counts, `stubCount: 0`, and no self-reference edge.
+
+#### Scenario: fixture adds the routine-calls-routine objects and re-blessed golden pins the parsed calls edge
+
+- GIVEN the materialized mysql torture database with `app.proc_orchestrate` and `app.proc_step`
+- WHEN the adapter extracts it and the pipeline runs extract → normalize → upsert → query
+- THEN the re-blessed goldens contain EXACTLY the edge `app.proc_orchestrate → app.proc_step` of kind `calls`, `confidence: 'parsed'`, with exact endpoints, `stubCount: 0` and no self-reference edge, byte-identical on re-run (ADR-008)
+
+### Requirement: Extract routine parameters from information_schema.PARAMETERS
+
+The mysql adapter SHALL source routine parameters from `information_schema.PARAMETERS` (filtered
+`SPECIFIC_SCHEMA = DATABASE()`), attaching them to each routine's `RawObject.parameters`. For each it
+MUST capture `name` (`PARAMETER_NAME`), `dataType` (`DTD_IDENTIFIER`, composed IDENTICALLY to the
+adapter's COLUMN `dataType`, e.g. `int`, `varchar(20)`), `direction` from `PARAMETER_MODE` (`IN`→`in`,
+`OUT`→`out`, `INOUT`→`inout`; a NULL mode — as MySQL reports for FUNCTION parameters — maps to `in`),
+and `ordinal` from `ORDINAL_POSITION`. The FUNCTION RETURN row (`ORDINAL_POSITION = 0`, NULL
+`PARAMETER_NAME`) MUST be EXCLUDED — it is not a parameter. MySQL exposes NO parameter default column,
+so `hasDefault` MUST NEVER be emitted for any mysql parameter (the field is OMITTED, not set false). A
+routine with no parameters MUST carry an empty parameters array.
+
+#### Scenario: zero-parameter procedures pinned exactly (proc_orchestrate/proc_step)
+
+- GIVEN the torture procedures `app.proc_orchestrate()` and `app.proc_step()`
+- WHEN `extract(scope)` runs
+- THEN each carries `parameters: []`
+- AND NO `hasDefault` field appears on any mysql parameter
+
+#### Scenario: function return row (ordinal 0) excluded (fn_audit_write)
+
+- GIVEN the function `fn_audit_write(p_order_id INT, p_old_status VARCHAR(20), p_new_status VARCHAR(20)) RETURNS INT`
+- WHEN `extract(scope)` runs
+- THEN its `parameters` are EXACTLY `[{name:"p_order_id", dataType:"int", direction:"in", ordinal:1}, {name:"p_old_status", dataType:"varchar(20)", direction:"in", ordinal:2}, {name:"p_new_status", dataType:"varchar(20)", direction:"in", ordinal:3}]`
+- AND the `ORDINAL_POSITION = 0` return row is EXCLUDED and NO parameter carries `hasDefault`
+
+#### Scenario: mysql goldens gain parameters deliberately, scanner stays green
+
+- GIVEN the mysql raw-catalog and e2e goldens
+- WHEN parameters are added
+- THEN the mysql goldens are re-blessed DELIBERATELY to carry the pinned arrays; every unrelated byte is unchanged
+- AND the new PARAMETERS query passes the engines write-verb scanner (catalog `SELECT` only)
+
+### Requirement: View column lineage degrades by absence (no view-column catalog)
+
+Because MySQL has no view-column catalog, the mysql adapter MUST leave `RawDependency.columns` UNSET for
+every view dependency, so the view→table `depends_on` edges carry NO `attrs.dstColumns` — degradation is
+expressed by ABSENCE (NO per-edge marker, no `attrs.degraded`). The adapter MUST NOT fabricate a column from
+the view body text (ADR-007) — the absence is stated plainly (HONESTY). The mysql view `depends_on` edges
+(`confidence: 'parsed'`, body-derived) stay BYTE-IDENTICAL to pre-DOG-3 (zero drift). A new per-engine
+`supportsColumnLineage: false` capability documents WHY; `supportsDependencyHints` and the existing edges are
+otherwise UNCHANGED. Coverage is read from the EDGE (`attrs.dstColumns`), never inferred from the flag.
+
+#### Scenario: mysql view carries object-grain depends_on, zero dstColumns, byte-identical
+
+- GIVEN a mysql torture view whose body reads base tables `b` and `c`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN the view carries object-grain `depends_on` to `b` and to `c`, each `confidence: 'parsed'` with NO `attrs.dstColumns`
+- AND those edges are byte-identical to their pre-DOG-3 form (degrade-by-absence, no marker)
+
+#### Scenario: no body-parsed column is fabricated (negative)
+
+- GIVEN the same view whose body names specific columns of `b`/`c`
+- WHEN the catalog is normalized
+- THEN the adapter MUST NOT mint an `attrs.dstColumns` entry from the body text (ADR-007)
+- AND no column claim appears on any view edge
+
+#### Scenario: mysql goldens show zero column-lineage drift
+
+- GIVEN the mysql raw-catalog and e2e goldens
+- WHEN DOG-3 is applied
+- THEN the view-edge goldens are BYTE-IDENTICAL (no `attrs.dstColumns`, no marker); the only additive change is the `supportsColumnLineage: false` capability flag, which changes no edge byte
+- AND the adapter's SQL still passes the engines write-verb scanner (catalog `SELECT` only)

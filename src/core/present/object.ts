@@ -20,6 +20,9 @@ import {
   renderConstraints,
   renderIndexes,
   renderTriggers,
+  renderParameters,
+  renderConsumedColumns,
+  renderDynamicSqlCaveat,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +62,7 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   const constraintGroup = view.neighbors['has_constraint'];
   const columnGroup = view.neighbors['has_column'];
   const referencesGroup = view.neighbors['references'];
+  const dependsOnGroup = view.neighbors['depends_on'];
 
   const indexCount = indexGroup ? indexGroup.out.length : 0;
   const triggerCount = triggerGroup ? triggerGroup.in.length : 0;
@@ -98,6 +102,27 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
     lines.push(...constraintLines);
   }
 
+  // ── PARAMETERS section (normal + full) — DOG-2 §3.4 D3 ─────────────────────
+  // formatObject does NOT call renderFocusPayload, so it needs its OWN block calling the SAME
+  // shared renderParameters (design §9 understatement — task 2.3). Placed AFTER CONSTRAINTS and
+  // BEFORE the normal early-return so it renders at normal AND full (never brief) — the identical
+  // detail gating explore uses. The shared helper guarantees byte-identical bytes across surfaces.
+  const parameterLines = renderParameters(view.node);
+  if (parameterLines.length > 0) {
+    lines.push('');
+    lines.push(...parameterLines);
+  }
+
+  // ── Dynamic-SQL caveat (normal + full) — DOG-4 D3/r1 ──────────────────────
+  // Placed AFTER PARAMETERS and BEFORE the normal early-return so it renders at
+  // normal AND full (never brief). The shared helper emits the SAME bytes explore
+  // pushes → the caveat line is byte-identical across surfaces (no per-surface branch).
+  const caveatLines = renderDynamicSqlCaveat(view.node);
+  if (caveatLines.length > 0) {
+    lines.push('');
+    lines.push(...caveatLines);
+  }
+
   if (detail === 'normal') {
     lines.push('');
     return lines.join('\n') + '\n';
@@ -115,6 +140,15 @@ export function formatObject(view: ObjectView, detail: ObjectDetail): string {
   if (triggerLines.length > 0) {
     lines.push('');
     lines.push(...triggerLines);
+  }
+
+  // ── CONSUMES lines (full only) — DOG-3 D7 ──────────────────────────────────
+  // A view's consumed source columns from attrs.dstColumns. A table's depends_on group is
+  // naturally empty/undefined -> [] -> nothing rendered (same pattern as every other section).
+  const consumesLines = renderConsumedColumns(dependsOnGroup ? dependsOnGroup.out : []);
+  if (consumesLines.length > 0) {
+    lines.push('');
+    lines.push(...consumesLines);
   }
 
   // ── Body section (full only, for modules at full level) ───────────────────

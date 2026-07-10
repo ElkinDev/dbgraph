@@ -29,7 +29,11 @@ import { createPgSchemaAdapter } from '../../../../src/adapters/engines/pg/facto
 import { createSqliteGraphStore } from '../../../../src/adapters/storage/sqlite/factory.js';
 import { normalizeCatalog } from '../../../../src/core/normalize/normalize.js';
 import { getImpact } from '../../../../src/core/query/impact.js';
+import { getNeighbors } from '../../../../src/core/query/neighbors.js';
 import { findJoinPath } from '../../../../src/core/query/path.js';
+import { runPrecheck } from '../../../../src/core/precheck/engine.js';
+import { formatExplore } from '../../../../src/core/present/explore.js';
+import { formatObject } from '../../../../src/core/present/object.js';
 import { DEFAULT_LEVELS } from '../../../../src/core/model/capability.js';
 import type { ExtractionScope } from '../../../../src/core/model/capability.js';
 import type { GraphStore } from '../../../../src/core/ports/graph-store.js';
@@ -260,6 +264,45 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(dependencyEdges.length).toBe(0);
     });
 
+    // DOG-2 1.4 — INTEGRATION tier: L-009 exact-set parameter pins over the real materialized
+    // pg torture catalog (non-t/non-v routines only — the DOG-1 pg fixtures exercise neither).
+    // Proves the SQL regtype decode: all-IN routines render every arg 'in', typmod-less types,
+    // real empty signatures carry [], no fabricated out/inout/hasDefault.
+    it('fn_place_order NULL-modes → four in integer params, exact set (DOG-2 PG-2)', () => {
+      const node = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_place_order',
+      );
+      expect(node).toBeDefined();
+      expect(node!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'integer', direction: 'in', ordinal: 1 },
+        { name: 'p_customer_id', dataType: 'integer', direction: 'in', ordinal: 2 },
+        { name: 'p_product_id', dataType: 'integer', direction: 'in', ordinal: 3 },
+        { name: 'p_qty', dataType: 'integer', direction: 'in', ordinal: 4 },
+      ]);
+    });
+
+    it('fn_wrapper / fn_inner carry parameters:[] (real empty, not unset) (DOG-2 PG-1)', () => {
+      for (const name of ['fn_wrapper', 'fn_inner']) {
+        const node = normResult.graph.nodes.find(
+          (n) => n.kind === 'function' && n.name === name,
+        );
+        expect(node, name).toBeDefined();
+        // buildPayload elides an empty array, so a real no-arg routine has NO parameters key
+        // in the payload — the honest render of a known-zero signature (renderParameters → []).
+        expect(node!.payload['parameters']).toBeUndefined();
+      }
+    });
+
+    it('proc_cancel_order(p_order_id int) → single in integer param (DOG-2 PG-2)', () => {
+      const node = normResult.graph.nodes.find(
+        (n) => n.kind === 'procedure' && n.name === 'proc_cancel_order',
+      );
+      expect(node).toBeDefined();
+      expect(node!.payload['parameters']).toStrictEqual([
+        { name: 'p_order_id', dataType: 'integer', direction: 'in', ordinal: 1 },
+      ]);
+    });
+
     // ─────────────────────────────────────────────────────────────────────
     // Query API: impact and path (L-009: pinned node+edge counts)
     // ─────────────────────────────────────────────────────────────────────
@@ -341,6 +384,131 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(dstNames).toEqual(['order_items', 'products']);
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 B.7 — LIVE view_column_usage coverage + materialized-view exclusion
+    // (design D5/D4). Runs over the real materialized torture.sql catalog via the SAME
+    // extract -> normalizeCatalog pipeline as every other assertion in this file.
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('DOG-3: v_order_summary covered edges are declared with their EXACT dstColumns (view_column_usage coverage, L-009)', () => {
+      const viewNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'v_order_summary',
+      );
+      expect(viewNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === viewNode!.id,
+      );
+      const byTargetName = new Map(
+        depEdges.map((e) => [
+          normResult.graph.nodes.find((n) => n.id === e.dst)?.name ?? '',
+          e,
+        ]),
+      );
+
+      const ordersEdge = byTargetName.get('orders');
+      expect(ordersEdge).toBeDefined();
+      expect(ordersEdge!.confidence).toBe('declared');
+      expect(ordersEdge!.attrs.dstColumns).toStrictEqual(['customer_id', 'order_id', 'status']);
+
+      const itemsEdge = byTargetName.get('order_items');
+      expect(itemsEdge).toBeDefined();
+      expect(itemsEdge!.confidence).toBe('declared');
+      expect(itemsEdge!.attrs.dstColumns).toStrictEqual(['item_id', 'order_id', 'total_price']);
+
+      // negatives — columns the view does NOT read never appear
+      expect(itemsEdge!.attrs.dstColumns).not.toContain('qty');
+      expect(itemsEdge!.attrs.dstColumns).not.toContain('product_id');
+    });
+
+    it('DOG-3: mv_product_stats edges stay parsed with NO dstColumns (materialized-view exclusion, negative)', () => {
+      const mvNode = normResult.graph.nodes.find(
+        (n) => n.kind === 'view' && n.name === 'mv_product_stats',
+      );
+      expect(mvNode).toBeDefined();
+      const depEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'depends_on' && e.src === mvNode!.id,
+      );
+      expect(depEdges.length).toBe(2);
+      for (const e of depEdges) {
+        expect(e.confidence).toBe('parsed');
+        expect(e.attrs.dstColumns).toBeUndefined();
+        expect('dstColumns' in e.attrs).toBe(false);
+      }
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 C.7 — LIVE column-precise impact + whatToTest + consumes: render
+    // (design D6/D7), end-to-end over the real materialized torture.sql catalog.
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('C.7: impact on order_items.total_price surfaces v_order_summary; qty does NOT (live, D6)', async () => {
+      const orderItemsCols = await getNeighbors(store, {
+        nodeId: (await store.getNodesByKind('table')).find((t) => t.name === 'order_items')!.id,
+        kinds: ['has_column'],
+      });
+      const totalPriceCol = orderItemsCols['has_column']?.out.find((e) => e.node.name === 'total_price');
+      const qtyCol = orderItemsCols['has_column']?.out.find((e) => e.node.name === 'qty');
+      expect(totalPriceCol).toBeDefined();
+      expect(qtyCol).toBeDefined();
+
+      const totalPriceImpact = await getImpact(store, { nodeId: totalPriceCol!.node.id });
+      const totalPriceReaders = new Set(
+        await Promise.all(
+          totalPriceImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+        ),
+      );
+      expect(totalPriceReaders.has('v_order_summary')).toBe(true);
+
+      const qtyImpact = await getImpact(store, { nodeId: qtyCol!.node.id });
+      const qtyReaders = new Set(
+        await Promise.all(
+          qtyImpact.readImpact.flatMap((c) => c.nodes.slice(1)).map(async (id) => (await store.getNode(id))?.name),
+        ),
+      );
+      expect(qtyReaders.has('v_order_summary')).toBe(false); // negative — column-grain precision, live
+    });
+
+    it('C.7: precheck whatToTest column-drop precision is live-precise (D6)', async () => {
+      const totalPriceView = await runPrecheck(store, 'DROP COLUMN app.order_items.total_price;');
+      expect(totalPriceView.impact.whatToTest).toContain('reporting.v_order_summary');
+      expect(totalPriceView.impact.readers).toContainEqual(
+        { qname: 'reporting.v_order_summary', kind: 'view', confidence: 'parsed' },
+      );
+
+      const qtyView = await runPrecheck(store, 'DROP COLUMN app.order_items.qty;');
+      expect(qtyView.impact.whatToTest).not.toContain('reporting.v_order_summary');
+    });
+
+    it('C.7: explore/object render the LIVE consumes: lines for v_order_summary at full (D7)', async () => {
+      const views = await store.getNodesByKind('view');
+      const summary = views.find((v) => v.name === 'v_order_summary');
+      expect(summary).toBeDefined();
+      const neighbors = await getNeighbors(store, { nodeId: summary!.id });
+
+      const exploreFull = formatExplore({ node: summary!, neighbors }, 'full');
+      expect(exploreFull).toContain('consumes: app.orders.customer_id');
+      expect(exploreFull).toContain('consumes: app.orders.order_id');
+      expect(exploreFull).toContain('consumes: app.orders.status');
+      expect(exploreFull).toContain('consumes: app.order_items.item_id');
+      expect(exploreFull).toContain('consumes: app.order_items.order_id');
+      expect(exploreFull).toContain('consumes: app.order_items.total_price');
+
+      const objectFull = formatObject({ node: summary!, neighbors }, 'full');
+      // CLI (explore) and MCP (object) render byte-identical consumes: bytes (D7).
+      expect(objectFull).toContain('consumes: app.orders.customer_id');
+      expect(objectFull).toContain('consumes: app.order_items.total_price');
+
+      // negative: normal detail renders NO consumes section (budget honesty)
+      const exploreNormal = formatExplore({ node: summary!, neighbors }, 'normal');
+      expect(exploreNormal).not.toContain('consumes:');
+
+      // negative: mv_product_stats (degraded/materialized) renders NO consumes section at full
+      const mv = views.find((v) => v.name === 'mv_product_stats');
+      expect(mv).toBeDefined();
+      const mvNeighbors = await getNeighbors(store, { nodeId: mv!.id });
+      expect(formatExplore({ node: mv!, neighbors: mvNeighbors }, 'full')).not.toContain('consumes:');
+    });
+
     it('proc_cancel_order has EXACTLY 1 writes_to edge (orders) + 0 reads_from', () => {
       const procNode = normResult.graph.nodes.find(
         (n) => n.kind === 'procedure' && n.name === 'proc_cancel_order',
@@ -373,6 +541,47 @@ describe.skipIf(!pgIntegrationEnabled())(
       expect(readEdges.length).toBe(0);
       const dstNode = normResult.graph.nodes.find((n) => n.id === writeEdges[0]!.dst);
       expect(dstNode?.name).toBe('audit_log');
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-1: fn_wrapper → fn_inner body-parsed `calls` edge (L-009 exact, no self)
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('fn_wrapper calls fn_inner EXACTLY once at confidence parsed (no read/write, no self) [DOG-1 B.6]', () => {
+      const wrapper = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_wrapper',
+      );
+      expect(wrapper).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === wrapper!.id,
+      );
+      expect(callEdges.length).toBe(1);
+      expect(callEdges[0]!.confidence).toBe('parsed');
+      const dst = normResult.graph.nodes.find((n) => n.id === callEdges[0]!.dst);
+      expect(dst?.kind).toBe('function');
+      expect(dst?.qname).toBe('app.fn_inner');
+      // The call is NOT a read/write edge to the callee.
+      const rw = normResult.graph.edges.filter(
+        (e) => (e.kind === 'reads_from' || e.kind === 'writes_to') && e.src === wrapper!.id && e.dst === callEdges[0]!.dst,
+      );
+      expect(rw.length).toBe(0);
+      // No self-`calls` despite the pg_get_functiondef header naming fn_wrapper.
+      expect(callEdges.find((e) => e.dst === wrapper!.id)).toBeUndefined();
+    });
+
+    it('fn_inner emits ZERO calls edges and reads app.orders [DOG-1 B.6]', () => {
+      const inner = normResult.graph.nodes.find(
+        (n) => n.kind === 'function' && n.name === 'fn_inner',
+      );
+      expect(inner).toBeDefined();
+      const callEdges = normResult.graph.edges.filter(
+        (e) => e.kind === 'calls' && e.src === inner!.id,
+      );
+      expect(callEdges.length).toBe(0);
+      const readDst = normResult.graph.edges
+        .filter((e) => e.kind === 'reads_from' && e.src === inner!.id)
+        .map((e) => normResult.graph.nodes.find((n) => n.id === e.dst)?.qname);
+      expect(readDst).toContain('app.orders');
     });
 
     // ─────────────────────────────────────────────────────────────────────

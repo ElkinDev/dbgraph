@@ -72,6 +72,8 @@ function makeFakeStore(opts: {
     async getNodeByQName() { return null; },
     async getEdgesFrom() { return []; },
     async getEdgesTo() { return []; },
+    async getAllNodes() { return nodes; },
+    async getAllEdges() { return []; },
     async searchFts() { return { hits: [], total: 0 }; },
 
     async putSnapshot(s) {

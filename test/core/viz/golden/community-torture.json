@@ -1,0 +1,30 @@
+{
+  "count": 3,
+  "communities": [
+    {
+      "id": 0,
+      "name": "active",
+      "count": 6
+    },
+    {
+      "id": 1,
+      "name": "counters",
+      "count": 1
+    },
+    {
+      "id": 2,
+      "name": "projects",
+      "count": 1
+    }
+  ],
+  "membership": {
+    "main.active_departments": 0,
+    "main.assignments": 0,
+    "main.audit_log": 0,
+    "main.counters": 1,
+    "main.departments": 0,
+    "main.employee_summary": 0,
+    "main.employees": 0,
+    "main.projects": 2
+  }
+}

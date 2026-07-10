@@ -578,3 +578,203 @@ codename may be written into any strategy, fixture, dump, or doc.
 - GIVEN the strategies, their fixtures, the recorded dump golden and any docs
 - WHEN they are inspected
 - THEN none contains the validation-database codename (dumps are anonymized; the output directory is gitignored)
+
+---
+
+## Requirements Added by dog1-calls-edges (2026-07-07)
+
+> These requirements source `calls` edges from the SQL Server CATALOG: `SQL_MSSQL_DEPENDENCIES` gains a
+> `LEFT JOIN sys.objects ref ON ref.object_id = dep.referenced_id` exposing `ref.type`, mapped via the
+> existing `moduleTypeToKind` and carried end-to-end on `RawDependency.target.kind`. A routine-target
+> dependency becomes a `calls` edge at `confidence: 'declared'`; the existing `reads_from`/`writes_to`
+> edges STAY `parsed` (their access is body-derived; a call has none). NEW torture routines exercise the
+> path. Stories: US-007, US-027.
+
+### Requirement: Catalog-declared calls edges for routine invocations
+
+The mssql adapter SHALL preserve the referenced object's KIND on `RawDependency.target.kind` by
+joining `sys.objects` on `referenced_id` in `SQL_MSSQL_DEPENDENCIES` (`ref.type AS ref_object_type`),
+threading it through `DepRow`, `map.ts` and `tokenizeModuleDeps` (which today drop it). When a
+dependency's referenced object is a routine (`procedure` or `function`), the adapter MUST classify it
+as a `calls` edge from the calling routine to the referenced routine with `confidence: 'declared'`
+(the catalog establishes both identity and kind — no body parse). Dependencies to TABLES/VIEWS MUST
+remain `reads_from`/`writes_to` at `confidence: 'parsed'`, UNCHANGED. A row with a NULL
+`referenced_id` (unresolved / cross-database) MUST be skipped, never turned into a speculative edge.
+
+#### Scenario: proc EXEC proc yields exactly one declared calls edge and no table stub
+
+- GIVEN the torture procedure `dbo.usp_refresh_totals` whose body does `UPDATE dbo.order_totals ...` and `EXEC dbo.usp_log_change`, and the procedure `dbo.usp_log_change` whose body does `INSERT INTO dbo.audit_log ...`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN `dbo.usp_refresh_totals` emits EXACTLY `{ calls dbo.usp_log_change (declared), writes_to dbo.order_totals (parsed) }`
+- AND there is NO `reads_from`/`writes_to` edge to `dbo.usp_log_change` and NO `missing` `[table] usp_log_change` stub
+- AND `dbo.usp_log_change` emits `{ writes_to dbo.audit_log (parsed) }` and ZERO `calls` edge
+
+#### Scenario: function invoking a function yields a declared calls edge (target.kind = function)
+
+- GIVEN the torture scalar function `dbo.fn_net_amount` whose body returns `dbo.fn_round_money(@x)`, and the scalar function `dbo.fn_round_money`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN `dbo.fn_net_amount` emits EXACTLY one `calls dbo.fn_round_money` edge with `confidence: 'declared'`
+- AND NO `reads_from`/`writes_to` edge and NO stub is created for `dbo.fn_round_money`
+
+#### Scenario: routine touching only tables emits zero calls edges (negative)
+
+- GIVEN an mssql procedure whose dependencies are only table reads and writes (e.g. an existing torture proc)
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN it emits its `reads_from`/`writes_to` edges as before and ZERO `calls` edge
+
+### Requirement: mssql torture fixture exercises routine-calls-routine
+
+The committed mssql torture `.sql` (`test/fixtures/mssql/`) SHALL add the routine-calls-routine
+objects above — `dbo.usp_refresh_totals` (EXEC `dbo.usp_log_change`), `dbo.usp_log_change`,
+`dbo.fn_net_amount` (calls `dbo.fn_round_money`), `dbo.fn_round_money`, and the supporting tables
+`dbo.order_totals`/`dbo.audit_log` — using NEUTRAL names that leak no validation-database codename.
+The golden-pinned `RawCatalog` and end-to-end impact/path goldens MUST be re-blessed DELIBERATELY to
+include the new `calls` edges, with L-009 exact-set assertions (`src+dst+kind+confidence`, positives
+AND the zero-stub negative). Every added edge assertion MUST pin BOTH endpoints; existence-only
+assertions are insufficient.
+
+#### Scenario: fixture adds the routine-calls-routine objects and re-blessed goldens pin the calls edges
+
+- GIVEN the materialized mssql torture database with the new routine objects
+- WHEN the adapter extracts it and the pipeline runs extract → normalize → upsert → query
+- THEN the re-blessed `RawCatalog` and impact/path goldens contain the `calls` edges `dbo.usp_refresh_totals → dbo.usp_log_change` and `dbo.fn_net_amount → dbo.fn_round_money`, each `confidence: 'declared'`, with exact endpoints
+- AND the graph contains ZERO phantom `[table]` stub for any routine, byte-identical on re-run (ADR-008)
+
+---
+
+## Requirements Added by dog2-routine-parameters (2026-07-07)
+
+> These requirements source routine parameters from the SQL Server CATALOG via a new
+> `SQL_MSSQL_PARAMETERS` query over `sys.parameters` joined to `sys.types` (FOR JSON PATH-compatible,
+> per the existing `SQL_MSSQL_*` convention, and carried through the sqlcmd/manual-dump strategy paths),
+> attaching them to each procedure/function `RawObject.parameters` with BARE catalog type names (matching
+> the adapter's existing COLUMN `dataType`, e.g. `int`/`nvarchar`/`decimal`), `direction` from
+> `is_output`, `ordinal` from `parameter_id`, and `hasDefault` from `has_default_value`; the
+> `parameter_id = 0` FUNCTION RETURN row is EXCLUDED. Epic: deep-object-graph (DOG-2); ADR-004, ADR-008.
+
+### Requirement: Extract routine parameters from sys.parameters
+
+The mssql adapter SHALL source routine parameters via a new `SQL_MSSQL_PARAMETERS` query over
+`sys.parameters` joined to `sys.types` (FOR JSON PATH-compatible, per the existing `SQL_MSSQL_*`
+convention), attaching them to each procedure/function `RawObject.parameters`. For each parameter it
+MUST capture `name` (verbatim, e.g. `@order_id`), `dataType` (the `sys.types` type NAME — BARE,
+consistent with the adapter's existing COLUMN `dataType` which stores the bare catalog type name, e.g.
+`int` / `nvarchar` / `decimal`, NOT `decimal(12,2)`), `direction` mapped from `is_output` (`0`→`in`,
+`1`→`out`; SQL Server exposes no explicit INOUT in `sys.parameters`), `ordinal` from `parameter_id`,
+and `hasDefault` from `has_default_value`. The FUNCTION RETURN row (`parameter_id = 0`, empty name)
+MUST be EXCLUDED — it is not a parameter (the scalar return is already captured by `returns`). A
+routine with no parameters MUST carry an empty parameters array.
+
+#### Scenario: procedure parameters pinned exactly (usp_log_change)
+
+- GIVEN the torture procedure `dbo.usp_log_change (@order_id int, @new_status nvarchar(20))`
+- WHEN `extract(scope)` runs
+- THEN its `parameters` are EXACTLY `[{name:"@order_id", dataType:"int", direction:"in", ordinal:1}, {name:"@new_status", dataType:"nvarchar", direction:"in", ordinal:2}]`
+- AND no parameter carries `hasDefault: true` (none is defaulted)
+
+#### Scenario: single-parameter procedure and scalar functions pinned exactly
+
+- GIVEN `dbo.usp_refresh_totals (@order_id int)`, `dbo.fn_net_amount (@gross decimal(12,2))` and `dbo.fn_round_money (@amount decimal(12,2))`
+- WHEN `extract(scope)` runs
+- THEN `usp_refresh_totals.parameters` is EXACTLY `[{name:"@order_id", dataType:"int", direction:"in", ordinal:1}]`
+- AND `fn_net_amount.parameters` is EXACTLY `[{name:"@gross", dataType:"decimal", direction:"in", ordinal:1}]` and `fn_round_money.parameters` is EXACTLY `[{name:"@amount", dataType:"decimal", direction:"in", ordinal:1}]`, each with the `parameter_id = 0` return row EXCLUDED
+
+#### Scenario: mssql goldens gain parameters deliberately, scanner stays green
+
+- GIVEN the mssql raw-catalog and e2e goldens
+- WHEN parameters are added
+- THEN the mssql goldens are re-blessed DELIBERATELY to carry the pinned `parameters` arrays; every other byte is unchanged
+- AND the new `SQL_MSSQL_PARAMETERS` passes the engines write-verb scanner (catalog `SELECT` only)
+
+---
+
+## Requirements Added by dog3-column-lineage (2026-07-10)
+
+> DOG-3 sources the per-view source-column SET from `sys.dm_sql_referenced_entities('<view>','OBJECT')` via a
+> NATIVE-driver per-view loop (each call individually try/caught), plumbed through `map.ts` onto
+> `RawDependency.columns`, and stamped by the normalizer as `attrs.dstColumns` on the EXISTING view→table
+> `depends_on` edge (Model A — ZERO new edges). `SQL_MSSQL_DEPENDENCIES` stays UNCHANGED (object-grain deps).
+> **Confidence flip (reconciler d — corrects the original D5 narrative):** the mssql view `depends_on` deps are
+> emitted by the body tokenizer at `confidence: 'parsed'` (exactly like pg — they are NOT "already declared");
+> a COVERED (view, table) pair FLIPS `parsed`→`declared` as it gains `attrs.dstColumns`. Uncovered / unbindable
+> / whole-object `SELECT *` deps stay `parsed` object grain. **Live finding (2026-07-07):**
+> `sys.sql_expression_dependencies.referenced_minor_id` = 0 (whole-object) for non-schemabound views — INERT —
+> so the per-object TVF is the TRUTH source. **Column lineage is NATIVE-driver-only:** the sqlcmd/manual-dump
+> strategies carry NO view-columns family (the single-SELECT-per-family contract, DOG-2), so mssql-via-sqlcmd/dump
+> yields OBJECT GRAIN — the project's FIRST strategy-dependent coverage difference. SOURCE-COLUMN SET only —
+> never an output mapping (ADR-007). Fixture anchor: `dbo.v_order_summary` (`test/fixtures/mssql/torture.sql`).
+> Stories: US-027, US-007.
+
+### Requirement: Declared consumed-column set stamped on view depends_on via dm_sql_referenced_entities (native path)
+
+On the NATIVE driver path, the mssql adapter SHALL, for each view, call
+`sys.dm_sql_referenced_entities('<view>','OBJECT')` in a per-view loop and, for each returned row that resolves a
+referenced source COLUMN, thread that column onto `RawDependency.columns` (grouped per referenced object via
+`map.ts`) so the normalizer stamps the sorted-unique set as `attrs.dstColumns` on the view→source-table
+`depends_on` edge. Because that view `depends_on` dependency is first emitted at `confidence: 'parsed'` (body
+tokenizer), a COVERED pair MUST FLIP `confidence: 'parsed'` → `'declared'` as it gains `attrs.dstColumns` (a
+catalog-confirmed pair IS declared — mirroring pg; the edge is NEVER treated as "already declared"). The
+`depends_on` edge is UNCHANGED in identity; it flips confidence and gains the set — NO separate per-column edge
+is emitted. `SQL_MSSQL_DEPENDENCIES` is UNCHANGED; it keeps sourcing the object-grain view→table deps. EACH
+`dm_sql_referenced_entities` call MUST be individually error-handled: an UNBINDABLE view (the TVF raises — a
+source table/column was renamed or dropped) MUST be SKIPPED and its `depends_on` edge MUST stay `parsed` object
+grain, and extraction MUST complete for the rest of the catalog (degrade-by-absence, never abort). A whole-object
+reference that resolves NO source column (e.g. `SELECT *`) MUST NOT contribute a column — that dependency stays
+`parsed` object grain (`attrs.dstColumns` unset). The emission is a SOURCE-COLUMN SET; the adapter MUST NOT
+assert any output↔source mapping. A NULL/unresolved referenced object MUST be skipped, never turned into a
+speculative column. Views MUST be iterated in a stable order so extraction is deterministic (ADR-008).
+
+#### Scenario: v_order_summary emits its EXACT declared consumed-column set
+
+- GIVEN the torture view `dbo.v_order_summary` selecting `o.order_id, o.customer_id, o.status, o.total_amount, COUNT(oi.product_id)` from `dbo.orders o` LEFT JOIN `dbo.order_items oi ON oi.order_id = o.order_id`, grouped by `o.order_id, o.customer_id, o.status, o.total_amount`
+- WHEN `extract(scope)` runs at `full` and the catalog is normalized
+- THEN the view→`dbo.orders` `depends_on` edge carries `attrs.dstColumns = [customer_id, order_id, status, total_amount]` and the view→`dbo.order_items` edge carries `attrs.dstColumns = [order_id, product_id]` (each sorted code-point ascending), both FLIPPED to `confidence: 'declared'`
+- AND the observable consumed set is EXACTLY `{ dbo.orders.order_id, dbo.orders.customer_id, dbo.orders.status, dbo.orders.total_amount, dbo.order_items.order_id, dbo.order_items.product_id }`
+- AND NO separate per-column `depends_on` edge and NO column-node target is emitted (Model A)
+
+#### Scenario: Columns the view does NOT read are absent from dstColumns (negative, exact-set)
+
+- GIVEN the same `dbo.v_order_summary`
+- WHEN its `depends_on` edges are enumerated
+- THEN `dbo.order_items.region_id`, `dbo.order_items.qty`, `dbo.orders.quantity` and `dbo.orders.unit_price` do NOT appear in any `attrs.dstColumns` (none is named in the view)
+- AND there is NO `depends_on` edge to `dbo.products` or `dbo.regions` (unreferenced tables) carrying columns
+
+#### Scenario: A computed source column is consumed as itself, not expanded (honesty)
+
+- GIVEN `dbo.orders.total_amount` is a COMPUTED column `(quantity * unit_price)` that `dbo.v_order_summary` reads by name
+- WHEN the view→`dbo.orders` `attrs.dstColumns` is pinned
+- THEN it contains `total_amount` (the column the view names)
+- AND it does NOT contain `quantity` or `unit_price` — expanding a computed column to its base columns is a DEEPER grain the catalog does not attribute to the view; it MUST NOT be fabricated
+
+#### Scenario: An unbindable view is skipped and extraction completes (per-call resilience)
+
+- GIVEN a view whose `sys.dm_sql_referenced_entities('<view>','OBJECT')` call RAISES (an unbindable view — a source table or column was renamed or dropped) alongside the bindable `dbo.v_order_summary`
+- WHEN `extract(scope)` runs on the native driver path
+- THEN the unbindable view's `depends_on` edges STAY `parsed` object grain (`attrs.dstColumns` unset, no flip), NO error propagates, and extraction COMPLETES
+- AND `dbo.v_order_summary` still emits its EXACT declared consumed-column set — one unbindable view MUST NOT abort the whole family (degrade-by-absence; a set-based `CROSS APPLY` is rejected precisely because it would abort)
+
+#### Scenario: Extraction via sqlcmd or manual dump yields object grain, byte-identical (strategy coverage difference)
+
+- GIVEN the mssql catalog is extracted through the sqlcmd or manual-dump strategy (NOT the native driver)
+- WHEN the catalog is normalized
+- THEN the `dbo.v_order_summary` view→table `depends_on` edges carry NO `attrs.dstColumns` and stay `confidence: 'parsed'` (object grain) — the single-SELECT-per-family dump contract carries NO view-columns family
+- AND those edges are BYTE-IDENTICAL to pre-DOG-3 (no `dstColumns`, no marker) and extraction raises NO error — this is the project's FIRST strategy-dependent coverage difference, stated plainly
+
+### Requirement: mssql view-column goldens re-blessed deliberately with exact sets
+
+The NATIVE-path golden-pinned `RawCatalog` and the end-to-end impact/path goldens MUST be re-blessed DELIBERATELY
+so the `dbo.v_order_summary` view→table `depends_on` edges carry `attrs.dstColumns` AND flip to
+`confidence: 'declared'`, with L-009 exact-set assertions: the edge endpoints, the sorted `attrs.dstColumns`
+array, AND `confidence: 'declared'` pinned; the positive set AND the non-consumed negatives asserted; every
+unrelated byte unchanged. The mssql DUMP golden (sqlcmd/manual-dump path) MUST STAY `parsed` object grain — its
+view→table `depends_on` edges carry NO `attrs.dstColumns` and remain BYTE-IDENTICAL to pre-DOG-3 (the dump
+family is NOT extended). The new `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` query (`sys.dm_sql_referenced_entities`)
+MUST pass the engines write-verb scanner (catalog `SELECT` only), as MUST the unchanged `SQL_MSSQL_DEPENDENCIES`.
+
+#### Scenario: re-blessed goldens pin dstColumns, the flipped declared confidence, and stay scanner-green
+
+- GIVEN the materialized mssql torture database extracted via the NATIVE driver (the `dm_sql_referenced_entities` per-view loop)
+- WHEN the pipeline runs extract → `normalizeCatalog` → `SqliteGraphStore` upsert → query
+- THEN the re-blessed native-path goldens carry the `dbo.v_order_summary` view→table `depends_on` edges with `attrs.dstColumns = [customer_id, order_id, status, total_amount]` (to `dbo.orders`) and `[order_id, product_id]` (to `dbo.order_items`), each FLIPPED to `confidence: 'declared'`, byte-identical on re-run (ADR-008)
+- AND the mssql DUMP golden keeps those edges at `parsed` OBJECT grain (no `attrs.dstColumns`), byte-identical to pre-DOG-3
+- AND both `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` and `SQL_MSSQL_DEPENDENCIES` pass the engines write-verb scanner

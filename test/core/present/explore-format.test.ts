@@ -12,6 +12,9 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   formatExplore,
   type ExploreView,
@@ -497,5 +500,203 @@ describe('formatExplore — focus payload sections (explore-payloads B.4)', () =
     const out = formatExplore(colFocus, 'normal');
     expect(out).toContain('COLUMNS');
     expect(out).toContain('  salary  REAL  [NN]  DEFAULT 0.0');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-1 C.3 — the shared formatter renders the `calls` neighbor section AUTOMATICALLY
+// (no allowlist change): `formatExplore` iterates `Object.keys(neighbors).sort()`, so a
+// `calls` group renders with explicit direction the moment the edge exists. Proof over a
+// SYNTHETIC PresentView (routine chain), the DEFAULT-CI render tier (design §Present):
+//   dbo.usp_refresh_totals --calls--> dbo.usp_log_change (the caller shows OUTBOUND,
+//   the callee shows INBOUND). A routine with no invocations renders NO calls section
+//   (never fabricated). Spec mcp-server "explore and related surface calls neighbors" (S33).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const goldenDir = resolve(dirname(fileURLToPath(import.meta.url)), 'golden');
+const CAPTURE = process.env['GOLDEN_CAPTURE'] === '1';
+
+function routineNode(id: string, qname: string): GraphNode {
+  return {
+    id,
+    kind: 'procedure',
+    schema: 'dbo',
+    name: qname.split('.').pop() ?? qname,
+    qname,
+    level: 'metadata',
+    missing: false,
+    excluded: false,
+    bodyHash: null,
+    payload: {},
+  };
+}
+
+function tableNode(id: string, qname: string): GraphNode {
+  return { ...routineNode(id, qname), kind: 'table' };
+}
+
+const REFRESH_PROC = routineNode('n-refresh', 'dbo.usp_refresh_totals');
+const LOG_PROC = routineNode('n-log', 'dbo.usp_log_change');
+const ORDER_TOTALS = tableNode('n-totals', 'dbo.order_totals');
+const AUDIT_LOG = tableNode('n-audit', 'dbo.audit_log');
+
+const CALLS_EDGE: GraphEdge = {
+  id: 'e-calls', kind: 'calls', src: 'n-refresh', dst: 'n-log',
+  confidence: 'declared', score: null, attrs: {},
+};
+const REFRESH_WRITES: GraphEdge = {
+  id: 'e-w1', kind: 'writes_to', src: 'n-refresh', dst: 'n-totals',
+  confidence: 'parsed', score: null, attrs: {},
+};
+const LOG_WRITES: GraphEdge = {
+  id: 'e-w2', kind: 'writes_to', src: 'n-log', dst: 'n-audit',
+  confidence: 'parsed', score: null, attrs: {},
+};
+
+// Focus = the CALLER: outbound `calls` to the callee.
+const CALLER_VIEW: ExploreView = {
+  node: REFRESH_PROC,
+  neighbors: {
+    calls: { out: [{ node: LOG_PROC, edge: CALLS_EDGE }], in: [] },
+    writes_to: { out: [{ node: ORDER_TOTALS, edge: REFRESH_WRITES }], in: [] },
+  },
+};
+
+// Focus = the CALLEE: inbound `calls` from the caller.
+const CALLEE_VIEW: ExploreView = {
+  node: LOG_PROC,
+  neighbors: {
+    calls: { out: [], in: [{ node: REFRESH_PROC, edge: CALLS_EDGE }] },
+    writes_to: { out: [{ node: AUDIT_LOG, edge: LOG_WRITES }], in: [] },
+  },
+};
+
+// Focus = a routine with NO invocations: no `calls` key at all.
+const NO_CALLS_VIEW: ExploreView = {
+  node: LOG_PROC,
+  neighbors: {
+    writes_to: { out: [{ node: AUDIT_LOG, edge: LOG_WRITES }], in: [] },
+  },
+};
+
+describe('formatExplore — calls neighbor section (DOG-1 C.3, S33)', () => {
+  it('caller shows the OUTBOUND calls neighbor to the callee routine', () => {
+    const out = formatExplore(CALLER_VIEW, 'normal');
+    expect(out).toContain('dbo.usp_refresh_totals');
+    // grouped `calls` section with an outbound arrow to the callee procedure
+    expect(out).toContain('  calls');
+    expect(out).toContain('    out:');
+    expect(out).toContain('      → dbo.usp_log_change  [procedure]');
+  });
+
+  it('callee shows the INBOUND calls neighbor from the caller routine', () => {
+    const out = formatExplore(CALLEE_VIEW, 'normal');
+    expect(out).toContain('dbo.usp_log_change');
+    expect(out).toContain('  calls');
+    expect(out).toContain('    in:');
+    expect(out).toContain('      ← dbo.usp_refresh_totals  [procedure]');
+  });
+
+  it('NEGATIVE: a routine with no invocations renders NO calls section (never fabricated)', () => {
+    const out = formatExplore(NO_CALLS_VIEW, 'normal');
+    expect(out).not.toContain('calls');
+    // but its real neighbor (writes_to) still renders — proving the view is non-trivial
+    expect(out).toContain('writes_to');
+    expect(out).toContain('→ dbo.audit_log  [table]');
+  });
+
+  it('brief shows the calls kind with an out count for the caller', () => {
+    const out = formatExplore(CALLER_VIEW, 'brief');
+    expect(out).toContain('calls');
+    expect(out).toContain('1 out');
+  });
+
+  it('byte-identical on re-run (ADR-008)', () => {
+    expect(formatExplore(CALLER_VIEW, 'normal')).toBe(formatExplore(CALLER_VIEW, 'normal'));
+  });
+
+  // DELIBERATE synthetic present golden (design C.3): pins the caller's normal explore
+  // output with the `calls` section. NEW file — SQLite-derived goldens are untouched.
+  it('caller normal output matches the deliberate synthetic golden explore-calls.txt', () => {
+    const actual = formatExplore(CALLER_VIEW, 'normal');
+    const goldenPath = join(goldenDir, 'explore-calls.txt');
+    if (CAPTURE) {
+      writeFileSync(goldenPath, actual, 'utf-8');
+      return;
+    }
+    expect(actual).toBe(readFileSync(goldenPath, 'utf-8'));
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-4 (task 5.1) — shared dynamic-SQL caveat in explore at normal + full.
+// The exact caveat line (r1) renders for a routine focus carrying hasDynamicSql,
+// at normal AND full, NEVER at brief; a plain routine never carries it; static
+// neighbors/edges stay untouched (marker is a node caveat, never an edge). L-009 exact.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CAVEAT_LINE = '[DYNAMIC SQL] impact analysis may be incomplete';
+
+const DYN_ROUTINE: GraphNode = {
+  id: 'n-dyn-routine',
+  kind: 'procedure',
+  schema: 'acme',
+  name: 'run_report',
+  qname: 'acme.run_report',
+  level: 'full',
+  missing: false,
+  excluded: false,
+  bodyHash: 'dynhash',
+  payload: { hasDynamicSql: true },
+};
+
+const PLAIN_ROUTINE: GraphNode = {
+  ...DYN_ROUTINE,
+  id: 'n-plain-routine',
+  name: 'touch_totals',
+  qname: 'acme.touch_totals',
+  payload: { hasDynamicSql: false },
+};
+
+const ROUTINE_NEIGHBORS: NeighborGroups = {
+  writes_to: {
+    out: [{ node: tableNode('n-totals-tbl', 'acme.order_totals'), edge: plainEdge('writes_to', 'n-dyn-routine', 'n-totals-tbl') }],
+    in: [],
+  },
+};
+
+describe('formatExplore — dynamic-SQL caveat (DOG-4 task 5.1)', () => {
+  it('POSITIVE: renders the exact caveat line at normal', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'normal');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('POSITIVE: renders the exact caveat line at full', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'full');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('NEGATIVE: brief NEVER renders the caveat', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'brief');
+    expect(out).not.toContain('[DYNAMIC SQL]');
+  });
+
+  it('NEGATIVE: a plain routine (hasDynamicSql:false) never carries the caveat', () => {
+    for (const detail of ['brief', 'normal', 'full'] as ExploreDetail[]) {
+      const out = formatExplore({ node: PLAIN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, detail);
+      expect(out).not.toContain('[DYNAMIC SQL]');
+    }
+  });
+
+  it('static neighbors/edges still render unchanged alongside the caveat', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'normal');
+    expect(out).toContain('writes_to');
+    expect(out).toContain('→ acme.order_totals  [table]');
+    expect(out).toContain(CAVEAT_LINE);
+  });
+
+  it('the OLD full-only emoji warning line is deleted (no duplicate warning)', () => {
+    const out = formatExplore({ node: DYN_ROUTINE, neighbors: ROUTINE_NEIGHBORS }, 'full');
+    expect(out).not.toContain('⚠  hasDynamicSql');
   });
 });

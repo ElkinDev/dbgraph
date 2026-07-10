@@ -89,6 +89,12 @@ export function hasMysqlDynamicSql(body: string): boolean {
 interface DepRef {
   readonly schema: string;
   readonly name: string;
+  /**
+   * DOG-1 (D3/D4): a ROUTINE candidate carries its NodeKind so the presence-gated edge
+   * becomes a `calls` edge in the normalizer instead of a read/write. Tables/views leave
+   * this unset and keep the existing read/write classification byte-for-byte.
+   */
+  readonly kind?: 'procedure' | 'function';
 }
 
 export interface MysqlTokenizerResult {
@@ -150,6 +156,9 @@ export function tokenizeMysqlBody(body: string, deps: readonly DepRef[]): MysqlT
       target: {
         schema: dep.schema,
         name: dep.name,
+        // DOG-1: carry the routine kind through to target.kind (load-bearing in normalize).
+        // Non-routine candidates leave kind unset (exactOptionalPropertyTypes-safe spread).
+        ...(dep.kind !== undefined ? { kind: dep.kind } : {}),
       },
       access,
       confidence: 'parsed',

@@ -12,8 +12,8 @@
  *
  * --detail levels:
  *   brief  — qname + kind + 1-line neighbor-kind counts
- *   normal — brief + grouped neighbors (edge kind / direction / qname-sorted)
- *   full   — normal + bodyHash + level + dynamic-SQL warning when payload.hasDynamicSql=true
+ *   normal — brief + grouped neighbors + dynamic-SQL caveat when payload.hasDynamicSql=true (DOG-4)
+ *   full   — normal + bodyHash + level
  */
 
 import type { GraphNode } from '../model/node.js';
@@ -25,6 +25,8 @@ import {
   renderIndexes,
   renderTriggers,
   renderFocusPayload,
+  renderConsumedColumns,
+  renderDynamicSqlCaveat,
 } from './payload.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,10 +113,19 @@ export function formatExplore(view: ExploreView, detail: ExploreDetail): string 
       if (detail === 'full') {
         pushSection(lines, renderIndexes(view.neighbors['has_index']?.out ?? []));
         pushSection(lines, renderTriggers(view.neighbors['fires_on']?.in ?? []));
+        // DOG-3 (D7): a view's consumed source columns, FULL detail ONLY (budget honesty).
+        // A table's depends_on group is naturally empty/undefined -> renderConsumedColumns
+        // returns [] -> pushSection emits nothing (no kind-check needed, same pattern as
+        // every other section renderer here).
+        pushSection(lines, renderConsumedColumns(view.neighbors['depends_on']?.out ?? []));
       }
     } else {
       pushSection(lines, renderFocusPayload(view.node));
     }
+    // ── Dynamic-SQL caveat (normal + full) — DOG-4 D3/r1 ─────────────────────
+    // Shared helper: byte-identical to the caveat formatObject emits. Renders ONLY
+    // when payload.hasDynamicSql === true (degrade-by-absence). Never at brief.
+    pushSection(lines, renderDynamicSqlCaveat(view.node));
   }
 
   // ── Neighbor summary (retained AFTER the payload sections) ─────────────────
@@ -164,17 +175,13 @@ export function formatExplore(view: ExploreView, detail: ExploreDetail): string 
   }
 
   // ── Full-only extras ──────────────────────────────────────────────────────
+  // (DOG-4 D6: the former full-only `⚠ hasDynamicSql …` line is DELETED — the
+  //  dynamic-SQL caveat now renders at normal+full via the shared helper above.)
   if (detail === 'full') {
     lines.push('');
     lines.push('  Details');
     lines.push(`  bodyHash  ${view.node.bodyHash !== null ? view.node.bodyHash : '(none)'}`);
     lines.push(`  level     ${view.node.level}`);
-
-    // Dynamic-SQL warning: present when payload carries hasDynamicSql=true
-    const payload = view.node.payload as Record<string, unknown>;
-    if (payload['hasDynamicSql'] === true) {
-      lines.push('  ⚠  hasDynamicSql — impact analysis may be incomplete');
-    }
   }
 
   lines.push('');

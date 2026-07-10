@@ -214,3 +214,67 @@ describe('formatRelated — goldens', () => {
     });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-1 C.3 — formatRelated renders the `calls` neighbor annotated with direction
+// (no allowlist change). Proof over a SYNTHETIC PresentView routine chain: the caller's
+// OUTBOUND calls to the callee, and a distinct routine's INBOUND calls. A routine with no
+// invocations returns an empty group (never fabricated). Spec mcp-server S34.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const REFRESH_PROC: GraphNode = {
+  id: 'n-refresh', kind: 'procedure', schema: 'dbo', name: 'usp_refresh_totals',
+  qname: 'dbo.usp_refresh_totals', level: 'metadata', missing: false, excluded: false,
+  bodyHash: null, payload: {},
+};
+const LOG_PROC: GraphNode = {
+  id: 'n-log', kind: 'procedure', schema: 'dbo', name: 'usp_log_change',
+  qname: 'dbo.usp_log_change', level: 'metadata', missing: false, excluded: false,
+  bodyHash: null, payload: {},
+};
+
+const CALLER_RELATED: ExploreView = {
+  node: REFRESH_PROC,
+  neighbors: {
+    calls: {
+      out: [{
+        node: LOG_PROC,
+        edge: { id: 'e-calls', kind: 'calls', src: 'n-refresh', dst: 'n-log', confidence: 'declared', score: null, attrs: {} },
+      }],
+      in: [],
+    },
+  },
+};
+
+const CALLEE_RELATED: ExploreView = {
+  node: LOG_PROC,
+  neighbors: {
+    calls: {
+      out: [],
+      in: [{
+        node: REFRESH_PROC,
+        edge: { id: 'e-calls', kind: 'calls', src: 'n-refresh', dst: 'n-log', confidence: 'declared', score: null, attrs: {} },
+      }],
+    },
+  },
+};
+
+describe('formatRelated — calls direction (DOG-1 C.3, S34)', () => {
+  it('renders the OUTBOUND calls neighbor with a → arrow for the caller', () => {
+    const out = formatRelated(CALLER_RELATED, 'normal');
+    expect(out).toContain('calls');
+    expect(out).toContain('→ dbo.usp_log_change  [procedure]');
+  });
+
+  it('renders the INBOUND calls neighbor with a ← arrow for the callee', () => {
+    const out = formatRelated(CALLEE_RELATED, 'normal');
+    expect(out).toContain('calls');
+    expect(out).toContain('← dbo.usp_refresh_totals  [procedure]');
+  });
+
+  it('NEGATIVE: a routine with no neighbors renders no calls group', () => {
+    const out = formatRelated({ node: LOG_PROC, neighbors: {} }, 'normal');
+    expect(out).not.toContain('calls');
+    expect(out).toContain('no neighbors');
+  });
+});

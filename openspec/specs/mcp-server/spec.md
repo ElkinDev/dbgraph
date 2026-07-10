@@ -218,6 +218,30 @@ aggregate table-to-table edge; display collapses to table grain).
 - WHEN `dbgraph_related({ qname, kinds: ["references"] })` runs
 - THEN only `references` edges are returned, still annotated with direction
 
+### Requirement: explore and related surface calls neighbors automatically
+
+`dbgraph_explore` and `dbgraph_related` SHALL render `calls` edges in the grouped neighbor sections
+with explicit direction — WITHOUT any edge-kind allowlist change — because `getNeighbors` returns all
+kinds and the shared formatters iterate the sorted neighbor kinds. A routine that invokes another MUST
+show an OUTBOUND `calls` neighbor; the invoked routine MUST show the INBOUND `calls` neighbor. Any
+golden that gains a `calls` section MUST be re-blessed DELIBERATELY with a matching `docs/format-spec.md`
+note. Because CLI `explore` and the MCP tool share the SAME formatter, their `calls` rendering for a
+given graph/target/detail MUST be byte-identical.
+
+#### Scenario: explore of a calling routine shows the outbound calls neighbor
+
+- GIVEN the mssql torture graph and `dbgraph_explore({ target: "dbo.usp_refresh_totals" })`
+- WHEN the tool runs
+- THEN the grouped neighbors include an OUTBOUND `calls` entry to `dbo.usp_log_change`
+- AND `dbgraph_explore({ target: "dbo.usp_log_change" })` shows the corresponding INBOUND `calls` entry from `dbo.usp_refresh_totals`
+
+#### Scenario: related filters to the calls kind
+
+- GIVEN `dbgraph_related({ qname: "dbo.usp_refresh_totals", kinds: ["calls"] })`
+- WHEN the tool runs
+- THEN only the `calls` neighbor(s) are returned, annotated with direction (outbound to `dbo.usp_log_change`)
+- AND a routine with no invocations returns an empty `calls` group, never a fabricated entry
+
 ### Requirement: dbgraph_impact returns the read/write blast radius as a visible chain
 
 `dbgraph_impact` SHALL accept `{ qname: string, depth?: number, detail? }` (US-014), wrap `getImpact`, and
@@ -265,11 +289,14 @@ that extracts qualified identifiers from the DDL via the conservative regex toke
 `tokenizer.ts` pattern), matches them against the graph via `search`/`getNodeByQName`, and AGGREGATES
 `getImpact` across all statements (deduplicated) into sections: triggers firing on the affected objects,
 who writes/reads them, constraints/indexes involved, and what-to-test derived from the edges. Because
-impact traversal follows inbound `writes_to`/`reads_from`/`depends_on`/`references` edges, the
-aggregation MUST surface view and trigger dependents on EVERY engine that emits those edges — including
-SQLite. Every parse-derived item MUST be tagged `confidence: 'parsed'`. Identifiers that match no graph
-node MUST be reported as unmatched, never guessed. `node-sql-parser` is out of scope.
-(Previously: on SQLite the aggregation was view/trigger-blind — the adapter emitted no `depends_on`/`writes_to` edges for views/triggers, so a `departments` column-drop surfaced only the FK-linked `employees`/`assignments` and MISSED the dependent views and the INSTEAD OF trigger.)
+impact traversal follows inbound `writes_to`/`reads_from`/`depends_on`/`references`/`calls` edges, the
+aggregation MUST surface view, trigger AND routine-caller dependents on EVERY engine that emits those
+edges. A `calls` edge is traversed as READ-impact (a caller depends on its callee like a read, not a
+write), so a change to a called routine MUST surface its callers in the read/what-to-test sections.
+Every parse-derived item MUST be tagged `confidence: 'parsed'`. Identifiers that match no graph node
+MUST be reported as unmatched, never guessed. `node-sql-parser` is out of scope.
+(Previously: impact traversal followed inbound `writes_to`/`reads_from`/`depends_on`/`references` only;
+a change to a called routine did NOT surface its callers because `calls` edges did not exist.)
 
 #### Scenario: ALTER + DROP INDEX DDL returns the aggregated, deduped precheck (golden)
 
@@ -292,6 +319,13 @@ node MUST be reported as unmatched, never guessed. `node-sql-parser` is out of s
 - THEN `whatToTest` is EXACTLY `{main.active_departments, main.assignments, main.employee_summary, main.employees, main.trg_active_dept_instead_insert}`
 - AND `main.active_departments` and `main.employee_summary` appear in the READERS section (inbound `depends_on`), and `main.employees`/`main.assignments` remain there (inbound FK `references`)
 - AND `main.trg_active_dept_instead_insert` appears in the TRIGGERS section (inbound `writes_to`), with every item tagged `confidence: 'parsed'`
+
+#### Scenario: Altering a called routine surfaces its callers through the calls chain
+
+- GIVEN the mssql torture graph containing `calls dbo.usp_refresh_totals → dbo.usp_log_change` and a DDL altering `dbo.usp_log_change`
+- WHEN `dbgraph_precheck({ ddl })` runs over that graph
+- THEN `whatToTest` is EXACTLY `{dbo.usp_refresh_totals}` (the caller reached through the inbound `calls` edge)
+- AND `dbo.usp_refresh_totals` appears in the READ / what-to-test section (a `calls` edge is READ-impact, not write)
 
 ### Requirement: dbgraph_status reports index trust and live drift
 
@@ -586,3 +620,212 @@ require a corresponding `docs/format-spec.md` edit plus a token-delta justificat
 - WHEN each of the 8 tools is called at each `detail` level
 - THEN every response matches its committed tool × detail golden file
 - AND a second identical call returns byte-identical output (ADR-008)
+
+### Requirement: Routine focus renders a PARAMETERS section via the shared payload helper
+
+The shared payload-render helper (`src/core/present/payload.ts`, backing BOTH `formatExplore` and
+`formatObject` — see "One shared payload-render helper backs explore and object") SHALL render a
+`PARAMETERS` section for a FOCUS node of kind `procedure` or `function`, filling the routine branch
+that today returns no payload lines. The section MUST render each parameter — in ascending `ordinal`
+order — with its `name`, raw `dataType` and `direction`, and MUST mark `hasDefault` where present. It
+MUST be produced by the ONE shared helper (no per-surface branch), so CLI `explore`/`object` and the
+MCP `dbgraph_explore`/`dbgraph_object` tools render BYTE-IDENTICAL bytes for the same node. Rendering
+MUST be detail-GATED as the routine analog of the COLUMNS section: rendered at `normal` and `full`, NOT
+at `brief`. A routine whose `parameters` is UNSET (e.g. SQLite) MUST render NO PARAMETERS section.
+Every byte of new output is a DELIBERATE golden bless paired with a `docs/format-spec.md` §6
+token-delta note.
+
+#### Scenario: mssql routine focus renders the PARAMETERS section (exact lines)
+
+- GIVEN a routine focus node for `dbo.usp_log_change` with parameters `[{@order_id, int, in, 1}, {@new_status, nvarchar, in, 2}]` at detail `normal`
+- WHEN the shared helper renders it inside BOTH `explore` and `object`
+- THEN both emit a `PARAMETERS` header followed, in ascending `ordinal`, by the line `  @order_id  int` then `  @new_status  nvarchar` (2-space indent, double-space gaps) — an `in` parameter carries NO direction marker (the DEFAULT, exactly as a nullable column shows no `[NN]`); exact header/line bytes are golden-locked at apply + noted in `docs/format-spec.md` §6
+- AND the two renderings are byte-identical (shared source, no per-surface branch — the SAME `renderParameters` backs CLI/MCP `explore` AND `object`)
+
+#### Scenario: direction and default markers are UPPERCASE; `in` is unmarked
+
+- GIVEN four routine parameters — one `direction:"out"`, one `direction:"inout"`, one `direction:"in"`, and one carrying `hasDefault:true`
+- WHEN the PARAMETERS section renders
+- THEN the `out` line appends `[OUT]`, the `inout` line appends `[INOUT]`, and the defaulted line appends `[DEFAULT]` — ALL UPPERCASE, double-space separated
+- AND the `in` line appends NO direction marker
+- AND the casing matches the established COLUMNS marker convention `[PK]`/`[FK→]`/`[NN]` (a lowercase `[in]`/`[out]`/`[default]` is a SPEC VIOLATION); `[DEFAULT]` is a PRESENCE marker only (the default VALUE is never rendered)
+
+#### Scenario: PARAMETERS is detail-gated to normal and full, absent at brief (COLUMNS analog)
+
+- GIVEN the SAME routine focus (with parameters) rendered at `brief`, at `normal`, and at `full`
+- WHEN each renders in BOTH `explore` and `object`
+- THEN `brief` emits NO PARAMETERS section, while `normal` and `full` BOTH emit it — the identical detail gating the COLUMNS section uses
+
+#### Scenario: parameter order follows ordinal, never re-sorted
+
+- GIVEN a routine whose parameters are supplied out of ordinal order
+- WHEN the PARAMETERS section renders
+- THEN the lines appear in ascending `ordinal` — not alphabetized, not input-order
+
+#### Scenario: routine without parameters and non-routine focus render no PARAMETERS section (negative)
+
+- GIVEN a routine focus whose `parameters` is UNSET, and a TABLE focus node
+- WHEN each is rendered
+- THEN neither emits a PARAMETERS section
+- AND the existing sqlite-substrate explore/object goldens (TABLE focus) show ZERO drift
+
+### Requirement: precheck and affected surface column-grain view precision (declared engines)
+
+On engines whose view `depends_on` edges carry `attrs.dstColumns` (declared — mssql/pg covered pairs),
+`dbgraph_precheck` (and its `dbgraph affected` CLI sibling) SHALL aggregate a column-drop/alter DDL into
+readers/what-to-test by FILTERING views on `attrs.dstColumns` membership via the SHARED
+`filterReadersByColumn` helper (graph-query): a view whose edge LISTS the dropped column MUST appear; a view
+over the same TABLE whose edge does NOT list it (or whose edge carries no `attrs.dstColumns`) is handled per
+the three-arm impact rule — excluded when the set is present-but-excludes, included when the set is absent
+(degrade-include). Every parse-derived item MUST stay tagged `confidence: 'parsed'` (the DDL identifiers are
+parsed even though the underlying view edges are declared). Non-matchable identifiers MUST be reported
+unmatched, never guessed. On degraded engines, view impact stays object grain (unchanged).
+
+#### Scenario: mssql column-drop precheck surfaces only the consuming view (exact set)
+
+- GIVEN the mssql torture graph and a DDL dropping `dbo.order_items.product_id`
+- WHEN `dbgraph_precheck({ ddl })` runs over that graph
+- THEN `whatToTest` includes `dbo.v_order_summary` in the READERS section (its edge lists `product_id` in `attrs.dstColumns`), tagged `confidence: 'parsed'`
+- AND a DDL dropping `dbo.order_items.region_id` does NOT surface `dbo.v_order_summary` (its edge does not list `region_id`)
+
+#### Scenario: affected mirrors the precision via the shared engine
+
+- GIVEN a `.sql` script dropping `dbo.order_items.product_id` over the mssql torture graph
+- WHEN `dbgraph affected script.sql --json` runs
+- THEN its `whatToTest` includes `dbo.v_order_summary` (inherited from the shared precheck engine) and exits with code 1
+- AND a script dropping only `dbo.order_items.region_id` does NOT list `dbo.v_order_summary` as a view consumer
+
+### Requirement: explore and object render a view's consumed source columns at full detail, honest
+
+The shared payload-render helper (`src/core/present/payload.ts`, backing BOTH `formatExplore` and
+`formatObject`) SHALL render, for a VIEW focus node whose `depends_on` edges carry `attrs.dstColumns`, the
+source columns the view CONSUMES — gated to `full` detail ONLY (NOT `brief`, NOT `normal`; budget honesty:
+the consumed-column list is a full-detail concern for wide views). CLI and MCP MUST render BYTE-IDENTICAL
+bytes for the same node (one shared helper, no per-surface branch). Each rendered line MUST follow the PINNED
+SHAPE `consumes: <source-table>.<column>` — a LOWERCASE inline `consumes:` key followed by a `table.column`
+reference. There is NO uppercase section HEADER for this feature: unlike the DOG-2 `PARAMETERS` section and
+the `COLUMNS`/`[PK]`/`[FK→]` uppercase-marker convention, the consumed-column lines are inline lowercase
+`consumes:` entries (an uppercase `CONSUMES` header or `[CONSUMES]` marker is a SPEC VIOLATION). Lines list
+the consumed source columns in the canonical code-point order (graph-normalization) and MUST name ONLY source
+columns CONSUMED — NEVER pair an output column to a source column (ADR-007). A view whose `depends_on` edges
+carry NO `attrs.dstColumns` (degraded engines / uncovered pg) MUST render NO consumes lines. The EXACT label
+TEXT and byte layout within the pinned `consumes:` shape are pinned at apply as a DELIBERATE golden bless with
+a matching `docs/format-spec.md` §6 token-delta note; the ceiling POLICY (measured numbers, spec-edit +
+token-delta on every golden change) is UNCHANGED.
+
+#### Scenario: view focus renders its consumed source columns at full only
+
+- GIVEN a VIEW focus node whose `depends_on` edges carry `attrs.dstColumns`, rendered at `brief`, `normal`, and `full`
+- WHEN the shared helper renders it inside BOTH `explore` and `object`
+- THEN `full` renders `consumes: <table>.<column>` lines (lowercase inline key, code-point order); `brief` and `normal` render NONE (object grain only)
+- AND the two surfaces are byte-identical (shared source); the exact label text and bytes within the pinned `consumes:` shape are golden-locked at apply plus a `docs/format-spec.md` §6 token-delta note
+- AND NO uppercase `CONSUMES` header and NO `[CONSUMES]` marker is emitted (the shape is the lowercase inline `consumes:` key)
+
+#### Scenario: render names source columns consumed, never an output mapping (honesty)
+
+- GIVEN a view whose SELECT renames or computes outputs
+- WHEN its consumes lines render at `full`
+- THEN the lines assert ONLY which source columns the view reads
+- AND NO line pairs an output column to a source column
+
+#### Scenario: degraded-engine view renders no consumes lines (negative)
+
+- GIVEN a mysql or sqlite view (edges carry no `attrs.dstColumns`) at `full`
+- WHEN `explore`/`object` render it
+- THEN NO `consumes:` line appears (object-grain dependencies only)
+- AND the existing sqlite explore/object goldens show ZERO drift from this feature
+
+### Requirement: Dynamic-SQL caveat surfaces at normal AND full detail in explore and object
+
+The dynamic-SQL blind-spot caveat SHALL render for a routine focus node whose payload carries
+`hasDynamicSql === true`, produced by the ONE shared payload-render helper backing BOTH `formatExplore`
+and `formatObject` (US-010/US-012/US-021). It MUST be GATED to `normal` AND `full` detail and MUST NOT
+render at `brief` (the counts-only contract is untouched). The caveat MUST be the EXACT marker
+`[DYNAMIC SQL]` — UPPERCASE, bracketed, one internal space, consistent with the DOG-2
+`[OUT]`/`[INOUT]`/`[DEFAULT]` family; any lowercase or reworded variant (`[dynamic sql]`,
+`dynamic-SQL`, `possibly incomplete`) is a SPEC VIOLATION. Because the ONE shared helper produces the
+bytes, the caveat LINE rendered by CLI `explore`/`object` and MCP `dbgraph_explore`/`dbgraph_object` MUST
+be byte-identical across those surfaces for the same node. The marker is a NODE-attribute caveat: it MUST
+NOT emit any edge and MUST NOT fabricate a target for the unknowable dynamic-string destinations.
+`confidence` stays `declared|parsed` — NO new tier. Exact byte placement is golden-locked at apply with a
+matching `docs/format-spec.md` §6 token-delta note.
+(Previously: explore surfaced the dynamic-SQL warning ONLY at `full`; `object` never surfaced it at any detail.)
+
+#### Scenario: dynamic-SQL routine shows the caveat at normal (explore and object byte-identical)
+
+- GIVEN a routine `acme.usp_run_report` whose payload carries `hasDynamicSql: true`, at detail `normal`
+- WHEN it renders in BOTH `dbgraph_explore` and `dbgraph_object`
+- THEN both emit the EXACT marker `[DYNAMIC SQL]` exactly once for that routine, and the caveat LINE is byte-identical across the two surfaces (shared helper, no per-surface branch)
+- AND the routine's existing static neighbors/edges still render unchanged (no edge dropped, none fabricated)
+
+#### Scenario: caveat renders at full too, never at brief
+
+- GIVEN the same `acme.usp_run_report` rendered at `brief`, `normal`, and `full`
+- WHEN each renders in explore and object
+- THEN `normal` and `full` BOTH emit `[DYNAMIC SQL]`; `brief` emits NO `[DYNAMIC SQL]` line
+
+#### Scenario: a routine WITHOUT dynamic SQL never carries the marker (negative)
+
+- GIVEN a routine `acme.usp_touch_totals` whose payload carries `hasDynamicSql: false` (or unset)
+- WHEN it renders in explore and object at `normal` and `full`
+- THEN NO `[DYNAMIC SQL]` marker appears in its output at ANY detail level
+
+#### Scenario: sqlite and mongodb are untouched (honest absence)
+
+- GIVEN a sqlite graph (no dynamic-SQL statement form) and a mongodb graph (no routines)
+- WHEN explore/object render any of their nodes at any detail
+- THEN NO `[DYNAMIC SQL]` marker is EVER emitted
+- AND the existing sqlite explore/object goldens are BYTE-IDENTICAL to before this change (zero drift)
+
+### Requirement: precheck and affected mark the exact dynamic-SQL degraded items per node
+
+`dbgraph_precheck` and its `dbgraph affected` CLI sibling (US-016/US-023) SHALL annotate EACH surfaced
+item whose subject routine's payload carries `hasDynamicSql === true` with the EXACT marker
+`[DYNAMIC SQL]` — a PER-NODE degradation marker, NEVER a node-agnostic blanket warning. The marker MUST
+attach ONLY to the specific degraded item(s); an item whose subject routine is not dynamic-SQL MUST NOT
+carry it. The marker MUST NOT fabricate an edge or a target. Every parse-derived item MUST stay tagged
+`confidence: 'parsed'` — the caveat is ORTHOGONAL to confidence (no new tier). The `--json` affected
+payload MUST mark the same degraded item(s); on mssql/pg/mysql the degraded-node set is re-blessed as an
+EXACT set (L-009), and on sqlite/mongodb the output stays byte-identical (no degraded items).
+
+#### Scenario: precheck marks only the dynamic-SQL item (exact set, per-node)
+
+- GIVEN a graph where impacted items include `acme.usp_run_report` (hasDynamicSql:true) and `acme.usp_touch_totals` (hasDynamicSql:false)
+- WHEN `dbgraph_precheck({ ddl })` runs
+- THEN the item for `acme.usp_run_report` carries `[DYNAMIC SQL]` and the item for `acme.usp_touch_totals` does NOT
+- AND both items stay tagged `confidence: 'parsed'`, and NO new edge appears
+
+#### Scenario: affected mirrors the per-node marking via the shared engine
+
+- GIVEN a `.sql` script over a pg graph whose impact surfaces a dynamic-SQL routine `acme.fn_exec_stmt`
+- WHEN `dbgraph affected script.sql --json` runs
+- THEN the degraded set marked dynamic-SQL is EXACTLY `{acme.fn_exec_stmt}` (inherited from the shared precheck engine) and it exits 1
+- AND a script whose impact touches no dynamic-SQL routine marks NO item
+
+#### Scenario: sqlite affected is byte-identical (negative)
+
+- GIVEN a `.sql` script over the sqlite torture graph
+- WHEN `dbgraph affected script.sql --json` runs
+- THEN NO item is marked `[DYNAMIC SQL]` and the sqlite affected/precheck goldens are byte-identical to before
+
+### Requirement: dbgraph_impact names the specific dynamic-SQL degraded routines
+
+`dbgraph_impact` (US-014) SHALL, in ADDITION to the PRESERVED blanket "impact possibly incomplete"
+warning, NAME each routine in the impact result whose body carries `has_dynamic_sql` — the specific
+degraded node(s) by qualified name, NOT merely a blanket boolean. Each named routine MUST carry the
+EXACT `[DYNAMIC SQL]` marker. Naming MUST NOT fabricate an edge or a target for the unknowable dynamic
+destinations. The blanket-warning semantics are PRESERVED for compatibility.
+
+#### Scenario: impact names the degraded routine and keeps the blanket warning
+
+- GIVEN an impact chain including `acme.usp_run_report` (has_dynamic_sql:true)
+- WHEN `dbgraph_impact({ qname })` runs
+- THEN the result NAMES `acme.usp_run_report` with the `[DYNAMIC SQL]` marker
+- AND the blanket "impact possibly incomplete" warning is STILL present
+- AND no fabricated edge/target is added for the dynamic-SQL destinations
+
+#### Scenario: impact with no dynamic-SQL node names none (negative)
+
+- GIVEN an impact chain containing no `has_dynamic_sql` node
+- WHEN `dbgraph_impact` runs
+- THEN NO `[DYNAMIC SQL]` marker appears and NO "impact possibly incomplete" warning is emitted

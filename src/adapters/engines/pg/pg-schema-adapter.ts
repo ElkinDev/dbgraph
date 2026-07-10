@@ -28,6 +28,7 @@ import {
   SQL_PG_TRIGGERS,
   SQL_PG_SEQUENCES,
   SQL_PG_FINGERPRINT,
+  SQL_PG_VIEW_COLUMN_USAGE,
 } from './queries.js';
 import { ConnectionError } from '../../../core/errors.js';
 import type {
@@ -41,6 +42,7 @@ import type {
   RoutineRow,
   TriggerRow,
   SequenceRow,
+  ViewColumnUsageRow,
 } from './map.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,6 +97,7 @@ export class PgSchemaAdapter implements SchemaAdapter {
       routines,
       triggers,
       sequences,
+      viewColumnUsage,
     ] = await Promise.all([
       this._driver.query(SQL_PG_SCHEMAS, [schemaParam]),
       this._driver.query(SQL_PG_TABLES, [schemaParam]),
@@ -106,7 +109,12 @@ export class PgSchemaAdapter implements SchemaAdapter {
       this._driver.query(SQL_PG_ROUTINES, [schemaParam]),
       this._driver.query(SQL_PG_TRIGGERS, [schemaParam]),
       this._driver.query(SQL_PG_SEQUENCES, [schemaParam]),
+      // DOG-3 (D5): view_column_usage — a single flat catalog SELECT (no per-view loop, unlike
+      // the mssql D8 TVF). Materialized/owner-invisible pairs are structurally absent from rows.
+      this._driver.query(SQL_PG_VIEW_COLUMN_USAGE, [schemaParam]),
     ]);
+
+    const viewColumnUsageRows = viewColumnUsage as unknown as readonly ViewColumnUsageRow[];
 
     return buildPgRawCatalog(
       {
@@ -120,6 +128,7 @@ export class PgSchemaAdapter implements SchemaAdapter {
         routines: routines as unknown as readonly RoutineRow[],
         triggers: triggers as unknown as readonly TriggerRow[],
         sequences: sequences as unknown as readonly SequenceRow[],
+        ...(viewColumnUsageRows.length > 0 ? { viewColumnUsage: viewColumnUsageRows } : {}),
       },
       scope,
     );

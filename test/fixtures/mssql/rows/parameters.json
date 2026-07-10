@@ -1,0 +1,11 @@
+[
+  { "schema_name": "dbo", "object_name": "usp_process_order",  "object_id": 3002, "parameter_id": 1, "parameter_name": "@order_id",   "data_type": "int",      "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "fn_total",           "object_id": 3003, "parameter_id": 1, "parameter_name": "@order_id",   "data_type": "int",      "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "tvf_order_details",  "object_id": 3004, "parameter_id": 1, "parameter_name": "@order_id",   "data_type": "int",      "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "usp_dynamic",        "object_id": 3006, "parameter_id": 1, "parameter_name": "@table",      "data_type": "nvarchar", "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "usp_refresh_totals", "object_id": 3007, "parameter_id": 1, "parameter_name": "@order_id",   "data_type": "int",      "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "usp_log_change",     "object_id": 3008, "parameter_id": 1, "parameter_name": "@order_id",   "data_type": "int",      "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "usp_log_change",     "object_id": 3008, "parameter_id": 2, "parameter_name": "@new_status", "data_type": "nvarchar", "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "fn_net_amount",      "object_id": 3009, "parameter_id": 1, "parameter_name": "@gross",      "data_type": "decimal",  "is_output": false, "has_default_value": false },
+  { "schema_name": "dbo", "object_name": "fn_round_money",     "object_id": 3010, "parameter_id": 1, "parameter_name": "@amount",     "data_type": "decimal",  "is_output": false, "has_default_value": false }
+]

@@ -23,6 +23,7 @@ import { runDiff } from './commands/diff.js';
 import { runAffected } from './commands/affected.js';
 import { runInstall, realFsSeam } from './commands/install.js';
 import { runDoctor } from './commands/doctor.js';
+import { handleViz } from './commands/viz.js';
 import { openConnections } from '../index.js';
 import { createConsoleLogger } from './log/console-logger.js';
 import { formatSyncSummary } from './format/sync.js';
@@ -399,6 +400,7 @@ const COMMAND_TABLE: Readonly<Record<string, CommandHandler>> = {
   affected: handleAffected,
   install: handleInstall,
   doctor: handleDoctor,
+  viz: handleViz,
 };
 
 /**

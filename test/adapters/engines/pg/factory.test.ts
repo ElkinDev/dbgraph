@@ -331,7 +331,7 @@ import { formatOutcome } from '../../../../src/core/present/connectivity.js';
 
 const PLANTED_HOST = 'prod-pg.internal.company.com';
 const PLANTED_USER = 'svc_dbgraph_prod';
-const PLANTED_DB   = 'payroll_prod';
+const PLANTED_DB   = 'warehouse_prod';
 const PLANTED_PASS = 's3cr3tP@ssw0rd!';
 
 /** A custom fake that throws a raw driver error embedding planted identifiers. */

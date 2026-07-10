@@ -32,13 +32,14 @@ import {
   SQL_MSSQL_INDEXES,
   SQL_MSSQL_MODULES,
   SQL_MSSQL_TRIGGER_EVENTS,
+  SQL_MSSQL_PARAMETERS,
   SQL_MSSQL_SEQUENCES,
   SQL_MSSQL_EXTENDED_PROPERTIES,
   SQL_MSSQL_DEPENDENCIES,
 } from '../../../../../src/adapters/engines/mssql/queries.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The 11 catalog families (key → sql constant)
+// The 12 catalog families (key → sql constant) — DOG-2 adds the `parameters` family
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
@@ -50,6 +51,7 @@ const FAMILIES: ReadonlyArray<{ key: string; sql: string }> = [
   { key: 'indexes',            sql: SQL_MSSQL_INDEXES },
   { key: 'modules',            sql: SQL_MSSQL_MODULES },
   { key: 'triggerEvents',      sql: SQL_MSSQL_TRIGGER_EVENTS },
+  { key: 'parameters',         sql: SQL_MSSQL_PARAMETERS },
   { key: 'sequences',          sql: SQL_MSSQL_SEQUENCES },
   { key: 'extendedProperties', sql: SQL_MSSQL_EXTENDED_PROPERTIES },
   { key: 'dependencies',       sql: SQL_MSSQL_DEPENDENCIES },
@@ -78,9 +80,9 @@ describe('emitDumpScript() — D4.1', () => {
     for (const { key } of FAMILIES) {
       expect(script, `family "${key}" missing FOR JSON PATH`).toContain('FOR JSON PATH');
     }
-    // Count: one FOR JSON PATH per family (11 families)
+    // Count: one FOR JSON PATH per family (12 families — DOG-2 adds `parameters`)
     const matches = script.match(/FOR JSON PATH/g) ?? [];
-    expect(matches.length).toBe(11);
+    expect(matches.length).toBe(12);
   });
 
   it('includes the inner SELECT body of each catalog constant', () => {
@@ -125,13 +127,21 @@ describe('emitDumpScript() — D4.1', () => {
     expect(DUMP_FILE).toContain('mssql');
   });
 
-  it('exports CATALOG_FAMILY_KEYS with all 11 MssqlRowInput keys in order', () => {
-    expect(CATALOG_FAMILY_KEYS).toHaveLength(11);
+  it('exports CATALOG_FAMILY_KEYS with all 12 MssqlRowInput keys in order (DOG-2: +parameters)', () => {
+    expect(CATALOG_FAMILY_KEYS).toHaveLength(12);
     const expectedKeys = [
       'tables', 'columns', 'keyConstraints', 'foreignKeys', 'checkConstraints',
-      'indexes', 'modules', 'triggerEvents', 'sequences', 'extendedProperties', 'dependencies',
+      'indexes', 'modules', 'triggerEvents', 'parameters', 'sequences', 'extendedProperties', 'dependencies',
     ];
     expect(CATALOG_FAMILY_KEYS).toEqual(expectedKeys);
+  });
+
+  it('DOG-2: the parameters family is wired with FOR JSON PATH and its sys.parameters SELECT', () => {
+    const script = emitDumpScript();
+    expect(script).toContain('-- ── family: parameters');
+    expect(script).toContain('sys.parameters');
+    // top-level ORDER BY + FOR JSON coexistence (no subquery wrap for the new family either)
+    expect(script).toContain('ORDER BY s.name, o.name, p.parameter_id');
   });
 
   // ── WARN-1 remediation: top-level FOR JSON, no derived-table ORDER BY ─────
@@ -151,6 +161,6 @@ describe('emitDumpScript() — D4.1', () => {
     // Verify FOR JSON PATH, INCLUDE_NULL_VALUES appears once per family.
     const script = emitDumpScript();
     const forJsonMatches = script.match(/FOR JSON PATH, INCLUDE_NULL_VALUES/g) ?? [];
-    expect(forJsonMatches.length).toBe(11);
+    expect(forJsonMatches.length).toBe(12);
   });
 });

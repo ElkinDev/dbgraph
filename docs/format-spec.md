@@ -117,6 +117,26 @@ For inferred edges, a score suffix is added:
   → target_qname  [inferred_reference, score=0.85]
 ```
 
+### 1.4a Consumed-column lines (DOG-3, view focus, `full` ONLY)
+
+For a VIEW focus node whose `depends_on` edge(s) carry `attrs.dstColumns` (a catalog-declared
+consumed source-column set — mssql; pg covered pairs), each consumed source column renders as
+ONE self-labeled line — no separate uppercase section header (unlike `COLUMNS`/`PARAMETERS`):
+
+```
+consumes: source_table_qname.column_name
+```
+
+Rules:
+- Rendered at `full` detail ONLY (`brief`/`normal` render NONE — budget honesty for wide views).
+- Multiple depended-on tables are ordered by TARGET qname (ADR-008); WITHIN one table the
+  columns preserve the normalizer's sorted-unique order (code-point ascending, graph-normalization).
+- A view whose edges carry NO `attrs.dstColumns` (degraded engines mysql/sqlite; uncovered pg
+  pairs) renders NO `consumes:` line at all — absence, never a marker.
+- SOURCE-COLUMN SET only — a line NEVER pairs an output column to a source column (ADR-007).
+- `dbgraph_explore` and `dbgraph_object` (CLI + MCP) render BYTE-IDENTICAL bytes (one shared
+  `renderConsumedColumns` helper in `core/present/payload.ts`, no per-surface branch).
+
 ### 1.5 Section headers
 
 ```
@@ -146,9 +166,9 @@ Per-tool level defaults and what each section shows:
 
 | Tool              | brief                       | normal                                | full                                      |
 |-------------------|-----------------------------|---------------------------------------|-------------------------------------------|
-| `dbgraph_explore` | header + counts             | + COLUMNS, CONSTRAINTS, grouped neighbors | + INDEXES, TRIGGERS, bodyHash, level, dynamic-SQL warning |
+| `dbgraph_explore` | header + counts             | + COLUMNS, CONSTRAINTS, grouped neighbors | + INDEXES, TRIGGERS, bodyHash, level, dynamic-SQL warning, `consumes:` lines (view, declared) |
 | `dbgraph_search`  | type + qname + rank         | + match column                        | + excerpt                                 |
-| `dbgraph_object`  | header + annotation counts  | + columns (type/null/default), FK/PK  | + indexes, triggers, body (modules)       |
+| `dbgraph_object`  | header + annotation counts  | + columns (type/null/default), FK/PK  | + indexes, triggers, `consumes:` lines (view, declared), body (modules) |
 | `dbgraph_related` | grouped edge kinds + counts | + qnames per group                    | + inferred score, body excerpts           |
 | `dbgraph_impact`  | chain summary               | + full chain (a→b→c), read/write split| + node types, dynamic-SQL / truncation ⚠  |
 | `dbgraph_path`    | route qnames only           | + join columns per hop                | + inferred marks, no-route neighbor list  |
@@ -301,6 +321,43 @@ views in READERS + WHAT TO TEST); plus `test/fixtures/sqlite/golden-{raw-catalog
   ceilings moved, and only because a fixture exceeded them. Cross-engine (pg/mssql/mysql) goldens are
   byte-identical (the fix's blast radius is SQLite-only) and `benchmark/questions.yaml` is untouched.
 
+**Golden change (change dog1-calls-edges, §C.3/C.6 note)**: routine→routine invocation now emits a
+`calls` edge (mssql `declared`; pg/mysql `parsed`), and the shared present formatters
+(`explore.ts`/`related.ts`/`object.ts`) render it AUTOMATICALLY — they iterate
+`Object.keys(neighbors).sort()` with NO edge-kind allowlist, so a `calls` group appears the moment the
+edge exists. Per §1.4 edge-line grammar it renders as a normal grouped neighbor: a calling routine shows
+an OUTBOUND `→ callee  [procedure|function]` line under a `calls` group; the invoked routine shows the
+INBOUND `← caller` line; a routine with no invocations renders NO `calls` group (never fabricated). CLI
+`explore` and the MCP tool share the formatter, so the `calls` rendering is byte-identical across both
+surfaces. ONE new deliberate synthetic golden is added — `test/core/present/golden/explore-calls.txt`
+(the caller's `normal` output over a synthetic `dbo.usp_refresh_totals --calls--> dbo.usp_log_change`
+routine chain, 195 chars→49 tk). NO existing golden is re-blessed: the default-CI mcp/present golden
+substrate is the routine-free SQLite torture fixture, which emits ZERO `calls` edges → zero drift; the
+mssql/pg/mysql `calls` render + impact traversal are proven in the synthetic unit tier and the
+`DBGRAPH_INTEGRATION`-gated container tier. Impact traversal adds `calls` as a READ-impact kind
+(`IMPACT_EDGE_KINDS`), so `dbgraph_impact`/`dbgraph_precheck` surface a called routine's CALLERS in the
+read / what-to-test sections without over-reporting writes; token ceilings are UNCHANGED (SQLite substrate
+is routine-free → no measured output moved).
+
+**Golden change (change dog2-routine-parameters, §6 token-delta note)**: a routine FOCUS node
+(`procedure`/`function`) now renders a `PARAMETERS` section via the ONE shared `renderParameters` helper
+in `present/payload.ts`, wired into BOTH `renderFocusPayload` (explore) AND `formatObject` (object), so the
+section bytes are byte-identical across CLI/MCP × explore/object (no per-surface branch). Grammar mirrors
+`COLUMNS`: each line is `  <name>  <dataType>` (2-space indent, double-space gaps) then UPPERCASE bracket
+markers `[OUT]` / `[INOUT]` / `[DEFAULT]` joined by two spaces — an `in` parameter carries NO direction
+marker (the default, exactly as a nullable column shows no `[NN]`), and `[DEFAULT]` is a PRESENCE marker
+only (the default VALUE is never rendered). Detail-gated to `normal` and `full`, absent at `brief` (the
+COLUMNS analog). A routine whose `parameters` is UNSET or empty renders NO section (honest absence). ONE
+new deliberate synthetic golden family is added — `test/core/present/golden/param-render-explore-normal.txt`
+and `param-render-object-normal.txt` (a `dbo.usp_mixed` routine focus exercising every marker,
+in/[OUT]/[INOUT]/[DEFAULT]). NO existing mcp/present golden is re-blessed: the default-CI mcp/present golden
+substrate is the routine-free SQLite torture fixture (TABLE focus `main.employees`), which has no routine
+node and therefore emits ZERO `PARAMETERS` sections → the `test/mcp/golden/*` and existing
+`test/core/present/golden/*` goldens are byte-identical (a move would be a HARD STOP). The mssql/pg/mysql
+`golden-raw-catalog.json` aggregates gain `parameters` arrays DELIBERATELY in the `DBGRAPH_INTEGRATION`-gated
+tier (every other byte unchanged); the summary-shaped `golden-e2e.json` files carry no node payloads so they
+are unchanged. Token ceilings are UNCHANGED (SQLite substrate is routine-free → no measured MCP output moved).
+
 ---
 
 ## 6. Golden Discipline
@@ -316,6 +373,31 @@ Rules:
 - Goldens under `test/mcp/golden/` cover tool × detail (E2E-level, through the transport harness).
 - Every golden assertion must be byte-identical: `expect(output).toBe(goldenContent)`.
 
+### 6.1 Token-delta note — DOG-3 `consumes:` lines (Batch C)
+
+Adds §1.4a (`consumes: <table>.<column>`, view focus, `full` ONLY). No EXISTING committed
+golden changed: every `test/core/present/golden/` and `test/mcp/golden/` fixture view struct
+carries no `depends_on` edge with `attrs.dstColumns`, so `renderConsumedColumns` returns `[]`
+for all of them and the pre-DOG-3 bytes are reproduced exactly (proven by the full existing
+present/mcp golden suites passing unchanged — the freeze proof). A NEW golden-free unit suite
+(`test/core/present/column-lineage.test.ts`) pins the shape via exact-string assertions instead
+of a committed golden file (consistent with the DOG-2 `renderParameters` precedent in
+`parameters-wiring.test.ts`, which is also `toStrictEqual`/`toContain`-pinned rather than
+golden-file-pinned). Token cost: a covered view at `full` gains `~11 bytes` per consumed
+`table.column` pair (`consumes: ` prefix + the qualified name); a degraded/uncovered view gains
+`0 bytes` (absence). Zero cost at `brief`/`normal` (not rendered).
+
+### 6.2 Token-delta note — DOG-4 `[DYNAMIC SQL]` caveat (dog4-dynamic-sql)
+
+A routine focus whose payload carries `hasDynamicSql` gains the ONE shared caveat line
+`[DYNAMIC SQL] impact analysis may be incomplete` at `normal`+`full` in `explore`/`object`
+(and the per-node `  [DYNAMIC SQL]` suffix / named-block line in `precheck`/`impact`); a
+non-degraded routine and every node at `brief` gain `0 bytes` (absence). No EXISTING committed
+golden changed: every `test/core/present/golden/` and `test/mcp/golden/` fixture is SQLite-backed
+and SQLite has no dynamic-SQL statement form, so the caveat never renders in a measured golden and
+the `budget.test.ts` ceilings are untouched (freeze proof: the full present/mcp golden + budget
+suites pass unchanged).
+
 ---
 
 ## 7. Purity Contract
@@ -326,3 +408,20 @@ Every formatter in `src/core/present/` MUST be a pure function:
 - No `Math.random()`
 - No file I/O or network calls
 - Same `(*View, detail)` input → always the exact same output bytes (ADR-008)
+
+---
+
+## 8. Consumers of this contract
+
+The formatters in `src/core/present/` are the SINGLE source of object-detail truth. Every
+surface that shows a node's detail reuses them — there is NO second renderer:
+
+- CLI `dbgraph object` / `dbgraph explore` and MCP `dbgraph_object` — direct callers.
+- `dbgraph viz` (see `docs/viz.md`) — the interactive HTML export pre-renders each node's
+  detail with `formatObject(view, 'full')` server-side and injects it verbatim into a
+  `<pre>`. A node's viz detail panel is therefore BYTE-IDENTICAL to
+  `dbgraph object <qname> --detail full`; a `test/core/viz/detail-parity` test pins this, so
+  a change to this contract that drifts the two fails the build.
+
+The live viz force animation is NOT covered by any golden (ADR-008 honest split) — only the
+deterministic embedded data block, community assignment, and Mermaid ER text are pinned.

@@ -1,0 +1,11 @@
+dbo.usp_refresh_totals  [procedure]
+───────────────────────────────────
+
+  calls
+    out:
+      → dbo.usp_log_change  [procedure]
+
+  writes_to
+    out:
+      → dbo.order_totals  [table]
+
