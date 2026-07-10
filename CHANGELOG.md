@@ -5,6 +5,71 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-10
+
+Deepens the graph with the INTERNALS of programmable objects — a routine call
+graph, routine parameters, view column-level lineage, and per-node dynamic-SQL
+honesty — and adds an offline, self-contained graph visualization. Every new
+edge and payload declares its provenance (catalog-declared vs body-parsed vs
+honestly absent) per engine; nothing is fabricated where a catalog cannot
+source it.
+
+> Like 1.0.0, this is a source and packaging milestone: both distribution
+> channels truthfully report `1.1.0`. Publishing to npm and cutting a binary
+> Release remain user-gated and are documented in `docs/release.md`.
+
+### Added
+
+#### Routine call graph (`calls` edges)
+- `calls` edges model routine→routine invocation (`EXEC` / `CALL` /
+  `SELECT fn()`) as a first-class edge: catalog-declared where the engine
+  resolves it (SQL Server `sys.sql_expression_dependencies`) and body-parsed
+  elsewhere (PostgreSQL, MySQL, SQLite), each carrying its exact confidence tier.
+- Impact and `affected` traversal now follows `calls`, so a leaf table reaches
+  the routines that reach it through call chains.
+- Preserving the referenced object's kind end-to-end removes the spurious
+  "missing table" stub a proc→proc reference previously produced.
+
+#### Routine parameters
+- Routine parameters (name, type, direction, default) are captured as
+  `RoutinePayload.parameters` and rendered in `explore` and `object`.
+- Per-engine catalog sourcing with type honesty: SQL Server `sys.parameters`,
+  PostgreSQL `pg_proc`, MySQL `information_schema.PARAMETERS`. SQLite has no
+  parameter catalog and honestly reports parameters unavailable rather than
+  fabricating them.
+
+#### View column lineage
+- View output columns map to their source `table.column` via column-grain edge
+  attributes (`dstColumns`), sharpening impact to column precision.
+- Per-engine catalog-or-degrade: SQL Server sources columns via
+  `dm_sql_referenced_entities`; PostgreSQL via `view_column_usage` (parsed →
+  declared); MySQL and SQLite degrade to object grain by absence. A column pair
+  is emitted only where the catalog sources it — never fabricated.
+
+#### Dynamic-SQL honesty
+- The `[DYNAMIC SQL]` caveat is surfaced per node across `explore`, `object`,
+  `precheck`, and `impact`, and degraded nodes are marked per-node in
+  `precheck` / `affected` / `impact` output so incompleteness is never silent.
+
+#### Graph visualization
+- `dbgraph viz` exports a fully-offline, self-contained interactive HTML graph —
+  vendored client assets, zero network requests at view time, embedding schema
+  identifiers only (never connection strings, resolved secrets, or sampled
+  values) — plus a deterministic `--mermaid` ER diagram. The exporter reads the
+  whole graph through a new bulk read-only `GraphStore` seam. `viz` is a
+  CLI-only human artifact, never an MCP tool.
+
+#### Benchmark (honest)
+- Benchmark honesty guards made precise (standalone-token / alphanumeric-
+  adjacency no-leak checks; kind-aware without-dump coverage), and benchmark
+  RUN 3 recorded (N=6): the dbgraph-fed and raw-schema arms tie at 100% accuracy
+  while dbgraph uses about 24% fewer schema tokens (3581 vs 4722).
+
+### Fixed
+- Aligned the npm package scope (`@elkindev`) with the GitHub repository owner,
+  resolving the pre-tag `repository.url` vs npm-scope mismatch flagged as a
+  release verification item in `docs/release.md` (Step U3).
+
 ## [1.0.0] - 2026-07-07
 
 First public release. dbgraph reads a database's catalog (never its data),
@@ -95,4 +160,5 @@ SQLite + FTS5 index, and serves it to AI agents over the Model Context Protocol.
   optional SSL/TLS for PostgreSQL, MySQL and MongoDB), surfaced by a content-free
   `doctor` self-test that is safe to share.
 
+[1.1.0]: https://github.com/ElkinDev/dbgraph/releases/tag/v1.1.0
 [1.0.0]: https://github.com/ElkinDev/dbgraph/releases/tag/v1.0.0
