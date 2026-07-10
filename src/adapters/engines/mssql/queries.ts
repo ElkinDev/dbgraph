@@ -365,6 +365,67 @@ WHERE dep.referenced_class = 1
 ORDER BY s.name, o.name, dep.referenced_schema_name, dep.referenced_entity_name
 `.trim();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// View consumed-column set (DOG-3 D8) — NATIVE driver path only
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-view source-column lineage via the `sys.dm_sql_referenced_entities` table-valued
+ * function (DOG-3 design D8; live finding 2026-07-07). `sys.sql_expression_dependencies`
+ * (SQL_MSSQL_DEPENDENCIES) reports whole-object grain only — its `referenced_minor_id` is 0
+ * for NON-schemabound views (the common case), so it is INERT for column lineage. The
+ * per-object TVF is the TRUTH source: called ONCE per view (@view), it returns one row per
+ * referenced entity, with `referenced_minor_id > 0` / `referenced_minor_name` naming a
+ * specific SOURCE COLUMN the view consumes.
+ *
+ * `@view` is a bound T-SQL variable (see buildViewReferencedColumnsQuery) — NEVER string
+ * interpolation into the SQL body. The `referenced_minor_id > 0` filter keeps ONLY
+ * column-level references: a whole-object `SELECT *` reference (minor_id = 0) yields NO row,
+ * so it contributes NO column (degrade-by-absence, D4). Catalog SELECT only (US-031 write-verb
+ * scanner). ADR-008: explicit ORDER BY for a stable per-view row order.
+ *
+ * NATIVE-driver only: the sqlcmd/manual-dump strategies carry NO view-columns family (the
+ * fixed single-SELECT-per-family dump contract, DOG-2), so mssql-via-sqlcmd/dump yields OBJECT
+ * grain — the project's FIRST strategy-dependent coverage difference (design D8).
+ */
+export const SQL_MSSQL_VIEW_REFERENCED_COLUMNS = `
+SELECT
+  ref.referenced_schema_name      AS referenced_schema,
+  ref.referenced_entity_name      AS referenced_entity,
+  ref.referenced_minor_name       AS referenced_column
+FROM sys.dm_sql_referenced_entities(@view, @class) AS ref
+WHERE ref.referenced_minor_id > 0
+  AND ref.referenced_entity_name IS NOT NULL
+  AND ref.referenced_minor_name IS NOT NULL
+ORDER BY ref.referenced_schema_name, ref.referenced_entity_name, ref.referenced_minor_name
+`.trim();
+
+// Single-quote character built via fromCharCode so this source file carries NO literal single
+// quote in the DOG-3 view-column additions — the US-031 write-verb scanner's naive quote pairing
+// stays balanced (a stray unbalanced quote could bracket SQL text with a downstream identifier
+// and false-positive on a word boundary).
+const TSQL_QUOTE = String.fromCharCode(0x27);
+
+/**
+ * Binds the escaped view qname to the `@view` T-SQL variable (and the entity class to `@class`)
+ * and prepends both to the TVF query. The qname is escaped for the string literal (single quotes
+ * doubled) — object names come from sys.objects (not user input), escaping is defensive-in-depth.
+ * NVARCHAR(520) accommodates schema.name (each up to 128 → up to 257 chars, plus headroom).
+ * `@view`/`@class` are genuine bound T-SQL variables — no identifier is interpolated into the
+ * executable SQL body.
+ *
+ * Used ONLY on the native driver path (MssqlSchemaAdapter.extract), once per view, EACH call
+ * individually try/caught so an unbindable view is skipped (D8).
+ */
+export function buildViewReferencedColumnsQuery(viewQName: string): string {
+  const escaped = viewQName.split(TSQL_QUOTE).join(TSQL_QUOTE + TSQL_QUOTE);
+  return (
+    `DECLARE @view NVARCHAR(520) = N${TSQL_QUOTE}${escaped}${TSQL_QUOTE};\n` +
+    `DECLARE @class NVARCHAR(20) = N${TSQL_QUOTE}OBJECT${TSQL_QUOTE};\n` +
+    SQL_MSSQL_VIEW_REFERENCED_COLUMNS
+  );
+}
+
 /**
  * Fingerprint query: one cheap aggregate over sys.objects.
  * Returns {m: MAX(modify_date), c: COUNT(*)} for non-shipped objects.

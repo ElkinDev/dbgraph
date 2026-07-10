@@ -129,7 +129,7 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
 > engine-agnostic model + normalize seam — the architectural bottleneck) remain DONE, gated green (tsc 0, lint 0/0, 3519 tests,
 > zero golden drift), UNAFFECTED by this ruling — they carry NO mssql-source dependency.
 
-- [ ] A.3 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mssql/column-lineage.test.ts` (new) +
+- [x] A.3 **(vitest + integration-gated)** RED→GREEN `test/adapters/engines/mssql/column-lineage.test.ts` (new) +
   `src/adapters/engines/mssql/queries.ts` + `mssql-schema-adapter.ts` + `map.ts` + `capabilities.ts`: ADD const
   `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` — parameterized `sys.dm_sql_referenced_entities(@view,'OBJECT')` returning
   `(referenced_schema, referenced_entity, referenced column NAME)`, catalog `SELECT` only (write-verb scanner green); `extract()`
@@ -146,7 +146,7 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   stamped on view depends_on via dm_sql_referenced_entities (native path)" + "An unbindable view is skipped and extraction
   completes" + "Extraction via sqlcmd or manual dump yields object grain"; schema-extraction "An adapter with a view-column
   catalog populates columns". D5/D8.
-- [ ] A.4 **(vitest)** RED→GREEN `test/adapters/engines/mssql/column-lineage-normalize.test.ts` (new) — SYNTHETIC in-memory
+- [x] A.4 **(vitest)** RED→GREEN `test/adapters/engines/mssql/column-lineage-normalize.test.ts` (new) — SYNTHETIC in-memory
   `RawCatalog` (default CI, no container): `dbo.v_order_summary` → view→`dbo.orders` edge
   `attrs.dstColumns=[customer_id,order_id,status,total_amount]` and view→`dbo.order_items` edge
   `attrs.dstColumns=[order_id,product_id]`, both `confidence:'declared'`; observable set EXACTLY the six pairs. NEGATIVES
@@ -156,7 +156,7 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   "v_order_summary emits its EXACT declared consumed-column set", "Columns the view does NOT read are absent (negative)", "A
   computed source column is consumed as itself (honesty)"; graph-model "A view carries attrs.dstColumns for its exact consumed
   columns". D1/D5.
-- [ ] A.5 **(vitest, fixtures)** VERIFY (expected NO-OP) `test/fixtures/mssql/torture.sql` already has `dbo.v_order_summary`
+- [x] A.5 **(vitest, fixtures)** VERIFY (expected NO-OP) `test/fixtures/mssql/torture.sql` already has `dbo.v_order_summary`
   reading `o.order_id,o.customer_id,o.status,o.total_amount, COUNT(oi.product_id)` from `dbo.orders o` LEFT JOIN `dbo.order_items
   oi`, with `dbo.orders.total_amount` a COMPUTED `(quantity*unit_price)` column and `dbo.order_items` carrying
   `order_id/product_id/region_id/qty` (needed for the A.4 negatives); EXTEND only if a column is missing. RECORD a NEW offline
@@ -164,7 +164,15 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   `test/fixtures/mssql/rows/dependencies.json` STAYS BYTE-IDENTICAL (object grain — `SQL_MSSQL_DEPENDENCIES` is unchanged). No
   DUMP-fixture change (dump family not extended). Leak-scan neutral; no non-view object added beyond what the negatives need.
   Spec: mssql-extraction fixture anchor (`dbo.v_order_summary`). D5/D8.
-- [ ] A.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless the NATIVE-path mssql `golden-raw-catalog.json` (view deps
+> **✅ LIVE VERIFICATION CLOSED (apply session 2026-07-10, Docker up).** `DBGRAPH_INTEGRATION=1` run against the
+> ephemeral mssql:2022 Testcontainers over `torture.sql` confirmed `extract.integration.test.ts` RED against the
+> STALE native golden first (documented A.6 state, not a regression) — `v_order_summary` live deps carried
+> `columns`+`declared` while the committed golden still had bare `parsed` deps. Re-blessed `golden-raw-catalog.json`
+> from live output (diffed programmatically: ONLY the `v_order_summary` object's `dependencies` changed; the
+> IDENTICAL-array trap on `fn_orders_by_region` was avoided — it stayed byte-for-byte `parsed`/object-grain);
+> `golden-e2e.json` and `dumps/mssql-dump-golden.json` are BYTE-IDENTICAL (`git diff --stat` empty on both).
+> Full mssql live tier re-run GREEN post-bless: 5 files / 71 tests. See A.6/A.7/A.8 below for the exact inventory.
+- [x] A.6 **(golden — DELIBERATE re-bless, batch-scoped)** Re-bless the NATIVE-path mssql `golden-raw-catalog.json` (view deps
   gain `columns`) + `golden-e2e.json` (view→table `depends_on` edges gain `attrs.dstColumns`, `confidence:'declared'`) to match
   the A.4 pinned sets; EVERY changed byte traces to a `dstColumns` array; positive set AND non-consumed negatives asserted.
   **`dumps/mssql-dump-golden.json` STAYS OBJECT GRAIN — NO `attrs.dstColumns`, BYTE-IDENTICAL to pre-DOG-3 (the dump family is
@@ -172,7 +180,7 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   do NOT re-bless).** Byte-identical on re-run (ADR-008). **pg/mysql/sqlite goldens byte-identical (HARD STOP).** Commit body =
   per-golden inventory (call out the native-gains-`dstColumns` vs dump-stays-object-grain split). Spec: mssql-extraction "mssql
   view-column goldens re-blessed deliberately with exact sets".
-- [ ] A.7 **(integration-gated)** Add to `test/cli/mssql.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated Testcontainers
+- [x] A.7 **(integration-gated)** Add to `test/cli/mssql.e2e.integration.test.ts` (`DBGRAPH_INTEGRATION`-gated Testcontainers
   over `torture.sql`) the LIVE hybrid proofs: **(1) TRUTH SETS** — `v_order_summary`→`dbo.orders` `attrs.dstColumns =
   [customer_id, order_id, status, total_amount]`, →`dbo.order_items = [order_id, product_id]`, both `confidence:'declared'`;
   **(2) COMPUTED-COLUMN honesty** — `dbo.orders.total_amount` (COMPUTED) appears AS ITSELF, `quantity`/`unit_price` do NOT
@@ -182,7 +190,7 @@ Design §Open Questions RESOLVED as task decisions (audit during apply, do not d
   extraction via the sqlcmd/manual-dump path over the SAME container yields OBJECT GRAIN (view edges carry NO `dstColumns`, NO
   error), byte-identical to pre-DOG-3. Spec: mssql-extraction "A computed source column is consumed as itself" + "An unbindable
   view is skipped and extraction completes" + "Extraction via sqlcmd or manual dump yields object grain", integration tier. D8.
-- [ ] A.8 GATE (Batch A): RE-MEASURE baseline FIRST; `npx tsc --noEmit` strict clean (no `any`, `exactOptionalPropertyTypes`);
+- [x] A.8 GATE (Batch A): RE-MEASURE baseline FIRST; `npx tsc --noEmit` strict clean (no `any`, `exactOptionalPropertyTypes`);
   `npm run lint` 0/0; `npm test` GREEN (baseline + A suites) with the NATIVE-path mssql `golden-e2e`/`golden-raw-catalog`
   byte-identical on re-run AND `dumps/mssql-dump-golden.json` OBJECT GRAIN, byte-identical to pre-DOG-3 (D8 strategy split —
   HARD STOP if the dump gains a `dstColumns` byte); engines write-verb scanner GREEN (NEW `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` +

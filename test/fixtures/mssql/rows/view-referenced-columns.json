@@ -1,0 +1,8 @@
+[
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "order_items", "referenced_column": "order_id" },
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "order_items", "referenced_column": "product_id" },
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "orders", "referenced_column": "customer_id" },
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "orders", "referenced_column": "order_id" },
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "orders", "referenced_column": "status" },
+  { "referencing_schema": "dbo", "referencing_view": "v_order_summary", "referenced_schema": "dbo", "referenced_entity": "orders", "referenced_column": "total_amount" }
+]

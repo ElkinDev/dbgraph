@@ -29,6 +29,7 @@ import {
   SQL_MSSQL_EXTENDED_PROPERTIES,
   SQL_MSSQL_DEPENDENCIES,
   SQL_MSSQL_FINGERPRINT,
+  buildViewReferencedColumnsQuery,
 } from './queries.js';
 import { ConnectionError } from '../../../core/errors.js';
 import type {
@@ -44,6 +45,7 @@ import type {
   SequenceRow,
   ExtendedPropRow,
   DepRow,
+  ViewReferencedColumnRow,
 } from './map.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -115,6 +117,16 @@ export class MssqlSchemaAdapter implements SchemaAdapter {
       this._driver.query(SQL_MSSQL_DEPENDENCIES),
     ]);
 
+    const moduleRows = modules as unknown as readonly ModuleRow[];
+
+    // DOG-3 (design D8): source per-view column lineage via the sys.dm_sql_referenced_entities
+    // per-object TVF, called in a JS-side per-view LOOP (NATIVE driver path only). Each call is
+    // individually try/caught — an UNBINDABLE view (a source table/column was renamed/dropped →
+    // the TVF raises) is SKIPPED and its depends_on edge KEEPS object grain; extraction COMPLETES
+    // for the rest (degrade-by-absence, NEVER abort). Views iterated in STABLE qname order
+    // (ADR-008). sqlcmd/manual-dump strategies do NOT run this — they stay object grain by design.
+    const viewReferencedColumns = await this._extractViewReferencedColumns(moduleRows, scope);
+
     return buildMssqlRawCatalog(
       {
         tables: tables as unknown as readonly TableRow[],
@@ -123,15 +135,58 @@ export class MssqlSchemaAdapter implements SchemaAdapter {
         foreignKeys: foreignKeys as unknown as readonly FkRow[],
         checkConstraints: checkConstraints as unknown as readonly CheckRow[],
         indexes: indexes as unknown as readonly IndexRow[],
-        modules: modules as unknown as readonly ModuleRow[],
+        modules: moduleRows,
         triggerEvents: triggerEvents as unknown as readonly TriggerEventRow[],
         parameters: parameters as unknown as readonly ParameterRow[],
         sequences: sequences as unknown as readonly SequenceRow[],
         extendedProperties: extendedProperties as unknown as readonly ExtendedPropRow[],
         dependencies: dependencies as unknown as readonly DepRow[],
+        ...(viewReferencedColumns.length > 0 ? { viewReferencedColumns } : {}),
       },
       scope,
     );
+  }
+
+  /**
+   * DOG-3 (D8): runs sys.dm_sql_referenced_entities once per view and collects the referenced
+   * source columns, TAGGED with the referencing view identity. Views are iterated in STABLE
+   * qname order (ADR-008). EACH call is individually try/caught — an unbindable view raises and
+   * is SKIPPED (its edge stays object grain), extraction continues. Returns [] when views are
+   * off or none reference a column, so buildMssqlRawCatalog omits the field (object grain).
+   */
+  private async _extractViewReferencedColumns(
+    modules: readonly ModuleRow[],
+    scope: ExtractionScope,
+  ): Promise<readonly ViewReferencedColumnRow[]> {
+    if (scope.levels.views === 'off') return [];
+
+    const views = modules
+      .filter((m) => m.object_type.trim() === 'V')
+      .map((m) => ({ schema: m.schema_name, name: m.object_name }))
+      .sort((a, b) => `${a.schema}.${a.name}`.localeCompare(`${b.schema}.${b.name}`));
+
+    const collected: ViewReferencedColumnRow[] = [];
+    for (const view of views) {
+      const qname = `${view.schema}.${view.name}`;
+      let rows: readonly Record<string, unknown>[];
+      try {
+        rows = await this._driver.query(buildViewReferencedColumnsQuery(qname));
+      } catch {
+        // Unbindable view — the TVF raised. Skip it: its depends_on edge keeps object grain,
+        // extraction completes for the rest (degrade-by-absence, D4/D8). NEVER abort the family.
+        continue;
+      }
+      for (const row of rows) {
+        collected.push({
+          referencing_schema: view.schema,
+          referencing_view: view.name,
+          referenced_schema: (row['referenced_schema'] as string | null) ?? null,
+          referenced_entity: (row['referenced_entity'] as string | null) ?? null,
+          referenced_column: (row['referenced_column'] as string | null) ?? null,
+        });
+      }
+    }
+    return collected;
   }
 
   /**

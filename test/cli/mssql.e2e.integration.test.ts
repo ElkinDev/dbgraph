@@ -258,6 +258,137 @@ describe.skipIf(!mssqlIntegrationEnabled())(
       }
     });
 
+    // ─────────────────────────────────────────────────────────────────────
+    // DOG-3 A.7 — LIVE column-lineage hybrid proofs (native dm_sql_referenced_entities
+    // per-view TVF loop). Proves the truth sets + computed-column honesty + unbindable-view
+    // skip end-to-end over the real materialized torture.sql catalog. Strategy-absence (proof 4)
+    // is enforced structurally (the sqlcmd/manual-dump path never receives viewReferencedColumns)
+    // AND pinned byte-identical by the non-integration test/adapters/engines/mssql/strategies/
+    // manual-dump.test.ts against dumps/mssql-dump-golden.json (object grain, no dstColumns).
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** Resolves a view's depends_on edges to { source-table name → attrs.dstColumns }. */
+    async function dependsColumns(
+      store: Awaited<ReturnType<typeof createSqliteGraphStore>>,
+      viewName: string,
+    ): Promise<Map<string, readonly string[] | undefined>> {
+      const views = await store.getNodesByKind('view');
+      const tables = await store.getNodesByKind('table');
+      const view = views.find((v) => v.name === viewName);
+      expect(view, `view ${viewName}`).toBeDefined();
+      const edges = await store.getEdgesFrom(view!.id, ['depends_on']);
+      const byTarget = new Map<string, readonly string[] | undefined>();
+      for (const e of edges) {
+        const t = tables.find((x) => x.id === e.dst);
+        if (t !== undefined) byTarget.set(t.name, e.attrs.dstColumns);
+      }
+      return byTarget;
+    }
+
+    it('(1) TRUTH SETS + (2) computed-column honesty: v_order_summary edges carry exact dstColumns at declared (DOG-3 L-009, D8)', async () => {
+      const adapter = await createMssqlSchemaAdapter(handle.config);
+      const store = await createSqliteGraphStore({
+        path: join(projectRoot, '.dbgraph', 'dbgraph-lineage.db'),
+      });
+      try {
+        await runSync({ adapter, store, full: true });
+        const cols = await dependsColumns(store, 'v_order_summary');
+
+        // (1) TRUTH SETS — EXACT sorted-unique consumed columns.
+        expect(cols.get('orders')).toStrictEqual([
+          'customer_id', 'order_id', 'status', 'total_amount',
+        ]);
+        expect(cols.get('order_items')).toStrictEqual(['order_id', 'product_id']);
+
+        // both covered edges are confidence:'declared'
+        const views = await store.getNodesByKind('view');
+        const tables = await store.getNodesByKind('table');
+        const view = views.find((v) => v.name === 'v_order_summary')!;
+        const edges = await store.getEdgesFrom(view.id, ['depends_on']);
+        for (const e of edges) {
+          const t = tables.find((x) => x.id === e.dst);
+          if (t?.name === 'orders' || t?.name === 'order_items') {
+            expect(e.confidence).toBe('declared');
+            expect(e.attrs.dstColumns).toBeDefined();
+          }
+        }
+
+        // (2) COMPUTED-COLUMN honesty — total_amount consumed AS ITSELF; base cols NEVER fabricated.
+        expect(cols.get('orders')).toContain('total_amount');
+        expect(cols.get('orders')).not.toContain('quantity');
+        expect(cols.get('orders')).not.toContain('unit_price');
+        // negatives — columns the view does not read are absent
+        expect(cols.get('order_items')).not.toContain('region_id');
+        expect(cols.get('order_items')).not.toContain('qty');
+      } finally {
+        await adapter.close();
+        await store.close();
+      }
+    });
+
+    it('(3) UNBINDABLE-VIEW SKIP: a broken view keeps object grain while v_order_summary stays exact and extraction completes (DOG-3 D8)', async () => {
+      // Create a scratch view whose source column is then dropped → the view is UNBINDABLE, so
+      // sys.dm_sql_referenced_entities('dbo.v_scratch_broken','OBJECT') RAISES for it.
+      const mssqlMod = (await import('mssql' as string)) as unknown as {
+        ConnectionPool: new (cfg: unknown) => {
+          connect(): Promise<{
+            request(): { query(sql: string): Promise<unknown> };
+            close(): Promise<void>;
+          }>;
+        };
+      };
+      const auth = handle.config.authentication as { user: string; password: string };
+      const pool = await new mssqlMod.ConnectionPool({
+        server: handle.config.server,
+        port: handle.config.port,
+        database: 'master',
+        user: auth.user,
+        password: auth.password,
+        options: {
+          encrypt: handle.config.encrypt ?? true,
+          trustServerCertificate: handle.config.trustServerCertificate ?? true,
+        },
+      }).connect();
+      try {
+        await pool.request().query('CREATE TABLE dbo.tmp_broken_src (a int NOT NULL, b int NOT NULL)');
+        await pool
+          .request()
+          .query("EXEC('CREATE VIEW dbo.v_scratch_broken AS SELECT a, b FROM dbo.tmp_broken_src')");
+        // Drop a column the view reads → v_scratch_broken can no longer bind.
+        await pool.request().query('ALTER TABLE dbo.tmp_broken_src DROP COLUMN b');
+
+        const adapter = await createMssqlSchemaAdapter(handle.config);
+        const store = await createSqliteGraphStore({
+          path: join(projectRoot, '.dbgraph', 'dbgraph-unbindable.db'),
+        });
+        try {
+          // Extraction MUST complete despite the unbindable view (no throw = per-call resilience).
+          await runSync({ adapter, store, full: true });
+
+          // The broken view's depends_on edge(s) stay OBJECT GRAIN — NO dstColumns (skipped).
+          const broken = await dependsColumns(store, 'v_scratch_broken');
+          for (const [, dstColumns] of broken) {
+            expect(dstColumns).toBeUndefined();
+          }
+
+          // v_order_summary is STILL EXACT — one unbindable view does NOT abort the family.
+          const summary = await dependsColumns(store, 'v_order_summary');
+          expect(summary.get('orders')).toStrictEqual([
+            'customer_id', 'order_id', 'status', 'total_amount',
+          ]);
+          expect(summary.get('order_items')).toStrictEqual(['order_id', 'product_id']);
+        } finally {
+          await adapter.close();
+          await store.close();
+        }
+      } finally {
+        // Restore the shared container to the torture baseline.
+        try { await pool.request().query('DROP VIEW IF EXISTS dbo.v_scratch_broken'); } catch { /* ignore */ }
+        try { await pool.request().query('DROP TABLE IF EXISTS dbo.tmp_broken_src'); } catch { /* ignore */ }
+        await pool.close();
+      }
+    });
+
     it('graph store contains table nodes after sync', async () => {
       const adapter = await createMssqlSchemaAdapter(handle.config);
       const storePath = join(projectRoot, '.dbgraph', 'dbgraph.db');

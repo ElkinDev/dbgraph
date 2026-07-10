@@ -25,6 +25,7 @@ import type {
   RawIndex,
   RawTriggerInfo,
   RawParameter,
+  RawDependency,
 } from '../../../core/model/catalog.js';
 import type { NodeKind } from '../../../core/model/node.js';
 import { tokenizeModuleDeps } from './tokenizer.js';
@@ -188,6 +189,23 @@ export interface DepRow {
 }
 
 /**
+ * One row of a view's `sys.dm_sql_referenced_entities('<view>','OBJECT')` result (DOG-3 D8),
+ * TAGGED by extract() with the REFERENCING view identity (the TVF itself only returns the
+ * referenced entity/column — the referencing view is implied by which view was queried). The
+ * native adapter collects these across a per-view loop; map.ts GROUPS them per referenced
+ * object onto `RawDependency.columns`. `referenced_*` may be null for an unresolved reference
+ * (skipped, never a speculative column). NATIVE-driver path only — the sqlcmd/manual-dump
+ * strategies carry NO view-columns family (object grain by design, D8).
+ */
+export interface ViewReferencedColumnRow {
+  readonly referencing_schema: string;
+  readonly referencing_view: string;
+  readonly referenced_schema: string | null;
+  readonly referenced_entity: string | null;
+  readonly referenced_column: string | null;
+}
+
+/**
  * The full set of pre-fetched sys.* row arrays passed to buildMssqlRawCatalog.
  * In production this is populated by the adapter from MssqlReadonlyDriver queries.
  * In tests it is populated directly from JSON fixtures.
@@ -207,6 +225,12 @@ export interface MssqlRowInput {
   // DOG-2: sys.parameters rows (one per parameter). OPTIONAL so existing callers/fixtures
   // that predate DOG-2 stay valid and drift-free; buildModules treats absent as [].
   readonly parameters?: readonly ParameterRow[];
+  // DOG-3 (design D8): collected `sys.dm_sql_referenced_entities` per-view TVF rows (NATIVE
+  // driver path only). OPTIONAL — the sqlcmd/manual-dump strategies and pre-DOG-3 fixtures
+  // leave it UNSET, so their view deps stay object grain BYTE-IDENTICAL (strategy coverage
+  // difference). When present, buildModules groups it onto each covered view dep's `columns`
+  // and flips that dep to `confidence: 'declared'`.
+  readonly viewReferencedColumns?: readonly ViewReferencedColumnRow[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +255,40 @@ function moduleTypeToKind(type: string): NodeKind | null {
 
 function tableKey(schema: string, name: string): string {
   return `${schema}.${name}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOG-3 (D5/D8): stamp native TVF column sets onto a view's covered depends_on deps
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Enriches a view's `RawDependency` list with the source columns the native
+ * `sys.dm_sql_referenced_entities` TVF loop attributed to each covered (view, table) pair.
+ * A covered dep GAINS `columns` and FLIPS to `confidence: 'declared'`; an uncovered dep (no
+ * TVF group — whole-object `SELECT *`, an unbindable view skipped by extract, or the
+ * sqlcmd/manual-dump path with no view-columns family) is returned UNCHANGED (object grain,
+ * `columns` UNSET) — degrade-by-absence (D4).
+ *
+ * NOTE (deviation from design D5's "already declared" wording): the tokenizer classifies a
+ * view's read dependency as `parsed`, so attaching the catalog-sourced set is a de-facto
+ * parsed→declared flip for covered mssql view deps. The specs (mssql-extraction, graph-model)
+ * and the A.2 normalize test require `declared` where a catalog sources the columns; this
+ * honors that. The set order follows the TVF ORDER BY; the normalizer re-sorts for the edge
+ * (D3), so no per-adapter sort is applied here.
+ */
+function enrichViewDeps(
+  deps: readonly RawDependency[],
+  viewSchema: string,
+  viewName: string,
+  viewColumnGroups: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>,
+): readonly RawDependency[] {
+  const byTarget = viewColumnGroups.get(tableKey(viewSchema, viewName));
+  if (byTarget === undefined || byTarget.size === 0) return deps;
+  return deps.map((dep) => {
+    const cols = byTarget.get(tableKey(dep.target.schema ?? '', dep.target.name));
+    if (cols === undefined || cols.size === 0) return dep;
+    return { ...dep, confidence: 'declared' as const, columns: Array.from(cols) };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -527,6 +585,31 @@ function buildModules(
     }
   }
 
+  // DOG-3 (D8): per-view referenced-column groups from the native TVF loop. Keyed
+  // `view qname` → `target table qname` → ordered-unique Set of consumed source columns.
+  // Insertion order follows the query's ORDER BY (ADR-008 stable) — the normalizer re-sorts
+  // code-point ascending for the edge attr (D3), so the adapter does NOT sort (no per-adapter
+  // sort risk). A null referenced entity/column is skipped (never a speculative column).
+  const viewColumnGroups = new Map<string, Map<string, Set<string>>>();
+  for (const r of input.viewReferencedColumns ?? []) {
+    if (r.referenced_schema === null || r.referenced_entity === null || r.referenced_column === null) {
+      continue;
+    }
+    const viewKey = tableKey(r.referencing_schema, r.referencing_view);
+    const targetKey = tableKey(r.referenced_schema, r.referenced_entity);
+    let byTarget = viewColumnGroups.get(viewKey);
+    if (byTarget === undefined) {
+      byTarget = new Map();
+      viewColumnGroups.set(viewKey, byTarget);
+    }
+    let cols = byTarget.get(targetKey);
+    if (cols === undefined) {
+      cols = new Set();
+      byTarget.set(targetKey, cols);
+    }
+    cols.add(r.referenced_column);
+  }
+
   // DOG-2 §4.1/D6: build object_id → RawParameter[] from sys.parameters rows, attached to
   // procedure/function RawObjects by object_id. Sorted by parameter_id and defensively
   // filtered (parameter_id > 0 excludes the scalar-function return row); ordinal is the
@@ -617,6 +700,13 @@ function buildModules(
       { sourceIsRoutine },
     );
 
+    // DOG-3 (D5/D8): for a view, stamp the native TVF column sets onto its covered depends_on
+    // deps (flip to declared). Non-views and the sqlcmd/dump path (empty groups) are unchanged.
+    const finalDependencies =
+      kind === 'view'
+        ? enrichViewDeps(dependencies, mod.schema_name, mod.object_name, viewColumnGroups)
+        : dependencies;
+
     const obj: RawObject = {
       kind,
       schema: mod.schema_name,
@@ -624,7 +714,7 @@ function buildModules(
       ...(includeBody && mod.definition !== null ? { body: mod.definition } : {}),
       ...(dynamic ? { hasDynamicSql: true } : {}),
       ...(triggerInfo !== undefined ? { trigger: triggerInfo } : {}),
-      ...(dependencies.length > 0 ? { dependencies } : {}),
+      ...(finalDependencies.length > 0 ? { dependencies: finalDependencies } : {}),
       // DOG-2: every procedure/function carries a parameters array — populated from
       // sys.parameters, or [] for a real no-argument routine (known-zero, NOT unset).
       // Views/triggers never get one (not in the SQL_MSSQL_PARAMETERS scope).
