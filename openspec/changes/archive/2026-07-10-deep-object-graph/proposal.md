@@ -113,17 +113,35 @@ depends on. DOG-2 is pure-additive payload (no goldens on existing edges shift) 
 with DOG-1 with near-zero collision. DOG-3 is the hardest and benefits from DOG-1's plumbing. DOG-4 is
 XS polish and MAY be folded into DOG-1's PR if convenient.
 
-## Epic Status (as of 2026-07-10)
+## Epic Status (as of 2026-07-10) — ✅ COMPLETE
 
 | Child | Status | Evidence / Archive ref |
 |---|---|---|
-| **DOG-1 `calls` edges** | ✅ SHIPPED | `calls` edge kind + provenance live in canonical `graph-model`, `graph-normalization`, `graph-query` and per-engine extraction specs |
-| **DOG-2 routine parameters** | ✅ SHIPPED | `RoutinePayload.parameters` + per-engine parameter sourcing live in canonical `graph-model`, `schema-extraction`, `mcp-server`, mssql/pg/mysql/sqlite specs |
+| **DOG-1 `calls` edges** | ✅ DONE — ARCHIVED 2026-07-07 | `openspec/changes/archive/2026-07-07-dog1-calls-edges/`; `calls` edge kind + provenance live in canonical `graph-model`, `graph-normalization`, `graph-query` and per-engine extraction specs |
+| **DOG-2 routine parameters** | ✅ DONE — ARCHIVED 2026-07-07 | `openspec/changes/archive/2026-07-07-dog2-routine-parameters/`; `RoutinePayload.parameters` + per-engine parameter sourcing live in canonical `graph-model`, `schema-extraction`, `mcp-server`, mssql/pg/mysql/sqlite specs |
 | **DOG-3 column lineage (views)** | ✅ DONE — ARCHIVED 2026-07-10 | `openspec/changes/archive/2026-07-10-dog3-column-lineage/`; 9 column-lineage deltas merged into canonical specs; verify verdict ARCHIVE-READY (0 CRITICAL); shipped over `post-v1` (HEAD `287be4a`) |
-| **DOG-4 dynamic-SQL honesty** | ⏳ PENDING | not yet started — promote the `hasDynamicSql` caveat from `full`-only to `normal` detail and mark per-node confidence degradation in `affected` output |
+| **DOG-4 dynamic-SQL honesty** | ✅ DONE — ARCHIVED 2026-07-10 | `openspec/changes/archive/2026-07-10-dog4-dynamic-sql/`; caveat promoted to `normal`+`full` in explore/object + per-node degradation in precheck/affected/impact; 2 deltas (`mcp-server`, `graph-query`) merged into canonical specs; verify verdict ARCHIVE-READY (0 CRITICAL, 1 WARNING); shipped over `post-v1` (HEAD `fdf2dc2`) |
 
-The epic remains OPEN until DOG-4 ships. DOG-3's benchmark column-lineage family is now INSTANTIABLE (the
-edges exist); the labeled benchmark RUN is DEFERRED to its own change (standing precedent), NOT part of DOG-3.
+## Epic Closure — deep-object-graph COMPLETE (2026-07-10)
+
+ALL FOUR children have shipped and archived. The epic is CLOSED; this proposal is archived alongside its
+last child (DOG-4).
+
+| # | Child | Shipped | Archive folder |
+|---|-------|---------|----------------|
+| 1 | DOG-1 calls-edges | 2026-07-07 | `2026-07-07-dog1-calls-edges` |
+| 2 | DOG-2 routine-parameters | 2026-07-07 | `2026-07-07-dog2-routine-parameters` |
+| 3 | DOG-3 column-lineage | 2026-07-10 | `2026-07-10-dog3-column-lineage` |
+| 4 | DOG-4 dynamic-sql | 2026-07-10 | `2026-07-10-dog4-dynamic-sql` |
+
+The INTERNALS of programmable objects — call graph (DOG-1), parameters (DOG-2), view column lineage
+(DOG-3), and dynamic-SQL honesty (DOG-4) — are now modeled, surfaced, and specified in the canonical
+specs, each with per-edge/per-payload provenance and per-engine honesty (parsed vs catalog-declared vs
+absent). No child touched the FK/reference/inference paths or the storage schema beyond the listed
+additive extensions. The benchmark column-lineage family (DOG-3) is INSTANTIABLE; the labeled benchmark
+RUN remains DEFERRED to its own future change (standing precedent), and is NOT a blocker for this epic's
+closure. Follow-ups tracked in the DOG-4 archive report (W1 CLI `affected --json` e2e; S2 impact
+pre-cache line) are non-blocking and belong to any future hardening change.
 
 ## Affected Areas
 
@@ -172,15 +190,15 @@ additions, so reverting any one child leaves the other three and all shipped eng
 
 ## Success Criteria (epic-level; each child pins its own detailed acceptance)
 
-- [ ] The four child changes exist as separate SDD changes with their own proposal→spec→design→tasks.
-- [ ] **DOG-1**: a proc calling a proc yields exactly one `calls` edge with the engine's correct
+- [x] The four child changes exist as separate SDD changes with their own proposal→spec→design→tasks.
+- [x] **DOG-1**: a proc calling a proc yields exactly one `calls` edge with the engine's correct
       confidence (mssql `declared`, pg/mysql/sqlite `parsed`) and produces NO spurious table stub; impact
       traverses `calls` (affected of a leaf table reaches procs that reach it through call chains).
-- [ ] **DOG-2**: explore/object renders each routine's parameters (name/type/direction/default) for
+- [x] **DOG-2**: explore/object renders each routine's parameters (name/type/direction/default) for
       mssql/pg/mysql; sqlite HONESTLY reports parameters unavailable — never fabricated.
-- [ ] **DOG-3**: at least one view's output columns map to source `table.column` via column-grain edges
+- [x] **DOG-3**: at least one view's output columns map to source `table.column` via column-grain edges
       where the catalog sources them; where it cannot, the edge DEGRADES to object grain with provenance.
-- [ ] **DOG-4**: the dynamic-SQL caveat is visible at `normal` detail and `affected` marks the affected
+- [x] **DOG-4**: the dynamic-SQL caveat is visible at `normal` detail and `affected` marks the affected
       nodes' confidence as degraded.
-- [ ] Every new edge/payload declares provenance; per-engine capability differences are stated plainly
+- [x] Every new edge/payload declares provenance; per-engine capability differences are stated plainly
       (HONESTY); all assertions are exact-set (L-009), never existence-only; `tsc`/lint/test green.
