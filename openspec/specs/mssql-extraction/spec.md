@@ -255,22 +255,58 @@ the parent table (schema and name), per the `graph-model` contract.
 ### Requirement: Dynamic SQL is flagged, never guessed
 
 Where a module body cannot be reliably analyzed by the conservative tokenizer — notably dynamic SQL
-executed via `EXEC`/`sp_executesql` — the mssql adapter MUST mark the module `has_dynamic_sql: true`
-(US-007) and MUST NOT fabricate any `reads_from`/`writes_to`/`depends_on` edge for the unanalyzable
-portion. This is the honest Phase-3 boundary: full-fidelity T-SQL parsing is DEFERRED and not committed
-to any later phase.
+executed via `sp_executesql` or an `EXEC`/`EXECUTE` of a STRING EXPRESSION (`EXEC(<string>)`,
+`EXEC (@sql)`, `EXECUTE @sql`) — the mssql adapter MUST mark the module `has_dynamic_sql: true` (US-007)
+and MUST NOT fabricate any `reads_from`/`writes_to`/`depends_on` edge for the unanalyzable portion. This
+is the honest Phase-3 boundary: full-fidelity T-SQL parsing is DEFERRED and not committed to any later
+phase.
 
-#### Scenario: Dynamic-SQL procedure is flagged with no invented edges
+A bare `EXEC`/`EXECUTE <identifier>` whose operand is a routine name (e.g. `EXEC dbo.usp_log_change`,
+`EXECUTE [dbo].[proc]`) is a RESOLVED CALL — it is already captured as a `calls` edge from the catalog
+(`sys.sql_expression_dependencies`, DOG-1) and its target is fully visible. It MUST NOT, on its own,
+cause `has_dynamic_sql: true`. The marker means "a dependency the STATIC graph cannot see"; a declared
+call is NOT such a blind spot, and marking it as one is a false positive that misleads consumers of the
+`[DYNAMIC SQL]` marker.
 
-- GIVEN a stored procedure whose body builds and runs dynamic SQL via `EXEC`/`sp_executesql`
+The distinction MUST be conservative and honest, never a full grammar:
+- `sp_executesql` present → `has_dynamic_sql: true` (always).
+- `EXEC`/`EXECUTE` immediately followed by `(` or `@` (a parenthesized string or a string variable) →
+  `has_dynamic_sql: true`.
+- `EXEC`/`EXECUTE` followed by an identifier operand (bracketed/quoted or bare) → NOT dynamic by itself.
+- A module that does BOTH a resolved call AND a real dynamic-SQL execution → `has_dynamic_sql: true` (the
+  presence of ANY real dynamic form flags the module, regardless of also having resolved calls).
+- No `sp_executesql` and no `EXEC`/`EXECUTE (`/`@` form → `has_dynamic_sql` absent/false.
+
+#### Scenario: Dynamic-SQL procedure via sp_executesql is flagged with no invented edges
+
+- GIVEN the torture procedure `dbo.sp_dynamic_search` whose body builds a string and runs it via `EXEC sp_executesql @sql`
 - WHEN `extract(scope)` runs at `full`
 - THEN the procedure's `RawObject` is marked `has_dynamic_sql: true`
 - AND NO speculative `reads_from`/`writes_to`/`depends_on` edge is fabricated for the dynamic portion
 
+#### Scenario: Bare EXEC of a resolved routine is NOT flagged as dynamic (the benchmark-v2 false positive)
+
+- GIVEN the torture procedure `dbo.usp_refresh_totals` whose body does `UPDATE dbo.order_totals ...` and `EXEC dbo.usp_log_change @order_id, N'refreshed'` (no `sp_executesql`, no `EXEC(...)`/`EXEC @var`)
+- WHEN `extract(scope)` runs at `full`
+- THEN `dbo.usp_refresh_totals` is NOT marked `has_dynamic_sql` (the key is absent / false)
+- AND it STILL emits its `calls dbo.usp_log_change (declared)` and `writes_to dbo.order_totals (parsed)` edges UNCHANGED (the DOG-1 behaviour is untouched)
+
+#### Scenario: EXEC/EXECUTE of a string expression IS flagged
+
+- GIVEN a procedure body that runs `EXEC('SELECT ...')`, or `EXEC (@sql)`, or `EXECUTE @sql`, or `EXECUTE('SELECT ...')`
+- WHEN `has_dynamic_sql` is derived from the body
+- THEN it is `true` for each of those string-execution forms (the full keyword `EXECUTE` is covered, not only the `EXEC` abbreviation)
+
+#### Scenario: A routine doing BOTH a resolved call and real dynamic SQL still flags
+
+- GIVEN a procedure whose body contains `EXEC dbo.usp_log_change` (a resolved call) AND `EXEC(@sql)` (real dynamic SQL)
+- WHEN `has_dynamic_sql` is derived
+- THEN it is `true` (any real dynamic form flags the module; the presence of a resolved call does not suppress the flag)
+
 #### Scenario: Full-fidelity parsing is an acknowledged limitation, not a hidden gap
 
 - GIVEN the Phase-3 conservative tokenizer
-- WHEN a body cannot be resolved to definite read/write targets
+- WHEN a body runs genuine dynamic SQL that cannot be resolved to definite read/write targets
 - THEN the module is marked `has_dynamic_sql: true` rather than guessed
 - AND full T-SQL grammar parsing is recorded as DEFERRED (not committed to any later phase)
 
@@ -778,3 +814,93 @@ MUST pass the engines write-verb scanner (catalog `SELECT` only), as MUST the un
 - THEN the re-blessed native-path goldens carry the `dbo.v_order_summary` view→table `depends_on` edges with `attrs.dstColumns = [customer_id, order_id, status, total_amount]` (to `dbo.orders`) and `[order_id, product_id]` (to `dbo.order_items`), each FLIPPED to `confidence: 'declared'`, byte-identical on re-run (ADR-008)
 - AND the mssql DUMP golden keeps those edges at `parsed` OBJECT grain (no `attrs.dstColumns`), byte-identical to pre-DOG-3
 - AND both `SQL_MSSQL_VIEW_REFERENCED_COLUMNS` and `SQL_MSSQL_DEPENDENCIES` pass the engines write-verb scanner
+
+---
+
+## Requirements Added by shipped-artifact-fixes (2026-07-11)
+
+> Bug 2 fix. Two NEW requirements — the interop-safe resolution contract and the dist-level
+> verification tier. These sit alongside the existing "Missing mssql driver names the install command"
+> requirement (both govern the ADR-006 dynamic `import('mssql')`), and do not modify it.
+
+### Requirement: Optional mssql driver is resolved interop-safely across ESM and bundled CJS
+
+The mssql adapter loads the optional `mssql` driver via a dynamic `import()` (ADR-006). Because the SHIPPED
+artifact is a bundled CJS dist, `await import('mssql')` resolves under Node's CJS->ESM interop, which exposes
+the CommonJS module ONLY under the namespace `.default` property. The native-tedious strategy MUST therefore
+resolve `ConnectionPool` interop-safely — reading it from the module namespace OR from `.default` — matching
+the existing pg / mysql2 / mongodb factory pattern. It MUST NOT destructure a named export directly off the
+dynamic-import result, which yields `undefined` (and a `new undefined()` crash) in the bundled dist.
+
+#### Scenario: ConnectionPool resolves when the driver arrives under `.default` (bundled-CJS shape)
+
+- GIVEN the mssql module is provided in the bundled-CJS interop shape `{ default: { ConnectionPool } }`
+- WHEN the native-tedious strategy loads the driver and builds a pool
+- THEN it resolves `ConnectionPool` from `.default` and constructs a real pool (never `new undefined()`)
+
+#### Scenario: ConnectionPool resolves when the driver exposes a top-level named export (ESM/vitest shape)
+
+- GIVEN the mssql module exposes `ConnectionPool` at the namespace top level
+- WHEN the strategy loads the driver
+- THEN it resolves the same constructor without relying on `.default`
+
+#### Scenario: Absent driver still names the install command (unchanged behavior)
+
+- GIVEN the `mssql` package is not installed
+- WHEN the strategy loads it via dynamic import
+- THEN the raised `ConnectionError` message still contains the exact `npm i mssql` command
+
+### Requirement: Live SQL Server connectivity is verified against the bundled dist, not vitest-loaded src
+
+A gated integration test MUST exercise the BUNDLED `dist/index.cjs` `createMssqlSchemaAdapter` against a live
+SQL Server container — NOT the vitest-loaded `src` — so that Node's real CJS->ESM interop is on the connection
+path. This closes the masking class in which vitest lifts CommonJS named exports and hides a defect that only
+manifests in the shipped artifact. The test MUST self-gate on `DBGRAPH_INTEGRATION=1` AND the presence of a
+built `dist/`, skipping cleanly when either is absent so the default `npm test` gate is unaffected and remains
+CI-independent (`dist/` is gitignored).
+
+#### Scenario: Bundled dist connects live with SQL authentication
+
+- GIVEN a running SQL Server container and a built `dist/index.cjs`
+- WHEN `createMssqlSchemaAdapter(config)` from the DIST is invoked through real Node against the container with SQL auth
+- THEN it establishes a usable connection and extracts a catalog (no `new undefined()` failure)
+
+#### Scenario: Gate is skipped cleanly when the dist or Docker is absent
+
+- GIVEN `DBGRAPH_INTEGRATION` is unset OR `dist/` has not been built
+- WHEN the suite runs under the default `npm test`
+- THEN the dist-level test is SKIPPED (never failing) and the suite floor of 3731 tests (incl. 4 skipped) holds
+
+---
+
+## Requirements Added by mssql-dynamic-sql-granularity (2026-07-11)
+
+> Companion to the MODIFIED "Dynamic SQL is flagged, never guessed" requirement above: pins the
+> deliberate golden re-bless that drops the resolved-call false positive on `dbo.usp_refresh_totals`
+> while keeping the true positive on `dbo.sp_dynamic_search`, and freezes the sibling-engine goldens.
+> Stories: US-007, US-027; ADR-007, ADR-008.
+
+### Requirement: mssql goldens re-blessed to drop the resolved-call false positive
+
+The mssql golden-pinned `RawCatalog` (`test/fixtures/mssql/golden/golden-raw-catalog.json`) and any
+end-to-end / normalize golden that embeds the routine payload MUST be re-blessed DELIBERATELY so that
+`dbo.usp_refresh_totals` NO LONGER carries `has_dynamic_sql: true`, while `dbo.sp_dynamic_search` KEEPS
+`has_dynamic_sql: true`. The re-bless MUST be surgical: ONLY the false `has_dynamic_sql` on
+resolved-call-only routines is removed; every other byte (edges, parameters, ordering) is unchanged and
+byte-identical on re-run (ADR-008). The pg, mysql, sqlite and mongodb goldens MUST be BYTE-IDENTICAL to
+before this change (they are not affected). The mssql live-tier suite MUST additionally assert a NEGATIVE
+control: a resolved-call-only routine (`dbo.usp_refresh_totals`) has `has_dynamic_sql` absent/false, while
+`dbo.sp_dynamic_search` remains flagged — both against the REAL materialized torture database.
+
+#### Scenario: re-blessed mssql golden drops only the false flag, byte-identical otherwise
+
+- GIVEN the materialized mssql torture database extracted at `full`
+- WHEN the `RawCatalog` is serialized via `stableStringify`
+- THEN `dbo.usp_refresh_totals` carries NO `has_dynamic_sql` key and `dbo.sp_dynamic_search` carries `has_dynamic_sql: true`
+- AND every other byte of the golden is unchanged and byte-identical on a second extraction (ADR-008)
+
+#### Scenario: sibling-engine goldens are untouched
+
+- GIVEN the pg, mysql, sqlite and mongodb golden-raw-catalog files
+- WHEN this change ships
+- THEN each is BYTE-IDENTICAL to before (the fix is scoped to the mssql tokenizer only)
