@@ -1,0 +1,19 @@
+docs/benchmarks.md
+  s_b5cc375016610a::t_fa2031b03dd1ee 284-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "37cf16d630b27be61ac676b81228b757f9f71e09",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-fable-5"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
