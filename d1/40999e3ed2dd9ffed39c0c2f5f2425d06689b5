@@ -1,0 +1,25 @@
+openspec/changes/mssql-config-hardening/specs/cli-config/spec.md
+  s_b5cc375016610a::t_32b7cbac017b50 1-53
+openspec/changes/mssql-config-hardening/design.md
+  s_b5cc375016610a::t_6f14db97df5cd5 1-201
+openspec/changes/mssql-config-hardening/tasks.md
+  s_b5cc375016610a::t_eca83ba62e5102 1-71
+openspec/changes/mssql-config-hardening/proposal.md
+  s_b5cc375016610a::t_dd3066e1048ea6 1-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "d140999e3ed2dd9ffed39c0c2f5f2425d06689b5",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
