@@ -13,15 +13,26 @@
 
 import { describe, it, expect } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
 import {
   occursStandalone,
   excludeScopeBlock,
+  buildScopeBlock,
+  nBoundsForSubstrate,
+  substrateCaption,
+  stripMssqlDdl,
   deriveCoverageTargets,
   verifyDumpCoverage,
   joinManifestHashes,
   type CoverageTarget,
   type ManifestHashEntry,
 } from '../../benchmark/harness-checks.ts';
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const MSSQL_TORTURE = readFileSync(join(REPO_ROOT, 'test', 'fixtures', 'mssql', 'torture.sql'), 'utf8');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // deriveCoverageTargets — per-family target derivation (D2 / D2-shape)
@@ -524,4 +535,99 @@ describe('occursStandalone fires on ZERO frozen run-1/2 pairs (non-breaking)', (
       });
     }
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BATCH B — substrate dimension pure seams (D4/D5). The dev stages call these; the
+// units import them directly. Every new branch is substrate-gated so the sqlite
+// DEFAULT is byte-identical.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('nBoundsForSubstrate: substrate-aware N bound (B1.3 / r3)', () => {
+  it('sqlite-torture keeps the frozen lookup bound 5..10', () => {
+    expect(nBoundsForSubstrate('sqlite-torture')).toStrictEqual({ min: 5, max: 10 });
+  });
+
+  it('mssql-torture relaxes the lower bound to 3 (planning substrate, ships N=3)', () => {
+    expect(nBoundsForSubstrate('mssql-torture')).toStrictEqual({ min: 3, max: 10 });
+  });
+
+  it('an unknown substrate defaults to the frozen 5..10 bound (default preserved)', () => {
+    expect(nBoundsForSubstrate('whatever-else')).toStrictEqual({ min: 5, max: 10 });
+  });
+});
+
+describe('substrateCaption: optional render caption (B1.1) — absent ⇒ byte-identical', () => {
+  it('returns an EMPTY string when the substrate is absent (default render unchanged)', () => {
+    expect(substrateCaption(undefined)).toBe('');
+    expect(substrateCaption('')).toBe('');
+  });
+
+  it('prepends a labeled caption when a substrate is given', () => {
+    expect(substrateCaption('mssql-torture')).toBe('Substrate: mssql-torture\n\n');
+  });
+});
+
+describe('buildScopeBlock: assemble the marked scope list (B2, r2)', () => {
+  it('wraps the scope list in the literal own-line markers', () => {
+    expect(buildScopeBlock(['a', 'b'])).toBe('=== SCOPE BEGIN ===\na\nb\n=== SCOPE END ===');
+  });
+
+  it('round-trips with excludeScopeBlock — the served scope block is fully strippable', () => {
+    const served = `Some question prose.\n\n${buildScopeBlock(['sp_dynamic_search', 'usp_log_change'])}`;
+    // The marked block + its markers are removed; the blank line that preceded it remains.
+    expect(excludeScopeBlock(served)).toBe('Some question prose.\n');
+  });
+});
+
+describe('plan question leak guard = excludeScopeBlock ∘ occursStandalone (B2.3, L-009)', () => {
+  const scope = ['sp_place_order', 'sp_dynamic_search', 'usp_log_change', 'usp_refresh_totals'];
+
+  it('the answer token appearing ONLY in the served scope block is NOT a leak', () => {
+    const served = `Which routines carry a hidden dynamic dependency?\n\n${buildScopeBlock(scope)}`;
+    expect(occursStandalone(excludeScopeBlock(served).toLowerCase(), 'sp_dynamic_search')).toBe(false);
+  });
+
+  it('a FREE-STANDING answer token in the PROSE (outside the scope block) still ABORTS', () => {
+    const leaky = `The blind spot is sp_dynamic_search.\n\n${buildScopeBlock(scope)}`;
+    expect(occursStandalone(excludeScopeBlock(leaky).toLowerCase(), 'sp_dynamic_search')).toBe(true);
+  });
+
+  it('an answer token EMBEDDED in a larger identifier is NOT a leak (alphanumeric-adjacency)', () => {
+    // `usp_log_change` embedded within `dbo_usp_log_change_v2` — flanked by `_`, not standalone.
+    const embedded = 'see routine dbo_usp_log_change_v2 for details';
+    expect(occursStandalone(excludeScopeBlock(embedded).toLowerCase(), 'usp_log_change')).toBe(false);
+  });
+});
+
+describe('stripMssqlDdl: deterministic comment/header/GO-stripped dump (B3.1, D5)', () => {
+  const dump = stripMssqlDdl(MSSQL_TORTURE);
+
+  it('keeps every CREATE and the full SP bodies verbatim (EXEC / sp_executesql / RETURN call)', () => {
+    expect(dump).toContain('CREATE SEQUENCE dbo.order_seq');
+    expect(dump).toContain('CREATE PROCEDURE dbo.usp_log_change');
+    expect(dump).toContain('CREATE PROCEDURE dbo.usp_refresh_totals');
+    expect(dump).toContain('EXEC dbo.usp_log_change @order_id, N\'refreshed\'');
+    expect(dump).toContain('EXEC sp_executesql @sql');
+    expect(dump).toContain('RETURN dbo.fn_round_money(@gross)');
+    expect(dump).toContain('REFERENCES dbo.orders (order_id)');
+  });
+
+  it('drops the header block, every full-line -- comment, and every GO separator', () => {
+    for (const line of dump.split('\n')) {
+      expect(line.trim().startsWith('--')).toBe(false);
+      expect(/^GO$/i.test(line.trim())).toBe(false);
+    }
+    expect(dump).not.toContain('SQL Server torture fixture'); // header text gone
+  });
+
+  it('is deterministic — same input yields byte-identical output', () => {
+    expect(stripMssqlDdl(MSSQL_TORTURE)).toBe(dump);
+  });
+
+  it('the stripped dump has a positive approx token cost via scorer/tokens.ts boundary', () => {
+    // (token cost asserted in scorer.test via schemaTokens; here we pin non-empty determinism)
+    expect(dump.length).toBeGreaterThan(0);
+    expect(dump.endsWith('\n')).toBe(true);
+  });
 });

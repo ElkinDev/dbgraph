@@ -22,7 +22,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,7 +41,13 @@ const { createSqliteGraphStore } = (await import(
   '../dist/index.js' as string
 )) as typeof import('../src/index.js');
 import type { Family, FkHop, TriggerTuple } from './scorer/index.js';
-import { occursStandalone, excludeScopeBlock } from './harness-checks.ts';
+import {
+  occursStandalone,
+  excludeScopeBlock,
+  buildScopeBlock,
+  nBoundsForSubstrate,
+  auditPlanKey,
+} from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deterministic helpers (ADR-008 — locale-independent, no randomness)
@@ -392,6 +398,7 @@ function renderQuestionsYaml(
   included: readonly Family[],
   excluded: readonly Family[],
   questions: readonly QuestionRecord[],
+  substrate: string,
 ): string {
   const lines: string[] = [];
   lines.push('# dbgraph benchmark — pre-registered question set (US-035, benchmark spec Req 2).');
@@ -399,7 +406,7 @@ function renderQuestionsYaml(
   lines.push('# Deterministic: regenerating from the committed torture fixture reproduces this');
   lines.push('# file byte-for-byte. Ground truth is held SEPARATELY under benchmark/ground-truth/.');
   lines.push('version: 1');
-  lines.push('substrate: sqlite-torture');
+  lines.push(`substrate: ${substrate}`);
   lines.push(`perFamily: ${perFamily}`);
   lines.push(`n: ${n}`);
   lines.push('familiesIncluded:');
@@ -428,9 +435,15 @@ function renderGroundTruthJson(groundTruth: Readonly<Record<string, unknown>>): 
 // Self-checks (task 2.5 — fail LOUDLY)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function assertNInBounds(n: number): void {
-  if (!(n >= 5 && n <= 10)) {
-    throw new Error(`SELF-CHECK FAILED: N=${n} is outside the pre-registered bound 5 <= N <= 10 (spec Req 2).`);
+function assertNInBounds(n: number, substrate: string): void {
+  // Substrate-aware bound (r3): sqlite lookup sets 5..10, mssql-torture planning set 3..10. The
+  // bound's INTENT is anti-cherry-picking — every committed question in a pre-registered set runs
+  // and is reported, none dropped. The sqlite default (5..10) is byte-identical to the prior check.
+  const { min, max } = nBoundsForSubstrate(substrate);
+  if (!(n >= min && n <= max)) {
+    throw new Error(
+      `SELF-CHECK FAILED: N=${n} is outside the pre-registered bound ${min} <= N <= ${max} for substrate "${substrate}" (spec Req 1/r3).`,
+    );
   }
 }
 
@@ -465,6 +478,112 @@ function assertNoAnswerLeak(questions: readonly QuestionRecord[]): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// mssql-torture read-key path (D2 — anti-circularity carve-out, Req 1)
+// Reads the COMMITTED hand-planted plan-* keys, opens NO store, and NEVER calls
+// affected/getImpact. The scope-list families serve the marked scope block (r2);
+// the leak guard strips it via `excludeScopeBlock` so the scope is fair input.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Build the QuestionRecord for one committed plan-* key (question + scope block where applicable). */
+function buildPlanQuestionRecord(key: Record<string, unknown>): QuestionRecord {
+  const family = key['family'] as Family;
+  const qid = String(key['qid']);
+  const prose = String(key['question']);
+  const answerFormat = String(key['answerFormat']);
+  const sourceDdlRef = String(key['source_ddl_ref']);
+  const sourceRefs = key['source_ddl_refs'] as Record<string, string>;
+
+  if (family === 'plan-callers') {
+    const callers = (key['callers'] ?? []) as readonly string[];
+    return {
+      qid,
+      family,
+      sortKey: qid,
+      question: prose, // plan-callers serves NO scope block (standard guard, D2a)
+      answerFormat,
+      groundTruth: { callers, source_ddl_ref: sourceDdlRef, source_ddl_refs: sourceRefs },
+      answerTokens: [...callers, callers.join(', ')],
+      sourceObject: String(key['callee'] ?? qid),
+    };
+  }
+  if (family === 'plan-blindspots') {
+    const scope = (key['scope'] ?? []) as readonly string[];
+    const blindSpots = (key['blind_spots'] ?? []) as readonly string[];
+    return {
+      qid,
+      family,
+      sortKey: qid,
+      question: `${prose}\n\n${buildScopeBlock(scope)}`,
+      answerFormat,
+      groundTruth: { blind_spots: blindSpots, scope, source_ddl_ref: sourceDdlRef, source_ddl_refs: sourceRefs },
+      answerTokens: [...blindSpots, blindSpots.join(', ')],
+      sourceObject: qid,
+    };
+  }
+  // plan-order
+  const scope = (key['scope'] ?? []) as readonly string[];
+  const precede = (key['precede'] ?? []) as readonly (readonly [string, string])[];
+  return {
+    qid,
+    family,
+    sortKey: qid,
+    question: `${prose}\n\n${buildScopeBlock(scope)}`,
+    answerFormat,
+    groundTruth: { scope, precede, source_ddl_ref: sourceDdlRef, source_ddl_refs: sourceRefs },
+    answerTokens: [...scope, scope.join(', ')],
+    sourceObject: qid,
+  };
+}
+
+/** Generate the mssql-torture planning set from committed keys (read-key path; no store). */
+function generateMssqlPlanSet(
+  planningKeysDir: string,
+  mssqlDdlPath: string,
+  outDir: string,
+  groundTruthDir: string,
+  substrate: string,
+): void {
+  if (!existsSync(planningKeysDir)) {
+    throw new Error(`generate --substrate mssql-torture: planning-keys dir not found at ${planningKeysDir}.`);
+  }
+  const files = readdirSync(planningKeysDir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  if (files.length === 0) {
+    throw new Error(`generate --substrate mssql-torture: no committed plan-* keys under ${planningKeysDir}.`);
+  }
+  const ddlText = readFileSync(mssqlDdlPath, 'utf8');
+
+  const records: QuestionRecord[] = [];
+  const included: Family[] = [];
+  for (const file of files) {
+    const key = JSON.parse(readFileSync(join(planningKeysDir, file), 'utf8')) as Record<string, unknown>;
+    // Anti-circularity self-check (Req1): every planted fact MUST be auditable against the DDL.
+    // Keys are READ here — there is NO getImpact/affected call on this path.
+    for (const r of auditPlanKey(key, ddlText)) {
+      if (!r.ok) throw new Error(`SELF-CHECK FAILED (plan-key audit): ${r.detail}`);
+    }
+    records.push(buildPlanQuestionRecord(key));
+    const fam = key['family'] as Family;
+    if (!included.includes(fam)) included.push(fam);
+  }
+  records.sort((a, b) => cmp(a.qid, b.qid));
+
+  const n = records.length;
+  assertNInBounds(n, substrate); // r3 anti-cherry-pick: every committed question runs (none dropped)
+  assertSourceRefs(records);
+  assertNoAnswerLeak(records); // scope block excluded via excludeScopeBlock (A1.3)
+
+  mkdirSync(groundTruthDir, { recursive: true });
+  writeFileSync(join(outDir, 'questions.yaml'), renderQuestionsYaml(1, n, included, [], records, substrate));
+  for (const q of records) {
+    writeFileSync(join(groundTruthDir, `${q.qid}.json`), renderGroundTruthJson(q.groundTruth));
+  }
+  process.stdout.write(`generate: N=${n} (substrate=${substrate}); families=[${included.join(', ')}]\n`);
+  for (const q of records) process.stdout.write(`  ${q.qid} (${q.family})\n`);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -480,6 +599,18 @@ const ddlPath =
   args['ddl'] !== undefined ? resolve(args['ddl']) : join(repoRoot, 'test', 'fixtures', 'sqlite', 'torture.sql');
 const ddlRef = 'test/fixtures/sqlite/torture.sql';
 const perFamily = args['per-family'] !== undefined ? Number.parseInt(args['per-family'], 10) : 1;
+const substrate = args['substrate'] !== undefined ? String(args['substrate']) : 'sqlite-torture';
+
+// mssql-torture reads committed keys and writes its own set BEFORE the sqlite derivation below —
+// which stays byte-identical (this branch never runs on the default `sqlite-torture` substrate).
+if (substrate === 'mssql-torture') {
+  const planningKeysDir =
+    args['planning-keys'] !== undefined ? resolve(args['planning-keys']) : join(benchmarkDir, 'planning-keys');
+  const mssqlDdlPath =
+    args['ddl'] !== undefined ? resolve(args['ddl']) : join(repoRoot, 'test', 'fixtures', 'mssql', 'torture.sql');
+  generateMssqlPlanSet(planningKeysDir, mssqlDdlPath, outDir, join(outDir, 'ground-truth'), substrate);
+  process.exit(0);
+}
 
 if (!existsSync(graphPath)) {
   throw new Error(`Built graph not found at ${graphPath}. Build it first: dbgraph init --dialect sqlite --file <torture.db>.`);
@@ -546,12 +677,15 @@ for (const candidate of candidatesByFamily.get('impact') ?? []) {
 const n = selected.length;
 
 // ── Self-checks (fail loudly BEFORE writing the frozen set) ──────────────────
-assertNInBounds(n);
+assertNInBounds(n, substrate);
 assertSourceRefs(selected);
 assertNoAnswerLeak(selected);
 
 // ── Write the frozen pre-registered set ──────────────────────────────────────
-writeFileSync(join(outDir, 'questions.yaml'), renderQuestionsYaml(perFamily, n, included, excluded, selected));
+writeFileSync(
+  join(outDir, 'questions.yaml'),
+  renderQuestionsYaml(perFamily, n, included, excluded, selected, substrate),
+);
 for (const q of selected) {
   writeFileSync(join(groundTruthDir, `${q.qid}.json`), renderGroundTruthJson(q.groundTruth));
 }

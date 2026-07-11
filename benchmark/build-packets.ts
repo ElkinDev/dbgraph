@@ -36,7 +36,12 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 import { schemaTokens, type Family, type TokenCount } from './scorer/index.ts';
-import { deriveCoverageTargets, verifyDumpCoverage, excludeScopeBlock } from './harness-checks.ts';
+import {
+  deriveCoverageTargets,
+  verifyDumpCoverage,
+  excludeScopeBlock,
+  stripMssqlDdl,
+} from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI args (mirrors generate.ts — no dependency on a YAML/arg library, ADR: zero new deps)
@@ -229,6 +234,20 @@ function answerAtoms(family: Family, gt: Record<string, unknown>): string[] {
       const cols = (gt['columns'] ?? []) as readonly string[];
       return [cols.join(', ')];
     }
+    case 'plan-callers': {
+      const callers = ((gt['callers'] ?? []) as readonly string[]).slice().sort();
+      return [callers.join(', ')];
+    }
+    case 'plan-blindspots': {
+      const blindSpots = ((gt['blind_spots'] ?? []) as readonly string[]).slice().sort();
+      return [blindSpots.join(', ')];
+    }
+    case 'plan-order': {
+      // The composed answer is an ORDERING of the scoped set; the scope names themselves live in
+      // the served scope block (excluded from the leak scan), so the composed atom is what to guard.
+      const scope = (gt['scope'] ?? []) as readonly string[];
+      return [scope.join(', ')];
+    }
     default:
       return [];
   }
@@ -289,6 +308,8 @@ function assertPacketPair(
 
 const args = parseArgs(process.argv.slice(2));
 const benchmarkDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = dirname(benchmarkDir);
+const substrate = args['substrate'] !== undefined ? String(args['substrate']) : 'sqlite-torture';
 
 const questionsPath =
   args['questions'] !== undefined ? resolve(args['questions']) : join(benchmarkDir, 'questions.yaml');
@@ -297,12 +318,6 @@ const groundTruthDir =
 const outDir = args['out'] !== undefined ? resolve(args['out']) : join(benchmarkDir, 'packets');
 const dbPath = args['db'] !== undefined ? resolve(args['db']) : '';
 
-if (dbPath === '' || !existsSync(dbPath)) {
-  throw new Error(
-    'build-packets: --db <target-sqlite.db> is required (the indexed database, for the sqlite_master DDL dump). ' +
-      'Build it from the committed fixture first (materialize test/fixtures/sqlite/torture.sql).',
-  );
-}
 if (!existsSync(questionsPath)) {
   throw new Error(`build-packets: questions.yaml not found at ${questionsPath}. Run generate.ts first.`);
 }
@@ -312,7 +327,26 @@ if (questions.length === 0) {
   throw new Error('build-packets: no questions parsed from questions.yaml (empty pre-registered set?).');
 }
 
-const ddlDump = buildDdlDump(dbPath);
+// The WITHOUT DDL dump. Default `sqlite-torture` (byte-identical): the comment-free `sqlite_master`
+// dump from --db. `mssql-torture` (D5): the deterministic comment/header/GO-stripped torture.sql,
+// SP bodies verbatim — no store, no --db needed.
+let ddlDump: string;
+if (substrate === 'mssql-torture') {
+  const mssqlDdlPath =
+    args['ddl'] !== undefined ? resolve(args['ddl']) : join(repoRoot, 'test', 'fixtures', 'mssql', 'torture.sql');
+  if (!existsSync(mssqlDdlPath)) {
+    throw new Error(`build-packets --substrate mssql-torture: mssql fixture not found at ${mssqlDdlPath}.`);
+  }
+  ddlDump = stripMssqlDdl(readFileSync(mssqlDdlPath, 'utf8'));
+} else {
+  if (dbPath === '' || !existsSync(dbPath)) {
+    throw new Error(
+      'build-packets: --db <target-sqlite.db> is required (the indexed database, for the sqlite_master DDL dump). ' +
+        'Build it from the committed fixture first (materialize test/fixtures/sqlite/torture.sql).',
+    );
+  }
+  ddlDump = buildDdlDump(dbPath);
+}
 const withoutTokens: TokenCount = schemaTokens({ schemaText: ddlDump });
 
 mkdirSync(outDir, { recursive: true });
@@ -324,9 +358,15 @@ interface ManifestEntry {
   readonly promptSha256: string;
   /** WITHOUT: schema-tokens of the DDL dump (D9). WITH: null — counted from tool outputs at run time. */
   readonly schemaTokens: TokenCount | null;
+  /** ADDITIVE substrate label (spec Req 4). OMITTED on the frozen `sqlite-torture` default so the
+   * committed sqlite manifest stays BYTE-IDENTICAL; present only for a non-default substrate. */
+  readonly substrate?: string;
 }
 
 const sha256 = (s: string): string => createHash('sha256').update(s, 'utf8').digest('hex');
+
+/** The substrate label to thread into a manifest entry — `{}` on the sqlite default (byte-identical). */
+const substrateField: { substrate?: string } = substrate === 'sqlite-torture' ? {} : { substrate };
 
 const manifest: ManifestEntry[] = [];
 for (const q of questions) {
@@ -357,6 +397,7 @@ for (const q of questions) {
     condition: 'with',
     promptSha256: sha256(withText),
     schemaTokens: null,
+    ...substrateField,
   });
   manifest.push({
     qid: q.qid,
@@ -364,6 +405,7 @@ for (const q of questions) {
     condition: 'without',
     promptSha256: sha256(withoutText),
     schemaTokens: withoutTokens,
+    ...substrateField,
   });
 }
 

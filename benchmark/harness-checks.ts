@@ -98,6 +98,68 @@ export function excludeScopeBlock(text: string): string {
   return out.join('\n');
 }
 
+/**
+ * Assemble a served scope list into the marked block (B2) — the inverse of `excludeScopeBlock`.
+ * The scope-list planning families (`plan-blindspots`, `plan-order`) serve this block IDENTICALLY
+ * to both conditions; `generate` appends it to the question prose, and BOTH leak guards strip it
+ * via `excludeScopeBlock` so the fair scope input never counts as an answer leak.
+ */
+export function buildScopeBlock(scope: readonly string[]): string {
+  return [SCOPE_BEGIN, ...scope, SCOPE_END].join('\n');
+}
+
+// ── Substrate dimension (B1 / D4) ────────────────────────────────────────────
+
+/**
+ * The pre-registered N bound for a substrate (r3). Lookup sets (`sqlite-torture` and any other
+ * substrate) keep the frozen 5..10 bound; the `mssql-torture` PLANNING substrate relaxes the lower
+ * bound to 3 (v2 ships N=3). The bound's INTENT is anti-cherry-picking — every committed question
+ * in a pre-registered set MUST run, none dropped — enforced by the caller.
+ */
+export function nBoundsForSubstrate(substrate: string): { readonly min: number; readonly max: number } {
+  return substrate === 'mssql-torture' ? { min: 3, max: 10 } : { min: 5, max: 10 };
+}
+
+/**
+ * Optional substrate caption for `render` (B1). ABSENT (or empty) ⇒ an EMPTY string so the default
+ * render output is BYTE-IDENTICAL; a given substrate prepends a labeled caption so every v2 table
+ * carries its substrate label (spec Req 4).
+ */
+export function substrateCaption(substrate?: string): string {
+  if (substrate === undefined || substrate.length === 0) return '';
+  return `Substrate: ${substrate}\n\n`;
+}
+
+/**
+ * The deterministic mssql WITHOUT dump (D5): the committed `test/fixtures/mssql/torture.sql`
+ * stripped of every full-line `--` comment (which removes the header block), and every `GO` batch
+ * separator — KEEPING every CREATE statement and full SP body VERBATIM (the whole SP story:
+ * `sp_executesql`, EXEC call chains, composite FKs). Runs of blank lines collapse to one and
+ * leading/trailing blank lines are trimmed, so the output is byte-stable. This is a faithful,
+ * Docker-free, deterministic catalog dump (the applied fixture is byte-identical to what
+ * `sys.sql_modules.definition` would return), fair WITHOUT input the agent must read and reason over.
+ */
+export function stripMssqlDdl(rawSql: string): string {
+  const kept: string[] = [];
+  for (const line of rawSql.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('--')) continue; // full-line comment (incl. the header block)
+    if (/^GO$/i.test(trimmed)) continue; // batch separator
+    kept.push(line);
+  }
+  const collapsed: string[] = [];
+  let prevBlank = false;
+  for (const line of kept) {
+    const blank = line.trim().length === 0;
+    if (blank && prevBlank) continue; // collapse runs of blank lines
+    collapsed.push(line);
+    prevBlank = blank;
+  }
+  while (collapsed.length > 0 && collapsed[0]!.trim() === '') collapsed.shift();
+  while (collapsed.length > 0 && collapsed[collapsed.length - 1]!.trim() === '') collapsed.pop();
+  return `${collapsed.join('\n')}\n`;
+}
+
 // ── Coverage targets (D2) ────────────────────────────────────────────────────
 
 export type ObjectKind = 'table' | 'view' | 'trigger' | 'any'; // 'any' = kind-agnostic (name-only)

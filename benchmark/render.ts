@@ -12,6 +12,8 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import { substrateCaption } from './harness-checks.ts';
+
 interface AggregateSide {
   readonly correct: number;
   readonly total: number;
@@ -33,9 +35,27 @@ interface Aggregate {
   };
 }
 
-const aggPath = process.argv[2] !== undefined ? resolve(process.argv[2]) : '';
+// Positional <aggregate.json> plus an OPTIONAL `--substrate <label>` flag (B1). Absent ⇒ the
+// output is BYTE-IDENTICAL to the pre-change renderer; a label prepends a caption (spec Req 4).
+const rawArgs = process.argv.slice(2);
+const positional: string[] = [];
+let substrate: string | undefined;
+for (let i = 0; i < rawArgs.length; i += 1) {
+  const token = rawArgs[i];
+  if (token === '--substrate') {
+    const next = rawArgs[i + 1];
+    if (next !== undefined) {
+      substrate = next;
+      i += 1;
+    }
+    continue;
+  }
+  if (token !== undefined) positional.push(token);
+}
+
+const aggPath = positional[0] !== undefined ? resolve(positional[0]) : '';
 if (aggPath === '' || !existsSync(aggPath)) {
-  throw new Error('render: expected a path to aggregate.json (render.ts <aggregate.json>).');
+  throw new Error('render: expected a path to aggregate.json (render.ts <aggregate.json> [--substrate <label>]).');
 }
 
 const agg = JSON.parse(readFileSync(aggPath, 'utf8')) as Aggregate;
@@ -59,4 +79,5 @@ lines.push(
     `(WITH ${agg.tokens.withTotal} vs WITHOUT ${agg.tokens.withoutTotal}).`,
 );
 
-process.stdout.write(`${lines.join('\n')}\n`);
+// substrateCaption(undefined) === '' ⇒ default output byte-identical; a label prepends the caption.
+process.stdout.write(`${substrateCaption(substrate)}${lines.join('\n')}\n`);

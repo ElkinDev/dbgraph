@@ -20,12 +20,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { auditPlanKey } from '../../benchmark/harness-checks.ts';
+import {
+  auditPlanKey,
+  stripMssqlDdl,
+  deriveCoverageTargets,
+  verifyDumpCoverage,
+} from '../../benchmark/harness-checks.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(here, '..', '..');
 const KEYS_DIR = join(repoRoot, 'benchmark', 'planning-keys');
 const DDL_TEXT = readFileSync(join(repoRoot, 'test', 'fixtures', 'mssql', 'torture.sql'), 'utf8');
+const GENERATE_SRC = readFileSync(join(repoRoot, 'benchmark', 'generate.ts'), 'utf8');
 
 function loadKey(name: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(KEYS_DIR, name), 'utf8')) as Record<string, unknown>;
@@ -133,5 +139,68 @@ describe('auditPlanKey: a source_ddl_ref lacking the fact FAILS audit (v2 negati
     const results = auditPlanKey(badKey, DDL_TEXT);
     expect(results.every((r) => !r.ok)).toBe(true);
     expect(results[0]?.detail).toContain('sp_dynamic_search');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B3.3 — plan-* coverage over the deterministic stripped mssql dump (spec Req 5).
+// Reproduces build-packets' coverage assertion via the SAME pure seams (no dev-stage
+// import): stripMssqlDdl → deriveCoverageTargets → verifyDumpCoverage.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('plan-* coverage over the stripped mssql dump (B3.3, Req 5)', () => {
+  const dump = stripMssqlDdl(DDL_TEXT);
+
+  it('v2 positive — every plan-* target is found by NAME in the correct stripped dump → []', () => {
+    for (const key of [CALLERS, BLINDSPOTS, ORDER]) {
+      const targets = deriveCoverageTargets(String(key['qid']), key['family'] as never, key);
+      expect(verifyDumpCoverage(dump, targets)).toStrictEqual([]);
+    }
+  });
+
+  it('v2 L-009 negative — plan-order targets ABSENT from a wrong-DB dump all MISS (still sensitive)', () => {
+    const wrongDb = 'CREATE TABLE unrelated (id int);\n\nCREATE PROCEDURE dbo.usp_other AS BEGIN SELECT 1; END;';
+    const targets = deriveCoverageTargets(String(ORDER['qid']), 'plan-order' as never, ORDER);
+    const missing = verifyDumpCoverage(wrongDb, targets);
+    expect(missing.length).toBe((ORDER['scope'] as string[]).length);
+  });
+
+  it('the coverage-miss report names bare OBJECTS only — NEVER the composed answer VALUE (Req 5)', () => {
+    const wrongDb = 'CREATE TABLE unrelated (id int);';
+    const targets = deriveCoverageTargets(String(ORDER['qid']), 'plan-order' as never, ORDER);
+    const missing = verifyDumpCoverage(wrongDb, targets);
+    const report = missing.map((m) => `${m.kind.toUpperCase()} ${m.name}`).join(', ');
+    // build-packets emits exactly this shape; the composed ORDERING answer never appears in it.
+    const composedAnswer = (ORDER['scope'] as string[]).join(', ');
+    expect(report).not.toContain(composedAnswer);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B2 structural guard — the generate read-key path is STORE-FREE and never calls
+// affected/getImpact (Req 1 anti-circularity). We READ generate.ts as text (never
+// import it — independence guard). The sqlite path legitimately uses `affected`;
+// this guard is scoped to the mssql read-key FUNCTION body.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('generate read-key path is store-free for plan-* (B2, Req 1)', () => {
+  it('has an mssql-torture branch that reads the committed planning-keys', () => {
+    expect(GENERATE_SRC).toContain("substrate === 'mssql-torture'");
+    expect(GENERATE_SRC).toContain('planning-keys');
+    expect(GENERATE_SRC).toContain('generateMssqlPlanSet');
+  });
+
+  it('the generateMssqlPlanSet body opens NO store and calls NO affected/getImpact', () => {
+    const start = GENERATE_SRC.indexOf('function generateMssqlPlanSet');
+    const end = GENERATE_SRC.indexOf('const args = parseArgs', start);
+    const body = GENERATE_SRC.slice(start, end);
+    expect(body.length).toBeGreaterThan(0);
+    expect(body).toContain('auditPlanKey');
+    expect(body).toContain('buildPlanQuestionRecord');
+    // Anti-circularity: NO store open and NO affected/getImpact CALL on the read-key path.
+    // (Call-syntax `name(` — the invariant is about invocations, not doc-comment mentions.)
+    expect(body).not.toContain('createSqliteGraphStore(');
+    expect(body).not.toContain('runAffectedJson(');
+    expect(body).not.toContain('getImpact(');
   });
 });
