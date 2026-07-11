@@ -1,0 +1,51 @@
+install.sh
+  s_b5cc375016610a::t_6a5ae0a80a76b4 21
+test/cli/cli.test.ts
+  s_b5cc375016610a::t_0c5b7fbde9bf14 331
+  s_b5cc375016610a::t_d16fc39671d864 328,334
+  s_b5cc375016610a::t_5b33f1ce513227 321-322
+  s_b5cc375016610a::t_952e12feffe450 325
+test/smoke.test.ts
+  s_b5cc375016610a::t_c11d56b67f3368 6
+CHANGELOG.md
+  s_b5cc375016610a::t_3a8b1447812f01 8-60
+  s_b5cc375016610a::t_4a1487ef1364d0 216
+package.json
+  s_b5cc375016610a::t_864c69368e9c56 3
+install.ps1
+  s_b5cc375016610a::t_150cbd0b38b7d1 23
+src/index.ts
+  s_b5cc375016610a::t_1007c095aed493 9
+test/bin/version-single-source.test.ts
+  s_b5cc375016610a::t_e4d2e76bd9962e 15
+  s_b5cc375016610a::t_27530577527a1f 38-40
+test/bin/dist-shebang.test.ts
+  s_b5cc375016610a::t_c464e15a14b7c0 60
+  s_b5cc375016610a::t_2fee2f7cda29d1 63
+package-lock.json
+  s_91c9d3bda77920::t_81da7164c28dbd 3,9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "454346058feb0d350d4198ecffa73a0eb282bf0d",
+  "prompts": {},
+  "sessions": {
+    "s_91c9d3bda77920": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a6fc1539957b3dde6",
+        "model": "unknown"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    },
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
