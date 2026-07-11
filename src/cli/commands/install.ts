@@ -519,7 +519,7 @@ function removeOpenCodeText(content: string): string {
  * No trailing newline (the merge/remove functions add it as needed).
  */
 export const CODEX_RENDER =
-  '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+  '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]';
 
 /** The header line that marks the start of our block. */
 const CODEX_HEADER = '[mcp_servers.dbgraph-mcp]';
@@ -816,7 +816,7 @@ To install dbgraph manually, add the following to your agent's MCP configuration
     "mcpServers": {
       "dbgraph-mcp": {
         "command": "npx",
-        "args": ["-y", "dbgraph-mcp"]
+        "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]
       }
     }
   }
@@ -827,7 +827,7 @@ To install dbgraph manually, add the following to your agent's MCP configuration
       "dbgraph-mcp": {
         "type": "stdio",
         "command": "npx",
-        "args": ["-y", "dbgraph-mcp"]
+        "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]
       }
     }
   }
@@ -837,7 +837,7 @@ To install dbgraph manually, add the following to your agent's MCP configuration
     "mcp": {
       "dbgraph-mcp": {
         "type": "local",
-        "command": ["npx", "-y", "dbgraph-mcp"]
+        "command": ["npx", "-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]
       }
     }
   }
@@ -845,7 +845,7 @@ To install dbgraph manually, add the following to your agent's MCP configuration
   For Codex CLI (TOML, ~/.codex/config.toml):
   [mcp_servers.dbgraph-mcp]
   command = "npx"
-  args = ["-y", "dbgraph-mcp"]
+  args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]
 
 Config file locations:
   Claude Code  — Windows: %APPDATA%\\Claude\\claude_desktop_config.json
@@ -902,7 +902,7 @@ export interface InstallOutcome {
 
 const DEFAULT_MCP_ENTRY: McpServerEntry = {
   command: 'npx',
-  args: ['-y', 'dbgraph-mcp'],
+  args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

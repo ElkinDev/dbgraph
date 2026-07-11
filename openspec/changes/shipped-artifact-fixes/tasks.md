@@ -6,16 +6,16 @@ clean. STRICT TDD (`strict_tdd: true`): failing test first, then make it pass.
 ## Batch 1 — Shipped fixes (Docker-free REDs)
 
 ### Phase 1: Bug 1 — scoped npx install command
-- [ ] 1.1 RED: in `test/cli/commands/install.test.ts`, update every arg golden — `['-y', 'dbgraph-mcp']` -> `['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']`, `['npx', '-y', 'dbgraph-mcp']` -> `['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']`, and Codex TOML `args = ["-y", "dbgraph-mcp"]` text (~41 sites). Run -> RED.
-- [ ] 1.2 GREEN: `install.ts` — `DEFAULT_MCP_ENTRY` (903-906), `CODEX_RENDER` (521-522), `MANUAL_SNIPPET` blocks (818-819, 829-830, 840, 847-848) -> scoped args. Run -> GREEN.
-- [ ] 1.3 Update `README.md` MCP section (358): `npx -y dbgraph-mcp` -> `npx -y -p @elkindev/dbgraph dbgraph-mcp`.
-- [ ] 1.4 Verify `npx -y -p @elkindev/dbgraph dbgraph-mcp` resolves the bin against the PUBLISHED 1.1.0 (package.json bin `dbgraph-mcp -> dist/mcp.js`); record result.
+- [x] 1.1 RED: in `test/cli/commands/install.test.ts`, update every arg golden — `['-y', 'dbgraph-mcp']` -> `['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']`, `['npx', '-y', 'dbgraph-mcp']` -> `['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']`, and Codex TOML `args = ["-y", "dbgraph-mcp"]` text (~41 sites). Run -> RED. (52 arg sites: 41 single-quote + 11 double-quote; 30 tests RED.)
+- [x] 1.2 GREEN: `install.ts` — `DEFAULT_MCP_ENTRY` (905), `CODEX_RENDER` (522), `MANUAL_SNIPPET` blocks (819, 830, 840, 848) -> scoped args. Run -> GREEN (223/223).
+- [x] 1.3 Update `README.md` MCP section (358): `npx -y dbgraph-mcp` -> `npx -y -p @elkindev/dbgraph dbgraph-mcp`.
+- [x] 1.4 Verify `npx -y -p @elkindev/dbgraph dbgraph-mcp` resolves the bin against the PUBLISHED 1.1.0 (package.json bin `dbgraph-mcp -> dist/mcp.js`); record result. (Published bin map confirmed `dbgraph-mcp -> dist/mcp.js`; bare `dbgraph-mcp` registry name E404 — squat vector closed.)
 
 ### Phase 2: Bug 2 — mssql interop-safe resolution
-- [ ] 2.1 Add an injectable `importModule` deps seam to `NativeTediousStrategy`, routed into `loadOptionalDriver('mssql', …)`, mirroring pg/mysql/mongodb.
-- [ ] 2.2 RED: unit test injects `{ default: { ConnectionPool: FakePool } }`; assert a real pool is built. Current raw destructure -> `new undefined()` -> RED.
-- [ ] 2.3 GREEN: resolve `mod['ConnectionPool'] ?? mod['default']?.['ConnectionPool']` at `native-tedious.strategy.ts:160`; keep the `npm i mssql` catch. Run -> GREEN.
-- [ ] 2.4 Add the ESM-shape scenario (top-level `ConnectionPool`) -> GREEN; confirm pg/mysql/mongodb/sqlite tests untouched.
+- [x] 2.1 Add an injectable `importModule` deps seam to `NativeTediousStrategy`, routed into `loadOptionalDriver('mssql', …)`, mirroring pg/mysql/mongodb.
+- [x] 2.2 RED: unit test injects `{ default: { ConnectionPool: FakePool } }`; assert a real pool is built. Current raw destructure -> `new undefined()` -> RED. (2 bundled-CJS scenarios RED; new `test/adapters/engines/mssql/native-tedious.strategy.test.ts`.)
+- [x] 2.3 GREEN: resolve `mod['ConnectionPool'] ?? mod['default']?.['ConnectionPool']` at `native-tedious.strategy.ts`; keep the `npm i mssql` catch. Run -> GREEN (4/4).
+- [x] 2.4 Add the ESM-shape scenario (top-level `ConnectionPool`) -> GREEN; confirm pg/mysql/mongodb/sqlite tests untouched. (Full suite 3731 passed | 4 skipped.)
 
 ## Batch 2 — Dist-level masking-class closer (Docker + build gated)
 
