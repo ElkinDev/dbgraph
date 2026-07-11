@@ -63,14 +63,18 @@ a connection URL) and no denylisted internal identifier is ever committed — vi
 
 ## Reporting a vulnerability
 
-This repository is currently **private** (`package.json` `"private": true`) and has no
-published release. If you have access and discover a security issue:
+If you discover a security issue, please report it **privately** through GitHub's
+coordinated-disclosure channel rather than a public issue:
 
-- **Do not** open a public issue for anything security-sensitive.
-- Report it **privately** to the maintainer (e.g. via a private message or
-  GitHub Security Advisory on this repository), including the affected version/commit,
-  the impact, and reproduction steps.
-- Please allow a reasonable window for a fix before any disclosure.
+- **Do not** open a public issue, discussion, or pull request for anything
+  security-sensitive.
+- Report it privately via **GitHub Private Vulnerability Reporting** on this repository
+  (**Security** tab → **Report a vulnerability**). This opens a private advisory visible
+  only to you and the maintainers.
+- Include the affected version or commit, the impact, and clear reproduction steps.
+- Please allow a reasonable window for a fix before any public disclosure.
 
-Because there is no published release yet, there is no supported-version matrix — the
-`main`/`closeout` line is the only line under development.
+### Supported versions
+
+The latest published release line receives security fixes; older versions are not
+supported. Please confirm an issue reproduces on the current release before reporting.

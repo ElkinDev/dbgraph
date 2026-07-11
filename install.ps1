@@ -20,7 +20,7 @@
 #>
 [CmdletBinding()]
 param(
-  [string]$Version = $(if ($env:DBGRAPH_VERSION) { $env:DBGRAPH_VERSION } else { '0.1.0' }),
+  [string]$Version = $(if ($env:DBGRAPH_VERSION) { $env:DBGRAPH_VERSION } else { '1.1.0' }),
   [string]$InstallDir = $(if ($env:DBGRAPH_INSTALL_DIR) { $env:DBGRAPH_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'dbgraph\bin' }),
   [string]$Base = $(if ($env:DBGRAPH_DOWNLOAD_BASE) { $env:DBGRAPH_DOWNLOAD_BASE } else { '' }),
   [string]$Os = $(if ($env:DBGRAPH_OS) { $env:DBGRAPH_OS } else { 'win32' }),
