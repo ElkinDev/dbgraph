@@ -1,0 +1,31 @@
+openspec/changes/sync-honors-config-levels/proposal.md
+  s_b5cc375016610a::t_49840cae0be20c 1-99
+openspec/changes/mssql-dynamic-deps-fallback/proposal.md
+  s_b5cc375016610a::t_d1de6bfd741c2e 113-115
+  s_b5cc375016610a::t_b7cbccc5814ed0 1-112,116-124
+openspec/changes/mssql-tls-config-fields/proposal.md
+  s_b5cc375016610a::t_7e4f86103f3ae1 1-99,104-110
+  s_b5cc375016610a::t_eed0fc299658ab 100-103
+openspec/changes/mssql-dynamic-flag-comment-stripping/proposal.md
+  s_b5cc375016610a::t_5833d404f859d9 68-71
+  s_b5cc375016610a::t_df5235b93ca0ea 89-91
+  s_b5cc375016610a::t_c285f67faa5571 1-67,72-88,92-98
+openspec/changes/doctor-dependency-catalog-health/proposal.md
+  s_b5cc375016610a::t_746e41d0e35f38 1-97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "48f8379f9e0dccb475b6ad69e3c470423bf22690",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-fable-5"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
