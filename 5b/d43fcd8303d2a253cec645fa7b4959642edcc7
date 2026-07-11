@@ -1,0 +1,37 @@
+openspec/changes/mssql-config-hardening/tasks.md
+  s_b5cc375016610a::t_180081bf3283d5 53,57-58,60
+  s_b5cc375016610a::t_976ccc325a1dbe 64,67-68,70
+  s_b5cc375016610a::t_4dee5dc5316176 76-80
+  s_b5cc375016610a::t_e10a62ac470a94 39,43-44,49
+  s_b5cc375016610a::t_870783b3c82c71 18,27-28,32-33,35
+install.ps1
+  s_b5cc375016610a::t_4eb56fd88c67ce 23
+src/infra/config/parse-config.ts
+  s_b5cc375016610a::t_0a9c1808d73d2b 99-104
+  s_b5cc375016610a::t_d18d462448ecda 134-138
+  s_b5cc375016610a::t_5b154da8ff8d7f 168-182
+install.sh
+  s_b5cc375016610a::t_64a00e0a4e5212 21
+test/cli/config/parse-config.test.ts
+  s_b5cc375016610a::t_88ea15ea8496dd 114-215
+test/bin/installer-default-version.test.ts
+  s_b5cc375016610a::t_8005e50a01a44c 1-42
+SECURITY.md
+  s_b5cc375016610a::t_0fb65ec13e9416 66-67,69-75,77-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "5bd43fcd8303d2a253cec645fa7b4959642edcc7",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
