@@ -386,6 +386,89 @@ task-planning results, the following FIVE additional limitations travel WITH the
   the mssql fixture; where Docker is UNAVAILABLE the run SKIPS honestly and its numbers are NEVER
   fabricated.
 
+## Results — Run v2-rerun (`mssql-plan-rerun-2026-07-11`)
+
+This re-run ISOLATES a single code change: the `1.1.1` mssql tokenizer fix
+(`mssql-dynamic-sql-granularity`) that stopped `hasDynamicSql` from mis-flagging a resolved
+`EXEC dbo.<proc>` — a call already captured as a `calls` edge — as `[DYNAMIC SQL]`. It re-runs the
+SAME pre-registered v2 planning set (byte-identical committed planning-keys + generator + frozen
+packets; every `promptSha256` cross-checked against
+`benchmark/runs/mssql-plan-2026-07-10/packets/manifest.json`) against a WITH graph re-synced with the
+fixed code (verified on the re-synced graph: `usp_refresh_totals` is no longer flagged,
+`sp_dynamic_search` still is). The original Run v2 table and Runs 1–3 above stay BYTE-UNTOUCHED — the
+runs are never conflated or overwritten. This subsection reports EXACTLY what the blind scorer emitted.
+
+The **ONLY** delta from the original Run v2 is **plan-blindspots WITH**: originally WRONG
+(`sp_dynamic_search, usp_refresh_totals` — a FALSE POSITIVE on `usp_refresh_totals`, root-caused in
+Run v2 note 1 as the `[DYNAMIC SQL]` marker flagging a declared call), now CORRECT
+(`sp_dynamic_search` alone). The three WITHOUT answers are UNCHANGED — they read the raw stripped DDL,
+independent of our code, and are reused byte-for-byte from the frozen original. The two remaining WITH
+answers stay correct.
+
+### Environment (Run v2-rerun)
+
+| Field | Value |
+|-------|-------|
+| Model family | Claude (single family — no cross-model claim) |
+| Model id / version | claude-fable-5 (both conditions; fresh context per question — WITH re-synced graph, WITHOUT frozen) |
+| Run date | 2026-07-11 |
+| Run id | `mssql-plan-rerun-2026-07-11` |
+| Code version | `main` @ `7fad34a` (post-`1.1.1` tokenizer fix `mssql-dynamic-sql-granularity`) |
+| Substrate | `mssql-torture` — committed `test/fixtures/mssql/torture.sql` (Docker-free deterministic catalog dump) |
+| Fix under isolation | `mssql-dynamic-sql-granularity` (archived at `openspec/changes/archive/2026-07-11-mssql-dynamic-sql-granularity/`; CHANGELOG `1.1.1` → Fixed: "Dynamic-SQL detection no longer mis-flags a resolved call") |
+
+### Results (Run v2-rerun — `mssql-plan-rerun-2026-07-11`)
+
+Scored blind by `benchmark/score.ts` against the frozen original's ground-truth and packet manifest;
+table produced by `render.ts --substrate mssql-torture`:
+
+Substrate: mssql-torture
+
+| Family | WITH accuracy | WITHOUT accuracy | WITH schema-tokens | WITHOUT schema-tokens |
+|--------|---------------|------------------|--------------------|-----------------------|
+| plan-callers | 100% (1/1) | 100% (1/1) | 321 | 1449 |
+| plan-blindspots | 100% (1/1) | 100% (1/1) | 907 | 1449 |
+| plan-order | 100% (1/1) | 100% (1/1) | 1493 | 1449 |
+| **Overall** | 100% (3/3) | 100% (3/3) | 2721 | 4347 |
+
+Schema-token delta (WITH − WITHOUT): -1626 (WITH 2721 vs WITHOUT 4347).
+
+**Run v2-rerun, blind scorer: WITH 100% (3/3) / WITHOUT 100% (3/3).** The tokenizer fix moved
+**plan-blindspots WITH from 0% (0/1) → 100% (1/1)**, lifting overall **WITH from 66.7% (2/3) → 100%
+(3/3)** on this substrate, this question set, this model. **WITHOUT is UNCHANGED at 100% (3/3)** — its
+three answers were reused byte-for-byte from the frozen original, because the fix is a WITH-side
+tokenizer change that cannot touch the raw-DDL WITHOUT condition. This is a SINGLE-VARIABLE result: no
+claim is made beyond the one isolated fix on these measured conditions.
+
+Per-question verdicts (key from `benchmark/runs/mssql-plan-2026-07-10/ground-truth/`; raw records
+under the rerun's git-ignored `raw/`):
+
+| qid | key | WITH answer | WITHOUT answer |
+|-----|-----|-------------|----------------|
+| plan-callers-usp_log_change | `usp_refresh_totals` | `usp_refresh_totals` ✓ | `usp_refresh_totals` ✓ (frozen) |
+| plan-blindspots-dynamic-sql | `sp_dynamic_search` | `sp_dynamic_search` ✓ (**was ✗ in Run v2 — the `[DYNAMIC SQL]` false positive is now removed**) | `sp_dynamic_search` ✓ (frozen) |
+| plan-order-drop-recreate | permutation of the 8-object scope respecting 5 must-precede pairs | `usp_refresh_totals, usp_log_change, fn_net_amount, fn_round_money, order_items, orders, products, regions` ✓ (valid linearization — a DIFFERENT ordering than WITHOUT, both accepted by the topo comparator) | `order_items, orders, products, regions, fn_net_amount, fn_round_money, usp_refresh_totals, usp_log_change` ✓ (frozen, valid linearization) |
+
+### Run v2-rerun notes (part of the record)
+
+1. **What changed vs original Run v2.** EXACTLY one scored verdict flipped: plan-blindspots WITH
+   (✗ → ✓). The root cause was documented in Run v2 note 1 and closed by `mssql-dynamic-sql-granularity`:
+   `hasDynamicSql` now flags only string-execution forms (`sp_executesql`, or `EXEC`/`EXECUTE` followed
+   by `(` or `@`), so a bare `EXEC dbo.<proc>` — a resolved `calls` edge — no longer copies a
+   `[DYNAMIC SQL]` marker into the WITH answer.
+2. **Frozen inputs, isolated variable.** The planning-keys, generator, and packet set are byte-identical
+   to `mssql-plan-2026-07-10` (every `promptSha256` re-verified against that run's `packets/manifest.json`);
+   the three WITHOUT raw records are reused byte-for-byte. Runs 1–3 and the original v2 run stay FROZEN.
+   Only the WITH graph (re-synced with the fixed code) and the resulting WITH answers/token counts differ.
+3. **Token accounting (approx BOTH sides).** Same `ceil(chars/4)` boundary as Run v2. The WITH
+   schema-token total rose vs the original run (2721 vs 2173) because the re-synced graph the agent read
+   back changed with the fixed tokenizer; only the within-run WITH−WITHOUT delta (−1626) is meaningful,
+   and WITH still spends fewer schema-tokens than WITHOUT (2721 vs 4347). The frozen WITHOUT total is
+   unchanged (4347).
+
+The Run v2 limitations (spec Req 6) apply UNCHANGED to this N=3 re-run — it isolates one fix and
+licenses NO generalized superiority claim beyond these measured conditions.
+
 ## Token accounting
 
 One boundary, applied IDENTICALLY to both conditions:
