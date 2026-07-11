@@ -26,7 +26,7 @@ control. Reference: design §D1 (rule), §D7 (matrix), §D8 (re-bless inventory)
 
 ## Phase 1: Narrow the detection (RED → GREEN)
 
-- [ ] 1.1 RED — `test/adapters/engines/mssql/tokenizer.test.ts`: rewrite the `hasDynamicSql` describe block
+- [x] 1.1 RED — `test/adapters/engines/mssql/tokenizer.test.ts`: rewrite the `hasDynamicSql` describe block
   to the design §D7 matrix (13 cases). Specifically:
   - FLIP + RENAME the current "EXEC alone detected" test (`tokenizer.test.ts:134-137`,
     `EXEC dbo.usp_other_proc` → `true`) to expect `false`, renamed e.g. "bare EXEC of a resolved routine
@@ -42,7 +42,7 @@ control. Reference: design §D1 (rule), §D7 (matrix), §D8 (re-bless inventory)
   Confirm the suite is RED (the flipped #7 and new #5/#6/#8/#9/#10 fail on the current regex).
   Done: `npm test -- mssql/tokenizer` shows the expected failures.
 
-- [ ] 1.2 GREEN — `src/adapters/engines/mssql/tokenizer.ts:55-57`: replace `hasDynamicSql` with the design
+- [x] 1.2 GREEN — `src/adapters/engines/mssql/tokenizer.ts:55-57`: replace `hasDynamicSql` with the design
   §D1 form:
   ```ts
   export function hasDynamicSql(body: string): boolean {
@@ -58,21 +58,27 @@ control. Reference: design §D1 (rule), §D7 (matrix), §D8 (re-bless inventory)
 
 ## Phase 2: Re-bless the golden + live negative control
 
-- [ ] 2.1 RED-by-golden — `test/fixtures/mssql/golden/golden-raw-catalog.json`: after 1.2, the
+- [x] 2.1 RED-by-golden — `test/fixtures/mssql/golden/golden-raw-catalog.json`: after 1.2, the
   `extract.integration` byte-compare will fail on `usp_refresh_totals` (it still carries the flag).
   Re-bless DELIBERATELY: remove the `"hasDynamicSql":true,` token from the `usp_refresh_totals` object
   ONLY (design §D8 item 2). Confirm `sp_dynamic_search` STILL carries `"hasDynamicSql":true`. Every other
   byte unchanged. Satisfies S6.
   Done: `git diff` on the golden shows exactly ONE removed token on the `usp_refresh_totals` object.
 
-- [ ] 2.2 Sweep — grep ALL goldens/e2e/normalize outputs for co-occurrence of `usp_refresh_totals`
+- [x] 2.2 Sweep — grep ALL goldens/e2e/normalize outputs for co-occurrence of `usp_refresh_totals`
   (and any other resolved-call-only routine) with `hasDynamicSql`; re-bless any that embed the false flag
   (design §D8 item 4). Confirm the DOG-1 impact/path goldens (edge-only) stay byte-identical. Confirm pg /
   mysql / sqlite / mongodb `golden-raw-catalog.json`, `test/golden/normalize/*.json`, and
   `test/mcp/golden/*.txt` are BYTE-IDENTICAL (HARD STOP — design §D8 item 5). Satisfies S7.
   Done: `git diff --stat` touches ONLY the mssql golden(s); every frozen path is empty.
+  NOTE (sweep finding — deviation from design §D8): the sweep found a SECOND co-occurrence the D8
+  inventory missed — `test/cli/mssql.e2e.integration.test.ts` pinned `hasDynamicSql: true` on
+  `usp_refresh_totals` as a LIVE (Docker) positive degraded-reader assertion (lines ~232-248). It
+  is NOT a frozen path (mssql e2e, not pg/mysql/sqlite/mongodb/normalize/mcp), so it was re-blessed
+  to the corrected 3-key resolved-reader shape (no marker; `degradedReaders` now `[]`). Verified
+  GREEN under Docker (13/13). Without this, `npm run test:integration` would have failed.
 
-- [ ] 2.3 Live negative control — `test/adapters/engines/mssql/extract.integration.test.ts`: KEEP the
+- [x] 2.3 Live negative control — `test/adapters/engines/mssql/extract.integration.test.ts`: KEEP the
   existing `sp_dynamic_search is marked hasDynamicSql = true` test (L263-269). ADD a test asserting
   `dbo.usp_refresh_totals` has `hasDynamicSql` absent/falsy against the REAL materialized torture DB
   (proves the fix end-to-end at the live tier). Gated by `DBGRAPH_INTEGRATION=1`. Satisfies S2 (live).
@@ -81,7 +87,7 @@ control. Reference: design §D1 (rule), §D7 (matrix), §D8 (re-bless inventory)
 
 ## Phase 3: Gate + commit
 
-- [ ] 3.1 Gate: `npx tsc --noEmit` clean; `npm run lint` 0 errors / 0 warnings; `npm test` all green.
+- [x] 3.1 Gate: `npx tsc --noEmit` clean; `npm run lint` 0 errors / 0 warnings; `npm test` all green.
   HARD STOP — `git diff` shows ZERO change to pg/mysql/sqlite/mongodb goldens, `test/golden/normalize/*.json`,
   `test/mcp/golden/*.txt`, and to `map.ts`/normalize; the ONLY `src/` change is `mssql/tokenizer.ts`; the
   ONLY golden change is the removed `usp_refresh_totals` flag. Then ONE conventional commit
@@ -91,21 +97,22 @@ control. Reference: design §D1 (rule), §D7 (matrix), §D8 (re-bless inventory)
 
 ## Definition of Done
 
-- [ ] All 7 spec scenarios covered (S1-S7), each POSITIVE and NEGATIVE where applicable (L-009).
-- [ ] `usp_refresh_totals` (bare `EXEC` only) → `hasDynamicSql` absent/false; `sp_dynamic_search`
+- [x] All 7 spec scenarios covered (S1-S7), each POSITIVE and NEGATIVE where applicable (L-009).
+- [x] `usp_refresh_totals` (bare `EXEC` only) → `hasDynamicSql` absent/false; `sp_dynamic_search`
       (`sp_executesql`) → `hasDynamicSql: true`; a routine doing BOTH → still flags.
-- [ ] `EXEC(@sql)` / `EXECUTE @sql` / `EXECUTE(@sql)` → flag (full keyword now covered);
+- [x] `EXEC(@sql)` / `EXECUTE @sql` / `EXECUTE(@sql)` → flag (full keyword now covered);
       `EXEC`/`EXECUTE dbo.proc` / `EXEC [dbo].[proc]` → no flag.
-- [ ] The enshrining unit test flipped + renamed; the D7 matrix (13 cases incl. the documented residual
+- [x] The enshrining unit test flipped + renamed; the D7 matrix (13 cases incl. the documented residual
       #13) is green.
-- [ ] mssql raw-catalog golden re-blessed surgically (one token removed); pg/mysql/sqlite/mongodb goldens,
+- [x] mssql raw-catalog golden re-blessed surgically (one token removed); pg/mysql/sqlite/mongodb goldens,
       normalize goldens, and mcp goldens BYTE-IDENTICAL.
-- [ ] `calls`/`reads_from`/`writes_to` edges for `usp_refresh_totals` UNCHANGED (DOG-1 untouched); ZERO
+- [x] `calls`/`reads_from`/`writes_to` edges for `usp_refresh_totals` UNCHANGED (DOG-1 untouched); ZERO
       fabricated or dropped edges.
-- [ ] Live negative control added (`usp_refresh_totals` not flagged) alongside the kept `sp_dynamic_search`
+- [x] Live negative control added (`usp_refresh_totals` not flagged) alongside the kept `sp_dynamic_search`
       positive.
-- [ ] Gate green (tsc clean / lint 0-0 / npm test all green); exactly ONE conventional commit; NOT pushed.
-- [ ] Only the change folder + the files in design §D8 touched; no other `openspec/` spec modified.
+- [x] Gate green (tsc clean / lint 0-0 / npm test all green); exactly ONE conventional commit; NOT pushed.
+- [x] Only the change folder + the files in design §D8 (plus the swept `test/cli/mssql.e2e.integration.test.ts`)
+      touched; no other `openspec/` spec modified.
 
 ## Follow-up (NOT a task here)
 

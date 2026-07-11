@@ -6,7 +6,10 @@
  *   write — if the bracket-normalized canonicalQName appears as the write-verb operand.
  *   read  — otherwise (SELECT, FROM, JOIN, etc.).
  *
- * Sets hasDynamicSql: true if EXEC or sp_executesql appears anywhere in the body.
+ * Sets hasDynamicSql: true ONLY for a STRING-EXECUTION form — `sp_executesql`, or
+ * `EXEC`/`EXECUTE` of a string expression (`EXEC('...')`, `EXEC (@sql)`, `EXECUTE @sql`).
+ * A bare `EXEC`/`EXECUTE <identifier>` (e.g. `EXEC dbo.usp_log_change`) is a RESOLVED CALL —
+ * already a DOG-1 `calls` edge sourced from the catalog — NOT dynamic SQL, so it MUST NOT flag.
  * Case-insensitive throughout.
  *
  * Deliberately NOT attempted: control flow, variable/temp-table resolution,
@@ -45,15 +48,31 @@ import { canonicalizeQName, classifyAccess } from '../_shared/tokenizer-core.js'
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Returns true if the body contains EXEC or sp_executesql (case-insensitive).
- * Presence indicates dynamic SQL that the conservative tokenizer cannot analyze.
- * US-007: declared blindness — flag and stop, never guess.
+ * Returns true if the body runs a STRING-EXECUTION form the conservative tokenizer cannot
+ * analyze — dynamic SQL. US-007: declared blindness — flag and stop, never guess. The rule
+ * (design §D1) distinguishes a RESOLVED CALL from a string execution:
+ *
+ *   - `sp_executesql` present            → true (always dynamic).
+ *   - `EXEC`/`EXECUTE` followed by `(` or `@` (a parenthesized string or a string variable)
+ *                                        → true (`EXEC('...')`, `EXEC (@sql)`, `EXECUTE @sql`).
+ *   - `EXEC`/`EXECUTE <identifier>` (bare/bracketed/quoted routine name) → NOT dynamic by itself;
+ *     it is a RESOLVED CALL already captured as a DOG-1 `calls` edge (catalog-sourced), so
+ *     marking it dynamic would be a false blind-spot (benchmark-v2 false positive).
+ *
+ * A routine doing BOTH a resolved call AND real dynamic SQL still flags (any real dynamic form
+ * flags the module). `exec(?:ute)?` also covers the FULL keyword `EXECUTE`, closing a latent
+ * false negative the old `\bexec\b` regex had (`EXECUTE(@sql)` used to escape detection).
  *
  * MSSQL-specific: PG uses a different dynamic-SQL marker (bare EXECUTE statement
  * vs EXECUTE FUNCTION trigger clause).
  */
 export function hasDynamicSql(body: string): boolean {
-  return /\b(exec|sp_executesql)\b/i.test(body);
+  // sp_executesql is always dynamic.
+  if (/\bsp_executesql\b/i.test(body)) return true;
+  // EXEC/EXECUTE of a STRING EXPRESSION: followed by '(' (parenthesized string) or
+  // '@' (string variable). A bare `EXEC <identifier>` is a RESOLVED CALL (DOG-1 `calls`
+  // edge, catalog-sourced), NOT dynamic SQL, so it MUST NOT match.
+  return /\bexec(?:ute)?\s*[(@]/i.test(body);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
