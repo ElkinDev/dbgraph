@@ -1,0 +1,39 @@
+test/adapters/engines/mssql/tokenizer.test.ts
+  s_b5cc375016610a::t_dd20024c39f6ac 128-135,140-141,145-171,175-198,203,207-215
+test/cli/mssql.e2e.integration.test.ts
+  s_b5cc375016610a::t_849fccda3d0901 232-236,238,240-241,245,248
+src/adapters/engines/mssql/tokenizer.ts
+  s_b5cc375016610a::t_0c4807bc4f5abf 9-12
+  s_b5cc375016610a::t_81968a5281f04b 51-64,70-75
+test/adapters/engines/mssql/extract.integration.test.ts
+  s_b5cc375016610a::t_21c658bd14b20e 271-281
+  s_b5cc375016610a::t_a91241d4bbd551 269-270
+test/fixtures/mssql/golden/golden-raw-catalog.json
+  s_b5cc375016610a::t_39151bef263063 1
+openspec/changes/mssql-dynamic-sql-granularity/tasks.md
+  s_b5cc375016610a::t_f7e2e898efcdbf 81
+  s_b5cc375016610a::t_e03e8ab1a2790b 29
+  s_b5cc375016610a::t_9415c498ead69e 100-101,103,105,107,109,111,113-115
+  s_b5cc375016610a::t_dbd8d6e58b20ee 90
+  s_b5cc375016610a::t_53d2dc531d4ad3 61
+  s_b5cc375016610a::t_acc30e11ff0ef9 45
+  s_b5cc375016610a::t_a9644605ef765a 68
+  s_b5cc375016610a::t_cc01f4ebba2d5f 74-79
+  s_b5cc375016610a::t_b8788eb9e9fe7f 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "ef309b2099ea3669e924ec594b597a967152982f",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
