@@ -111,6 +111,108 @@ describe('parseConfig — valid mssql', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// M1 (L-009): mssql plaintext identity fields REJECTED at parse time
+// Spec (cli-config): "parseMssqlSource MUST reject a plaintext
+//   server/database/user/password (and port/domain when present)" — mirrors the
+//   pg/mysql/mongodb read guard and the mssql WRITE path (build-config.ts:82-87),
+//   closing the read/write asymmetry (mssql-config-hardening M1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('parseConfig — mssql: plaintext identity fields rejected', () => {
+  const validMssql = {
+    dialect: 'mssql',
+    source: {
+      server: '${env:DBGRAPH_DB_HOST}',
+      database: '${env:DBGRAPH_DB_NAME}',
+      user: '${env:DBGRAPH_DB_USER}',
+      password: '${env:DBGRAPH_DB_PASSWORD}',
+    },
+  };
+
+  it('throws ConfigError when mssql server is a literal string', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: 'localhost',
+          database: '${env:DBGRAPH_DB_NAME}',
+          user: '${env:DBGRAPH_DB_USER}',
+          password: '${env:DBGRAPH_DB_PASSWORD}',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('throws ConfigError when mssql database is a literal string', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:DBGRAPH_DB_HOST}',
+          database: 'catalog_db',
+          user: '${env:DBGRAPH_DB_USER}',
+          password: '${env:DBGRAPH_DB_PASSWORD}',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('throws ConfigError when mssql user is a literal string', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:DBGRAPH_DB_HOST}',
+          database: '${env:DBGRAPH_DB_NAME}',
+          user: 'sa',
+          password: '${env:DBGRAPH_DB_PASSWORD}',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('throws ConfigError when mssql password is a literal string', () => {
+    expect(() =>
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:DBGRAPH_DB_HOST}',
+          database: '${env:DBGRAPH_DB_NAME}',
+          user: '${env:DBGRAPH_DB_USER}',
+          password: 's3cr3t_literal',
+        },
+      }),
+    ).toThrow(ConfigError);
+  });
+
+  it('ConfigError message names the offending field and mentions ${env:VAR}', () => {
+    let caught: unknown;
+    try {
+      parseConfig({
+        dialect: 'mssql',
+        source: {
+          server: '${env:DBGRAPH_DB_HOST}',
+          database: '${env:DBGRAPH_DB_NAME}',
+          user: '${env:DBGRAPH_DB_USER}',
+          password: 'plaintext',
+        },
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    if (caught instanceof ConfigError) {
+      expect(caught.message.toLowerCase()).toContain('password');
+      expect(caught.message).toContain('${env:');
+    }
+  });
+
+  it('all-env-ref mssql config IS accepted (regression guard)', () => {
+    expect(() => parseConfig(validMssql)).not.toThrow();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A1.5: integrated auth mode — no credentials required
 // connectivity-strategies Batch A
 // ─────────────────────────────────────────────────────────────────────────────

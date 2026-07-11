@@ -125,30 +125,93 @@ describe('classifyAccess — target match is qname-based, not substring', () => 
 // hasDynamicSql: EXEC / sp_executesql detection
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('hasDynamicSql — dynamic SQL detection', () => {
-  it('EXEC sp_executesql detected', () => {
+// Design §D7 — the discriminating matrix. hasDynamicSql is TRUE iff the body runs a
+// STRING-EXECUTION form: `sp_executesql`, OR `EXEC`/`EXECUTE` immediately followed by
+// `(` (parenthesized string) or `@` (string variable). A bare `EXEC`/`EXECUTE <identifier>`
+// is a RESOLVED CALL (DOG-1 `calls` edge, catalog-sourced), NOT dynamic SQL — it MUST NOT flag.
+// Asserted POSITIVE and NEGATIVE (L-009), exact booleans.
+describe('hasDynamicSql — string-execution detection (design §D7 matrix)', () => {
+  // ── Positives: real dynamic SQL (string execution) ──
+  it('#1 EXEC sp_executesql @sql → true (true positive kept)', () => {
     const body = 'DECLARE @sql NVARCHAR(MAX) = N\'SELECT * FROM \' + @t; EXEC sp_executesql @sql';
     expect(hasDynamicSql(body)).toBe(true);
   });
 
-  it('EXEC alone detected', () => {
-    const body = 'EXEC dbo.usp_other_proc';
-    expect(hasDynamicSql(body)).toBe(true);
-  });
-
-  it('case-insensitive exec detected', () => {
+  it('#1b case-insensitive exec sp_executesql → true', () => {
     const body = 'exec sp_executesql N\'SELECT 1\'';
     expect(hasDynamicSql(body)).toBe(true);
   });
 
-  it('no EXEC or sp_executesql returns false', () => {
+  it('#2 EXEC(\'SELECT ...\' + @t) → true (parenthesized string expression)', () => {
+    const body = 'EXEC(\'SELECT * FROM \' + @t)';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  it('#3 EXEC (@sql) → true (variable in parentheses)', () => {
+    const body = 'EXEC (@sql)';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  it('#4 EXEC @sql → true (bare string variable)', () => {
+    const body = 'EXEC @sql';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  it('#5 EXECUTE(@sql) → true (full keyword + paren — was a false NEGATIVE before this fix)', () => {
+    const body = 'EXECUTE(@sql)';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  it('#6 EXECUTE @sql → true (full keyword + variable)', () => {
+    const body = 'EXECUTE @sql';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  it('#11 EXEC dbo.usp_log_change; EXEC(@sql) → true (BOTH a resolved call AND real dynamic → flags)', () => {
+    const body = 'EXEC dbo.usp_log_change @id; EXEC(@sql)';
+    expect(hasDynamicSql(body)).toBe(true);
+  });
+
+  // ── Negatives: resolved calls (DOG-1 `calls` edges) are NOT dynamic ──
+  it('#7 bare EXEC of a resolved routine is a call, not dynamic → false (RE-BLESS of "EXEC alone detected")', () => {
+    const body = 'EXEC dbo.usp_log_change @order_id, N\'x\'';
+    expect(hasDynamicSql(body)).toBe(false);
+  });
+
+  it('#8 EXECUTE dbo.proc → false (full-keyword resolved call)', () => {
+    const body = 'EXECUTE dbo.proc';
+    expect(hasDynamicSql(body)).toBe(false);
+  });
+
+  it('#9 EXEC [dbo].[proc] → false (bracketed resolved call)', () => {
+    const body = 'EXEC [dbo].[proc]';
+    expect(hasDynamicSql(body)).toBe(false);
+  });
+
+  it('#10 usp_refresh_totals body shape (UPDATE + bare EXEC of a resolved routine) → false', () => {
+    const body =
+      'UPDATE dbo.order_totals SET total_amount = total_amount WHERE order_id = @order_id; ' +
+      'EXEC dbo.usp_log_change @order_id, N\'refreshed\'';
+    expect(hasDynamicSql(body)).toBe(false);
+  });
+
+  it('#12 SELECT order_id FROM dbo.orders → false (no exec at all)', () => {
     const body = 'SELECT order_id FROM dbo.orders WHERE order_id = 1';
     expect(hasDynamicSql(body)).toBe(false);
   });
 
-  it('INSERT without dynamic SQL returns false', () => {
+  it('INSERT without dynamic SQL → false', () => {
     const body = 'INSERT INTO dbo.audit_log (event) VALUES (\'x\')';
     expect(hasDynamicSql(body)).toBe(false);
+  });
+
+  // ── Residual (design §D4): a documented, accepted conservative over-flag ──
+  it('#13 EXEC @rc = dbo.proc → true (KNOWN conservative over-flag, pinned; return-code capture, design §D4)', () => {
+    // `EXEC @rc = dbo.proc` matches rule 2 (`EXEC` + `@`) and flags even though it is a call.
+    // RARE, CONSERVATIVE (US-007 errs toward flagging), ABSENT from the torture fixture. A future
+    // hardening change (assignment lookahead) has a home here; do NOT "fix" it in this change.
+    const body = 'EXEC @rc = dbo.proc';
+    expect(hasDynamicSql(body)).toBe(true);
   });
 });
 

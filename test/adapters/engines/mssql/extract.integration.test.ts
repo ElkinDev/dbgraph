@@ -268,6 +268,19 @@ describe.skipIf(!mssqlIntegrationEnabled())(
       expect(proc!.hasDynamicSql).toBe(true);
     });
 
+    // NEGATIVE control (mssql-dynamic-sql-granularity): usp_refresh_totals's body does a bare
+    // `EXEC dbo.usp_log_change` — a RESOLVED CALL (DOG-1 `calls` edge), NOT dynamic SQL. Against
+    // the REAL materialized torture DB it MUST NOT carry hasDynamicSql (the benchmark-v2 false
+    // positive is removed), while its `calls`/`writes_to` edges stay intact (asserted elsewhere).
+    it('usp_refresh_totals is NOT marked hasDynamicSql (resolved call, not dynamic)', () => {
+      const proc = catalog.objects.find(
+        (o) => o.kind === 'procedure' && o.name === 'usp_refresh_totals',
+      );
+      expect(proc).toBeDefined();
+      // Key absent (stableStringify drops false-y hasDynamicSql) — assert falsy, not just !== true.
+      expect(proc!.hasDynamicSql ?? false).toBe(false);
+    });
+
     it('catalog objects are deterministically sorted (ADR-008)', () => {
       const names = catalog.objects.map((o) => `${o.kind}:${o.name}`);
       // Verify tables come before views (kind rank)

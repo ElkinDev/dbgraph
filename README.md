@@ -355,7 +355,7 @@ dbgraph install --project     # write project-scoped config in the current direc
 dbgraph install --remove      # remove the dbgraph-mcp entry from every detected agent
 ```
 
-The written entry is `command` + `args` only (`npx -y dbgraph-mcp`) — never a secret.
+The written entry is `command` + `args` only (`npx -y -p @elkindev/dbgraph dbgraph-mcp`) — never a secret.
 Global install configures an agent **only if** its config file already exists;
 `--project` (US-038) re-roots resolution at the current directory and **creates** absent
 project files for the supported agents.

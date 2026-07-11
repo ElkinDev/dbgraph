@@ -96,6 +96,12 @@ function parseMssqlSource(raw: unknown): MssqlSource {
   const database = requireString(raw, 'database', 'source (mssql)');
   const port = optionalString(raw, 'port', 'source (mssql)');
 
+  // Reject plaintext identity fields — mirror the pg/mysql/mongodb read guard and the
+  // mssql WRITE path (build-config.ts:82-87). Applies to integrated AND credentialed modes.
+  assertEnvRef('server', server, 'DBGRAPH_DB_HOST');
+  assertEnvRef('database', database, 'DBGRAPH_DB_NAME');
+  if (port !== undefined) assertEnvRef('port', port, 'DBGRAPH_DB_PORT');
+
   // Resolve auth discriminant — check explicit auth field first, then infer.
   const authRaw = raw['auth'];
   let auth: 'sql' | 'ntlm' | 'integrated' | undefined;
@@ -125,6 +131,11 @@ function parseMssqlSource(raw: unknown): MssqlSource {
   const password = requireString(raw, 'password', 'source (mssql)');
   const domain = optionalString(raw, 'domain', 'source (mssql)');
 
+  // Reject plaintext credentials — mirror the mssql WRITE path (build-config.ts:82-87).
+  assertEnvRef('user', user, 'DBGRAPH_DB_USER');
+  assertEnvRef('password', password, 'DBGRAPH_DB_PASSWORD');
+  if (domain !== undefined) assertEnvRef('domain', domain, 'DBGRAPH_DB_DOMAIN');
+
   // Infer auth when not explicit: domain present → ntlm, else → sql (back-compat).
   const resolvedAuth: 'sql' | 'ntlm' = auth ?? (domain !== undefined ? 'ntlm' : 'sql');
 
@@ -152,6 +163,21 @@ const ENV_REF_RE = /^\$\{env:[A-Z_][A-Z0-9_]*\}$/;
  */
 function isEnvRef(value: string): boolean {
   return ENV_REF_RE.test(value);
+}
+
+/**
+ * Throws ConfigError unless `value` is a `${env:VAR}` reference. Used to reject
+ * plaintext connection-identity fields at parse time (mssql). Mirrors the inline
+ * `isEnvRef` guards in the pg/mysql/mongodb parsers and the mssql WRITE path
+ * (build-config.ts). `exampleVar` names a representative env var in the message.
+ */
+function assertEnvRef(field: string, value: string, exampleVar: string): void {
+  if (!isEnvRef(value)) {
+    throw new ConfigError(
+      `source (mssql): field "${field}" must be a \${env:VAR} reference, not a literal value. ` +
+        `Use an environment variable reference such as \${env:${exampleVar}}.`,
+    );
+  }
 }
 
 function parsePgSource(raw: unknown): PgSource {

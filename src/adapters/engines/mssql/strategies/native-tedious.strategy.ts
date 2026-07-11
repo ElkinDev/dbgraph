@@ -44,6 +44,19 @@ interface MssqlPool {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Injectable deps for {@link NativeTediousStrategy}. All optional — omit entirely
+ * for production use.
+ *
+ * - `importModule` — inject a fake dynamic import so the interop resolution and the
+ *   MODULE_NOT_FOUND path are unit-testable without a real mssql install. Routed
+ *   through loadOptionalDriver's import seam, mirroring the pg/mysql2/mongodb
+ *   factories (ADR-006).
+ */
+export interface NativeTediousStrategyDeps {
+  readonly importModule?: (name: string) => unknown | Promise<unknown>;
+}
+
+/**
  * Wraps the existing mssql/tedious connection pool logic behind the
  * ConnectivityStrategy port.
  *
@@ -56,7 +69,10 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
   private _pool: MssqlPool | null = null;
   private _adapter: MssqlSchemaAdapter | null = null;
 
-  constructor(private readonly _config: MssqlAdapterConfig) {}
+  constructor(
+    private readonly _config: MssqlAdapterConfig,
+    private readonly _deps: NativeTediousStrategyDeps = {},
+  ) {}
 
   /**
    * Reports availability: tedious works only for explicit-credential configs.
@@ -141,9 +157,12 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
     // Step 1: Lazy import mssql via the centralized optional-driver seam (design D7).
     // Off-SEA this is byte-identical to `await import('mssql')`; under SEA it resolves
     // via createRequire (CWD → NODE_PATH → global). ADR-006 — optional dependency.
-    let mssqlMod: { ConnectionPool: new(cfg: unknown) => MssqlPool };
+    let mssqlMod: unknown;
     try {
-      mssqlMod = await loadOptionalDriver('mssql') as unknown as typeof mssqlMod;
+      mssqlMod = await loadOptionalDriver(
+        'mssql',
+        this._deps.importModule !== undefined ? { importModule: this._deps.importModule } : {},
+      );
     } catch (cause) {
       throw new ConnectionError(
         "Required driver 'mssql' is not installed. Run: npm i mssql",
@@ -151,13 +170,30 @@ export class NativeTediousStrategy implements ConnectivityStrategy {
       );
     }
 
-    // Step 2: Build pool config
+    // Step 2: Resolve ConnectionPool INTEROP-SAFELY (design §"Fix interop at the mssql
+    // call site"). The SHIPPED artifact is a bundled CJS dist: `await import('mssql')`
+    // resolves under Node's CJS→ESM interop, which exposes the CommonJS module ONLY under
+    // `.default`. A raw `const { ConnectionPool } = mssqlMod` yields undefined → a
+    // `new undefined()` crash. Read from the namespace OR `.default`, matching the
+    // pg/mysql2/mongodb factories (ADR-006).
+    const mod = mssqlMod as Record<string, unknown>;
+    const ConnectionPool =
+      (mod['ConnectionPool'] as (new (cfg: unknown) => MssqlPool) | undefined) ??
+      ((mod['default'] as Record<string, unknown> | undefined)?.['ConnectionPool'] as
+        | (new (cfg: unknown) => MssqlPool)
+        | undefined);
+    if (ConnectionPool === undefined) {
+      throw new ConnectionError(
+        "Failed to load ConnectionPool from the 'mssql' module. Try: npm i mssql",
+      );
+    }
+
+    // Step 3: Build pool config
     const poolConfig = this._buildPoolConfig();
 
-    // Step 3: Connect the pool, map errors
+    // Step 4: Connect the pool, map errors
     let pool: MssqlPool;
     try {
-      const { ConnectionPool } = mssqlMod;
       const instance = new ConnectionPool(poolConfig);
       pool = await instance.connect();
     } catch (cause) {

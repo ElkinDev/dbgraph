@@ -81,7 +81,7 @@ describe('resolveConfigPath', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('mergeMcpConfig', () => {
-  const entry: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const entry: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('adds the entry when mcpServers is absent', () => {
     const result = mergeMcpConfig({}, entry);
@@ -126,7 +126,7 @@ describe('mergeMcpConfig', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('removeMcpConfig', () => {
-  const entry: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const entry: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('removes the entry when present', () => {
     const config = { mcpServers: { [MCP_ENTRY_NAME]: entry } };
@@ -248,7 +248,7 @@ describe('runInstall — install', () => {
     const configPath = 'C:\\Users\\test\\AppData\\Roaming\\Claude\\claude_desktop_config.json';
     const existingContent = JSON.stringify({
       mcpServers: {
-        [MCP_ENTRY_NAME]: { command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        [MCP_ENTRY_NAME]: { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
       },
     });
     const { seam, written } = makeFakeFs({ [configPath]: existingContent });
@@ -294,7 +294,7 @@ describe('runInstall — --remove', () => {
     const configPath = 'C:\\Users\\test\\AppData\\Roaming\\Claude\\claude_desktop_config.json';
     const existingContent = JSON.stringify({
       mcpServers: {
-        [MCP_ENTRY_NAME]: { command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        [MCP_ENTRY_NAME]: { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
         'other-mcp': { command: 'other', args: [] },
       },
     });
@@ -516,8 +516,8 @@ describe('A.3: AGENT_TABLE rows — claude-code, cursor, gemini', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('A.4: RAW-TEXT merge/remove for mcpServers rows', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
-  const EXPECTED_TEXT = JSON.stringify({ mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] } } }, null, 2) + '\n';
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
+  const EXPECTED_TEXT = JSON.stringify({ mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } } }, null, 2) + '\n';
 
   const rows = ['claude-code', 'cursor', 'gemini'] as const;
 
@@ -583,7 +583,7 @@ describe('A.4: RAW-TEXT merge/remove for mcpServers rows', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('A.5/A.6: runInstall multi-pass loop — Cursor + Gemini integration', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('win32: Cursor config gets dbgraph-mcp entry when file exists', async () => {
     const cursorPath = 'C:\\Users\\u\\.cursor\\mcp.json';
@@ -708,7 +708,7 @@ describe('A.5/A.6: runInstall multi-pass loop — Cursor + Gemini integration', 
 describe('A.6 regression: Claude Code install via AGENT_TABLE loop', () => {
   const claudePath = 'C:\\Users\\test\\AppData\\Roaming\\Claude\\claude_desktop_config.json';
   const env = { APPDATA: 'C:\\Users\\test\\AppData\\Roaming' };
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('idempotent re-install does not write again', async () => {
     const existingContent = JSON.stringify({ mcpServers: { [MCP_ENTRY_NAME]: DEFAULT_ENTRY } });
@@ -753,12 +753,12 @@ describe('A.6 regression: Claude Code install via AGENT_TABLE loop', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('B.1: mergeVsCodeConfig / removeVsCodeConfig', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('fresh add yields servers[dbgraph-mcp] === { type:stdio, command, args }', () => {
     const result = mergeVsCodeConfig({}, DEFAULT_ENTRY);
     const servers = (result as { servers: Record<string, unknown> }).servers;
-    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
   });
 
   it('fresh add does NOT produce a mcpServers key (servers-vs-mcpServers)', () => {
@@ -768,7 +768,7 @@ describe('B.1: mergeVsCodeConfig / removeVsCodeConfig', () => {
 
   it('re-add returns the SAME reference (idempotent)', () => {
     const existing: Record<string, unknown> = {
-      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     };
     const result = mergeVsCodeConfig(existing, DEFAULT_ENTRY);
     expect(result).toBe(existing);
@@ -788,7 +788,7 @@ describe('B.1: mergeVsCodeConfig / removeVsCodeConfig', () => {
   it('remove deletes ONLY dbgraph-mcp (planted other preserved)', () => {
     const config: Record<string, unknown> = {
       servers: {
-        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
         other: { type: 'stdio', command: 'other', args: [] },
       },
     };
@@ -800,7 +800,7 @@ describe('B.1: mergeVsCodeConfig / removeVsCodeConfig', () => {
 
   it('remove drops servers key when dbgraph-mcp was the only entry', () => {
     const config: Record<string, unknown> = {
-      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     };
     const result = removeVsCodeConfig(config);
     expect((result as Record<string, unknown>)['servers']).toBeUndefined();
@@ -865,7 +865,7 @@ describe('B.3: runInstall — VS Code integration', () => {
     const saved = JSON.parse(written[vsPath]!) as Record<string, unknown>;
     const servers = saved['servers'] as Record<string, unknown>;
     expect(servers).toBeDefined();
-    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
     expect(saved['mcpServers']).toBeUndefined();
   });
 
@@ -882,14 +882,14 @@ describe('B.3: runInstall — VS Code integration', () => {
 
     const saved = JSON.parse(written[vsPath]!) as Record<string, unknown>;
     const servers = saved['servers'] as Record<string, unknown>;
-    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
     expect(saved['mcpServers']).toBeUndefined();
   });
 
   it('idempotent re-run writes nothing', async () => {
     const vsPath = 'C:\\Users\\u\\.vscode\\mcp.json';
     const existingContent = JSON.stringify({
-      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } },
+      servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     }, null, 2) + '\n';
     const { seam, written } = makeFakeFs({ [vsPath]: existingContent });
     const writeSpy = vi.fn(seam.writeFile.bind(seam));
@@ -910,7 +910,7 @@ describe('B.3: runInstall — VS Code integration', () => {
     const vsPath = 'C:\\Users\\u\\.vscode\\mcp.json';
     const existingContent = JSON.stringify({
       servers: {
-        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+        'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
         other: { type: 'stdio', command: 'other', args: [] },
       },
     }, null, 2) + '\n';
@@ -935,12 +935,12 @@ describe('B.3: runInstall — VS Code integration', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('C.1: mergeOpenCodeConfig / removeOpenCodeConfig', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('fresh add yields mcp[dbgraph-mcp] with type:local and array command', () => {
     const result = mergeOpenCodeConfig({}, DEFAULT_ENTRY);
     const mcp = (result as { mcp: Record<string, unknown> }).mcp;
-    expect(mcp['dbgraph-mcp']).toEqual({ type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] });
+    expect(mcp['dbgraph-mcp']).toEqual({ type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
   });
 
   it('command is an ARRAY (Array.isArray is true)', () => {
@@ -959,7 +959,7 @@ describe('C.1: mergeOpenCodeConfig / removeOpenCodeConfig', () => {
 
   it('re-add returns the SAME reference (idempotent)', () => {
     const existing: Record<string, unknown> = {
-      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     };
     const result = mergeOpenCodeConfig(existing, DEFAULT_ENTRY);
     expect(result).toBe(existing);
@@ -979,7 +979,7 @@ describe('C.1: mergeOpenCodeConfig / removeOpenCodeConfig', () => {
   it('remove deletes ONLY dbgraph-mcp (planted mcp.other preserved)', () => {
     const config: Record<string, unknown> = {
       mcp: {
-        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] },
+        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
         other: { type: 'local', command: ['other'] },
       },
     };
@@ -991,7 +991,7 @@ describe('C.1: mergeOpenCodeConfig / removeOpenCodeConfig', () => {
 
   it('remove drops mcp key when dbgraph-mcp was the only entry', () => {
     const config: Record<string, unknown> = {
-      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     };
     const result = removeOpenCodeConfig(config);
     expect((result as Record<string, unknown>)['mcp']).toBeUndefined();
@@ -1059,7 +1059,7 @@ describe('C.3: runInstall — opencode integration', () => {
     const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
     expect(entry['type']).toBe('local');
     expect(Array.isArray(entry['command'])).toBe(true);
-    expect(entry['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+    expect(entry['command']).toEqual(['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']);
     expect(entry['args']).toBeUndefined();
   });
 
@@ -1077,13 +1077,13 @@ describe('C.3: runInstall — opencode integration', () => {
     const saved = JSON.parse(written[ocPath]!) as Record<string, unknown>;
     const mcp = saved['mcp'] as Record<string, unknown>;
     const entry = mcp['dbgraph-mcp'] as Record<string, unknown>;
-    expect(entry['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+    expect(entry['command']).toEqual(['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']);
   });
 
   it('idempotent re-run writes nothing', async () => {
     const ocPath = 'C:\\Users\\u\\.config\\opencode\\opencode.json';
     const existingContent = JSON.stringify({
-      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } },
+      mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } },
     }, null, 2) + '\n';
     const { seam, written } = makeFakeFs({ [ocPath]: existingContent });
     const writeSpy = vi.fn(seam.writeFile.bind(seam));
@@ -1104,7 +1104,7 @@ describe('C.3: runInstall — opencode integration', () => {
     const ocPath = 'C:\\Users\\u\\.config\\opencode\\opencode.json';
     const existingContent = JSON.stringify({
       mcp: {
-        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] },
+        'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
         other: { type: 'local', command: ['other'] },
       },
     }, null, 2) + '\n';
@@ -1130,7 +1130,7 @@ describe('C.3: runInstall — opencode integration', () => {
 
 describe('D.1: CODEX_RENDER constant', () => {
   it('renders the exact 3-line block byte-for-byte', () => {
-    const expected = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+    const expected = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]';
     expect(CODEX_RENDER).toBe(expected);
   });
 
@@ -1143,7 +1143,7 @@ describe('D.1: CODEX_RENDER constant', () => {
   });
 
   it('contains args with single space after comma on the third line', () => {
-    expect(CODEX_RENDER.split('\n')[2]).toBe('args = ["-y", "dbgraph-mcp"]');
+    expect(CODEX_RENDER.split('\n')[2]).toBe('args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]');
   });
 });
 
@@ -1153,7 +1153,7 @@ describe('D.1: CODEX_RENDER constant', () => {
 
 describe('D.2: mergeCodexToml', () => {
   // The CODEX_RENDER block as it appears after a fresh insert into a non-empty file
-  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]';
 
   it('appends CODEX_RENDER into an empty file (single trailing newline)', () => {
     const result = mergeCodexToml('');
@@ -1213,7 +1213,7 @@ describe('D.2: mergeCodexToml', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('D.3: removeCodexToml', () => {
-  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]';
 
   it('returns content unchanged when block is absent', () => {
     const content = '[other]\nkey = "val"\n';
@@ -1294,7 +1294,7 @@ describe('D.4: AGENT_TABLE codex row', () => {
 
   it('codex row merge ignores the JSON entry param (fixed render)', () => {
     // merge with any entry should produce the fixed CODEX_RENDER block
-    const entry: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+    const entry: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
     const result = codexRow?.merge('', entry) ?? '';
     expect(result).toContain('[mcp_servers.dbgraph-mcp]');
     expect(result).toContain('command = "npx"');
@@ -1306,7 +1306,7 @@ describe('D.4: AGENT_TABLE codex row', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('D.5: runInstall — codex integration', () => {
-  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]';
+  const BLOCK = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]';
 
   it('win32: written bytes contain [mcp_servers.dbgraph-mcp] block', async () => {
     const codexPath = 'C:\\Users\\u\\.codex\\config.toml';
@@ -1321,7 +1321,7 @@ describe('D.5: runInstall — codex integration', () => {
 
     expect(written[codexPath]).toContain('[mcp_servers.dbgraph-mcp]');
     expect(written[codexPath]).toContain('command = "npx"');
-    expect(written[codexPath]).toContain('args = ["-y", "dbgraph-mcp"]');
+    expect(written[codexPath]).toContain('args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]');
   });
 
   it('posix: written bytes contain [mcp_servers.dbgraph-mcp] block', async () => {
@@ -1537,7 +1537,7 @@ describe('E.1: full path matrix — all 6 agents × {win32, posix}', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('E.2: full 6-agent integration matrix via runInstall', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   const win32Paths = {
     claude: 'C:\\Users\\u\\AppData\\Roaming\\Claude\\claude_desktop_config.json',
@@ -1595,18 +1595,18 @@ describe('E.2: full 6-agent integration matrix via runInstall', () => {
     }
     // vscode — servers key with {type:stdio}
     const vsSaved = JSON.parse(written[win32Paths.vscode]!) as { servers: Record<string, unknown> };
-    expect(vsSaved.servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(vsSaved.servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
     expect((JSON.parse(written[win32Paths.vscode]!) as Record<string, unknown>)['mcpServers']).toBeUndefined();
     // opencode — mcp key with array command
     const ocSaved = JSON.parse(written[win32Paths.opencode]!) as { mcp: Record<string, unknown> };
     const ocEntry = ocSaved.mcp['dbgraph-mcp'] as Record<string, unknown>;
     expect(ocEntry['type']).toBe('local');
-    expect(ocEntry['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+    expect(ocEntry['command']).toEqual(['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']);
     expect(ocEntry['args']).toBeUndefined();
     // codex — TOML block
     expect(written[win32Paths.codex]).toContain('[mcp_servers.dbgraph-mcp]');
     expect(written[win32Paths.codex]).toContain('command = "npx"');
-    expect(written[win32Paths.codex]).toContain('args = ["-y", "dbgraph-mcp"]');
+    expect(written[win32Paths.codex]).toContain('args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]');
   });
 
   it('posix: ONE pass writes format-correct entry for ALL 6 agents', async () => {
@@ -1619,21 +1619,21 @@ describe('E.2: full 6-agent integration matrix via runInstall', () => {
       expect(saved.mcpServers['dbgraph-mcp']).toEqual(DEFAULT_ENTRY);
     }
     const vsSaved = JSON.parse(written[posixPaths.vscode]!) as { servers: Record<string, unknown> };
-    expect(vsSaved.servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(vsSaved.servers['dbgraph-mcp']).toEqual({ type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
     const ocSaved = JSON.parse(written[posixPaths.opencode]!) as { mcp: Record<string, unknown> };
-    expect((ocSaved.mcp['dbgraph-mcp'] as Record<string, unknown>)['command']).toEqual(['npx', '-y', 'dbgraph-mcp']);
+    expect((ocSaved.mcp['dbgraph-mcp'] as Record<string, unknown>)['command']).toEqual(['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp']);
     expect(written[posixPaths.codex]).toContain('[mcp_servers.dbgraph-mcp]');
   });
 
   it('win32: SECOND pass writes NOTHING to ANY file (fully idempotent across all formats)', async () => {
     // Pre-populate with already-merged content (simulates the state after a first install)
-    const TOML_MERGED = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n';
+    const TOML_MERGED = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]\n';
     const alreadyMergedFiles: Record<string, string> = {
       [win32Paths.claude]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY } }, null, 2) + '\n',
       [win32Paths.cursor]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY } }, null, 2) + '\n',
       [win32Paths.gemini]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY } }, null, 2) + '\n',
-      [win32Paths.vscode]: JSON.stringify({ servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] } } }, null, 2) + '\n',
-      [win32Paths.opencode]: JSON.stringify({ mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] } } }, null, 2) + '\n',
+      [win32Paths.vscode]: JSON.stringify({ servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } } }, null, 2) + '\n',
+      [win32Paths.opencode]: JSON.stringify({ mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } } }, null, 2) + '\n',
       [win32Paths.codex]: TOML_MERGED,
     };
     const { seam, written } = makeFakeFs(alreadyMergedFiles);
@@ -1653,9 +1653,9 @@ describe('E.2: full 6-agent integration matrix via runInstall', () => {
       [win32Paths.claude]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY, 'other-mcp': { command: 'other', args: [] } } }),
       [win32Paths.cursor]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY, 'other-mcp': { command: 'other', args: [] } } }),
       [win32Paths.gemini]: JSON.stringify({ mcpServers: { 'dbgraph-mcp': DEFAULT_ENTRY, 'other-mcp': { command: 'other', args: [] } } }),
-      [win32Paths.vscode]: JSON.stringify({ servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', 'dbgraph-mcp'] }, other: { type: 'stdio', command: 'other', args: [] } } }),
-      [win32Paths.opencode]: JSON.stringify({ mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', 'dbgraph-mcp'] }, other: { type: 'local', command: ['other'] } } }),
-      [win32Paths.codex]: '[mcp_servers.other-server]\ncmd = "x"\n\n[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n',
+      [win32Paths.vscode]: JSON.stringify({ servers: { 'dbgraph-mcp': { type: 'stdio', command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] }, other: { type: 'stdio', command: 'other', args: [] } } }),
+      [win32Paths.opencode]: JSON.stringify({ mcp: { 'dbgraph-mcp': { type: 'local', command: ['npx', '-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] }, other: { type: 'local', command: ['other'] } } }),
+      [win32Paths.codex]: '[mcp_servers.other-server]\ncmd = "x"\n\n[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]\n',
     };
     const { seam, written } = makeFakeFs(filesWithOther);
 
@@ -1686,7 +1686,7 @@ describe('E.2: full 6-agent integration matrix via runInstall', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('E.3: written entries carry no secrets', () => {
-  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', 'dbgraph-mcp'] };
+  const DEFAULT_ENTRY: McpServerEntry = { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] };
 
   it('mcpServers entry has ONLY command and args keys', () => {
     const row = AGENT_TABLE.find((r) => r.id === 'claude-code')!;
@@ -1725,7 +1725,7 @@ describe('E.3: written entries carry no secrets', () => {
     expect(text).not.toContain('key');
     // Should contain exactly command and args
     expect(text).toContain('command = "npx"');
-    expect(text).toContain('args = ["-y", "dbgraph-mcp"]');
+    expect(text).toContain('args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]');
     // Exactly 3 non-empty lines in the block
     const blockLines = text.split('\n').filter((l) => l.trim() !== '');
     expect(blockLines).toHaveLength(3);
@@ -1831,7 +1831,7 @@ describe('E.4: MANUAL_SNIPPET names all 6 agents + per-agent summary', () => {
 // The exact minimal JSON doc created by the merge-on-empty writer (2-space + single \n).
 const EXPECTED_MCPSERVERS_DOC =
   JSON.stringify(
-    { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] } } },
+    { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } } },
     null,
     2,
   ) + '\n';
@@ -1988,7 +1988,7 @@ describe('F.5: --project merges idempotently, preserves unrelated keys', () => {
       mcpServers: Record<string, McpServerEntry>;
       foo: number;
     };
-    expect(saved.mcpServers['dbgraph-mcp']).toEqual({ command: 'npx', args: ['-y', 'dbgraph-mcp'] });
+    expect(saved.mcpServers['dbgraph-mcp']).toEqual({ command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] });
     expect(saved.mcpServers['other']).toEqual({ command: 'x', args: [] });
     expect(saved.foo).toBe(1);
   });
@@ -1999,7 +1999,7 @@ describe('F.5: --project merges idempotently, preserves unrelated keys', () => {
         {
           mcpServers: {
             other: { command: 'x', args: [] },
-            'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] },
+            'dbgraph-mcp': { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] },
           },
           foo: 1,
         },
@@ -2025,7 +2025,7 @@ describe('F.6: --project Codex create + trust-caveat suffix — Decision #5', ()
   const cwd = '/proj';
   const codexPath = '/proj/.codex/config.toml';
   // Pinned absent-case bytes (single trailing \n) — MUST equal mergeCodexToml('').
-  const CODEX_ABSENT_BYTES = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n';
+  const CODEX_ABSENT_BYTES = '[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]\n';
 
   it("pinned bytes equal mergeCodexToml('') (same writer/bytes as global)", () => {
     expect(mergeCodexToml('')).toBe(CODEX_ABSENT_BYTES);
@@ -2077,7 +2077,7 @@ describe('F.7: --remove --project symmetry — never delete (Decision #6)', () =
   it('(a) file with ONLY dbgraph-mcp → left as valid JSON {} + single \\n, NOT deleted', async () => {
     const initial =
       JSON.stringify(
-        { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', 'dbgraph-mcp'] } } },
+        { mcpServers: { 'dbgraph-mcp': { command: 'npx', args: ['-y', '-p', '@elkindev/dbgraph', 'dbgraph-mcp'] } } },
         null,
         2,
       ) + '\n';

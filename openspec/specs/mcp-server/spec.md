@@ -389,8 +389,12 @@ producing no new output and taking no new branch off the flag.
 
 `dbgraph install` SHALL detect EVERY supported MCP agent present on the machine and, in ONE pass, wire an
 idempotent `dbgraph-mcp` server entry into each detected agent's user-level config, driven by a single typed
-`AGENT_TABLE` source of truth. It MUST support ≥ 6 agents across three config-format families:
-(Previously: it wired ONLY Claude Code via a single-file idempotent JSON merge.)
+`AGENT_TABLE` source of truth. It MUST support ≥ 6 agents across three config-format families. The written
+entry MUST invoke the `dbgraph-mcp` bin THROUGH its containing package via
+`command: "npx", args: ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]` (opencode's array form:
+`["npx", "-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]`).
+(Previously: the entry used `args: ["-y", "dbgraph-mcp"]`, which targeted a registry package named
+`dbgraph-mcp` that does NOT exist — broken for registry users and a squattable auto-executed name.)
 
 | Agent | Config key & shape | Format family |
 |-------|--------------------|---------------|
@@ -412,27 +416,27 @@ per OS, so the resolved path is identical regardless of where Node.js runs.
 
 - GIVEN existing config files for Claude Code, Cursor and Gemini CLI
 - WHEN `dbgraph install` runs
-- THEN each file's `mcpServers.dbgraph-mcp` equals `{ "command": "npx", "args": ["-y", "dbgraph-mcp"] }`
+- THEN each file's `mcpServers.dbgraph-mcp` equals `{ "command": "npx", "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`
 - AND any pre-existing `mcpServers` entries are preserved
 
 #### Scenario: VS Code gets a servers entry with type stdio, not mcpServers
 
 - GIVEN an existing VS Code `mcp.json`
 - WHEN `dbgraph install` runs
-- THEN `servers.dbgraph-mcp` equals `{ "type": "stdio", "command": "npx", "args": ["-y", "dbgraph-mcp"] }`
+- THEN `servers.dbgraph-mcp` equals `{ "type": "stdio", "command": "npx", "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`
 - AND no `mcpServers` key is written
 
 #### Scenario: opencode gets a local entry with an array command
 
 - GIVEN an existing opencode `opencode.json`
 - WHEN `dbgraph install` runs
-- THEN `mcp.dbgraph-mcp` equals `{ "type": "local", "command": ["npx", "-y", "dbgraph-mcp"] }`
+- THEN `mcp.dbgraph-mcp` equals `{ "type": "local", "command": ["npx", "-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`
 
 #### Scenario: Codex CLI gets the TOML mcp_servers block
 
 - GIVEN an existing Codex `config.toml`
 - WHEN `dbgraph install` runs
-- THEN it contains a `[mcp_servers.dbgraph-mcp]` block with `command = "npx"` and `args = ["-y", "dbgraph-mcp"]`
+- THEN it contains a `[mcp_servers.dbgraph-mcp]` block with `command = "npx"` and `args = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]`
 - AND any other existing TOML content is preserved
 
 #### Scenario: Only agents with an existing config file are configured
@@ -460,7 +464,7 @@ per OS, so the resolved path is identical regardless of where Node.js runs.
 
 - GIVEN a machine where no supported agent config file exists
 - WHEN `dbgraph install` runs
-- THEN it prints the documented manual configuration snippet
+- THEN it prints the documented manual configuration snippet (whose examples show the scoped `npx -y -p @elkindev/dbgraph dbgraph-mcp` command)
 - AND it exits successfully (never fails dry)
 
 #### Scenario: Config paths resolve correctly on win32
@@ -483,16 +487,17 @@ per OS, so the resolved path is identical regardless of where Node.js runs.
 
 - GIVEN any detected agent being configured
 - WHEN its `dbgraph-mcp` entry is written
-- THEN the entry contains only `command` and `args` (e.g. `npx -y dbgraph-mcp`) and no credentials or tokens
+- THEN the entry contains only `command` and `args` (e.g. `npx -y -p @elkindev/dbgraph dbgraph-mcp`) and no credentials or tokens
 
 ### Requirement: dbgraph install --project scopes agent config to the project directory
 
 `dbgraph install --project` SHALL re-root every supported agent's config-path resolution from the user
 home to the PROJECT directory (default: the current working directory) and write the SAME per-agent
-`dbgraph-mcp` entry (`{ command: "npx", args: ["-y", "dbgraph-mcp"] }`) in that agent's native format
+`dbgraph-mcp` entry (`{ command: "npx", args: ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`) in that agent's native format
 (mcpServers-JSON / servers-JSON / mcp-JSON / TOML per the existing `AGENT_TABLE` families). With
 `--project` ABSENT, `dbgraph install` behavior — including user-home resolution and skip-if-absent —
 MUST be byte-identical to today and UNCHANGED.
+(Previously: the written entry used `args: ["-y", "dbgraph-mcp"]`, targeting a non-existent registry package.)
 
 Unlike the default user scope (which SKIPS an agent whose config file is absent and NEVER creates it),
 `--project` MUST CREATE an absent project file, because project config files usually do not pre-exist —
@@ -514,14 +519,14 @@ deterministic (byte-stable for identical inputs), MUST preserve unrelated keys v
 
 - GIVEN no `<cwd>/.cursor/mcp.json` exists (Cursor, a design-verified project-scoped agent)
 - WHEN `dbgraph install --project` runs with cwd as the project root
-- THEN the file is CREATED containing exactly `mcpServers.dbgraph-mcp = { "command": "npx", "args": ["-y", "dbgraph-mcp"] }`, serialized as 2-space-indented JSON with a single trailing newline
+- THEN the file is CREATED containing exactly `mcpServers.dbgraph-mcp = { "command": "npx", "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`, serialized as 2-space-indented JSON with a single trailing newline
 - AND the default (no-`--project`) run would have reported Cursor `absent` and created nothing
 
 #### Scenario: --project merges idempotently and preserves unrelated keys
 
 - GIVEN `<cwd>/.cursor/mcp.json` already contains `mcpServers.other = {…}` and a top-level `"foo": 1`
 - WHEN `dbgraph install --project` runs
-- THEN `mcpServers.dbgraph-mcp` is added equal to `{ "command": "npx", "args": ["-y", "dbgraph-mcp"] }`
+- THEN `mcpServers.dbgraph-mcp` is added equal to `{ "command": "npx", "args": ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"] }`
 - AND `mcpServers.other` and `foo` are preserved unchanged
 - AND re-running writes nothing (idempotent) and leaves the file byte-identical
 
@@ -529,7 +534,7 @@ deterministic (byte-stable for identical inputs), MUST preserve unrelated keys v
 
 - GIVEN no `<cwd>/.codex/config.toml` exists (Codex CLI, LIVE-verified 2026-07-06 to support project-scoped `.codex/config.toml` via `[mcp_servers.<name>]` tables, identical format to global `~/.codex/config.toml`)
 - WHEN `dbgraph install --project` runs with cwd as the project root
-- THEN the file is CREATED via the SAME `mergeCodexToml` writer as global scope, containing exactly the bytes `[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "dbgraph-mcp"]\n` (single trailing newline — byte-identical to the global writer's output for the absent case)
+- THEN the file is CREATED via the SAME `mergeCodexToml` writer as global scope, containing exactly the bytes `[mcp_servers.dbgraph-mcp]\ncommand = "npx"\nargs = ["-y", "-p", "@elkindev/dbgraph", "dbgraph-mcp"]\n` (single trailing newline — byte-identical to the global writer's output for the absent case)
 - AND the codex summary line reads exactly `codex → written (requires trusted project: set trust_level in ~/.codex/config.toml)`
 - AND the command exits with code 0
 
