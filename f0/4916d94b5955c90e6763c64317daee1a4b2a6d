@@ -1,0 +1,27 @@
+openspec/changes/shipped-artifact-fixes/specs/mcp-server/spec.md
+  s_b5cc375016610a::t_cc082986d46739 1-187
+openspec/changes/shipped-artifact-fixes/specs/mssql-extraction/spec.md
+  s_b5cc375016610a::t_23cb87dbe894a0 1-55
+openspec/changes/shipped-artifact-fixes/design.md
+  s_b5cc375016610a::t_027d3f45b78306 1-98
+openspec/changes/shipped-artifact-fixes/tasks.md
+  s_b5cc375016610a::t_1033ccbcab85f0 1-30
+openspec/changes/shipped-artifact-fixes/proposal.md
+  s_b5cc375016610a::t_a517fd6520b115 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "f04916d94b5955c90e6763c64317daee1a4b2a6d",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-fable-5"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
