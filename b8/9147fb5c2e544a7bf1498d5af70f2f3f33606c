@@ -1,0 +1,26 @@
+test/adapters/engines/mssql/dist-connect.integration.test.ts
+  s_b5cc375016610a::t_77519d0afb18be 1-181
+openspec/changes/shipped-artifact-fixes/tasks.md
+  s_b5cc375016610a::t_e115edd4d20af3 23-26
+openspec/config.yaml
+  s_b5cc375016610a::t_1c1f04f6723d06 22-23
+openspec/changes/shipped-artifact-fixes/apply-progress.md
+  s_b5cc375016610a::t_50909766ac14d6 45-50,60-62,65,67-69,72
+  s_b5cc375016610a::t_d7cfa9ed0643f0 4-6,18-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "b89147fb5c2e544a7bf1498d5af70f2f3f33606c",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
