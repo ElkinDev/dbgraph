@@ -281,6 +281,111 @@ measured conditions.
 6. **Paper cut observed.** `explore` requires `main.`-qualified object names; the WITH agents
    recovered by running `query` FIRST to obtain the qualified name, then `explore`.
 
+## Results — Run v2 task-planning (`mssql-plan-2026-07-10`)
+
+This is the FIRST **v2 task-planning** run and the FIRST run on the **`mssql-torture`** substrate — a
+DIFFERENT substrate and a DIFFERENT (task-planning) family set than Runs 1–3, which measured the six
+SQLite lookup families. The three prior tables (`torture-2026-07-06`, `explore-payloads-2026-07-06`,
+`dog-complete-2026-07-10`) stay INTACT and are NEVER overwritten; the runs are never conflated. The
+scoring machinery is the SAME frozen, deterministic, blind scorer (`benchmark/score.ts`) under one
+token-accounting boundary; only the substrate, the three closed-form planning families
+(`plan-callers`, `plan-blindspots`, `plan-order`), and the code version under test differ.
+
+### Environment (Run v2)
+
+| Field | Value |
+|-------|-------|
+| Model family | Claude (single family — no cross-model claim) |
+| Model id / version | claude-fable-5 (both conditions; fresh context per question — same as Runs 1–3) |
+| Run date | 2026-07-10 |
+| Run id | `mssql-plan-2026-07-10` |
+| Code version | `main` @ `7be7376` |
+| Substrate | `mssql-torture` — committed `test/fixtures/mssql/torture.sql` (Docker-free deterministic catalog dump) |
+
+### N (Run v2)
+
+**N = 3** — one question per v2 planning family (`plan-callers`, `plan-blindspots`, `plan-order`),
+pre-registered in `benchmark/runs/mssql-plan-2026-07-10/questions.yaml`. The `mssql-torture`
+planning substrate relaxes the pre-registered lower bound to 3 (`nBoundsForSubstrate`); every
+pre-registered question ran, none dropped (the anti-cherry-picking intent of the N bound).
+
+### Results (Run v2 — `mssql-plan-2026-07-10`)
+
+Scored blind by `benchmark/score.ts`; table produced by `render.ts --substrate mssql-torture`:
+
+Substrate: mssql-torture
+
+| Family | WITH accuracy | WITHOUT accuracy | WITH schema-tokens | WITHOUT schema-tokens |
+|--------|---------------|------------------|--------------------|-----------------------|
+| plan-callers | 100% (1/1) | 100% (1/1) | 266 | 1449 |
+| plan-blindspots | 0% (0/1) | 100% (1/1) | 476 | 1449 |
+| plan-order | 100% (1/1) | 100% (1/1) | 1431 | 1449 |
+| **Overall** | 66.7% (2/3) | 100% (3/3) | 2173 | 4347 |
+
+Schema-token delta (WITH − WITHOUT): -2174 (WITH 2173 vs WITHOUT 4347).
+
+**Run v2, blind scorer: WITH 66.7% (2/3) / WITHOUT 100% (3/3) — WITH LOST one question on this
+substrate, this question set, this model, while spending fewer schema-tokens (2173 vs 4347, delta
+−2174).** That unfavorable result is reported unsoftened, per the standing contract: Run 1 published a
+40% WITH loss and that honesty is exactly what drove the product. No generalized claim is made beyond
+these measured conditions.
+
+Per-question verdicts (key from `benchmark/runs/mssql-plan-2026-07-10/ground-truth/`; raw records
+under the run's git-ignored `raw/`):
+
+| qid | key | WITH answer | WITHOUT answer |
+|-----|-----|-------------|----------------|
+| plan-callers-usp_log_change | `usp_refresh_totals` | `usp_refresh_totals` ✓ | `usp_refresh_totals` ✓ |
+| plan-blindspots-dynamic-sql | `sp_dynamic_search` | `sp_dynamic_search, usp_refresh_totals` ✗ (false positive — see note 1) | `sp_dynamic_search` ✓ |
+| plan-order-drop-recreate | `order_items, orders, products, regions, fn_net_amount, fn_round_money, usp_refresh_totals, usp_log_change` (valid drop order) | ✓ (valid linearization) | ✓ (valid linearization) |
+
+### Run v2 protocol notes (part of the record)
+
+1. **ROOT CAUSE of the WITH loss (plan-blindspots) — a marker-granularity gap, honestly surfaced.**
+   The blind-spot key is `sp_dynamic_search` alone — the one scoped routine whose run-time-assembled
+   SQL hides a table dependency that NO static edge records. The WITH agent answered
+   `sp_dynamic_search, usp_refresh_totals`, a FALSE POSITIVE on `usp_refresh_totals`. Cause: the WITH
+   agent copied the offline graph's `[DYNAMIC SQL]` marker, which on the mssql substrate flags BOTH
+   true dynamic SQL (`sp_executesql`) AND a bare `EXEC <proc>` call — even though a bare `EXEC` of a
+   named proc is a DECLARED, captured `calls` edge, NOT a hidden dependency. The marker's coarseness is
+   the HONEST consequence of the adapter's declared blindness (US-007 — it does not parse EXEC-string
+   bodies), but here that declared blindness produced a CONSUMER false positive, while the WITHOUT
+   agent, reading the raw stripped DDL bodies, distinguished the two and answered correctly. **Product
+   follow-up (DOG-4 refinement candidate): split EXEC-identifier (a resolvable `calls` edge) from
+   EXEC-string (true dynamic SQL) granularity in the mssql tokenizer/marker so the `[DYNAMIC SQL]`
+   marker no longer flags a declared call as a blind spot.**
+2. **Protocol.** Model claude-fable-5 on BOTH conditions, fresh context per question. WITH = the
+   read-only offline dbgraph graph (manual dump reads); the graph was synced live via the native mssql
+   driver. WITHOUT = zero tool calls beyond reading the packet, the deterministic comment-free DDL
+   dump only. WITH tool calls: 3 / 6 / 8 across plan-callers / plan-blindspots / plan-order (17 total);
+   WITHOUT made 0.
+3. **Token accounting (approx BOTH sides).** Both conditions use `approx` mode (`ceil(chars/4)`): WITH
+   over the concatenated tool stdout the agent received, WITHOUT over the packet DDL dump. As in Run 3,
+   only the within-run WITH−WITHOUT delta is meaningful; the absolute figures are NOT comparable to the
+   ACTUAL-usage numbers of Runs 1–2.
+
+### Limitations (Run v2 task-planning — REQUIRED by spec Req 6)
+
+The standing limitations below (SELF-RUN, SINGLE MODEL FAMILY, SMALL N, shared-extraction
+circularity, token approximation, free-text quality unscored, non-reproducible secondary,
+integrated-auth downgrade) apply UNCHANGED to this run's N=3. Because this run reports v2
+task-planning results, the following FIVE additional limitations travel WITH the numbers (spec Req 6):
+
+- **PLAN-QUALITY UNSCORED.** Only statically-decidable sub-facts (the caller set, the blind-spot set,
+  the drop order) are scored — NEVER the quality of the plan prose or the reasoning that produced it.
+- **FORMAT-PROMPTING BIAS.** The served scope list (the `blind_spots[]` / drop-order scope) is
+  delivered IDENTICALLY to both conditions, but its presence still shapes the answer FORMAT the agent
+  produces.
+- **HAND-PLANTED-KEY JUDGMENT RISK.** The v2 keys are hand-planted (not mechanically derived); the risk
+  is mitigated — not eliminated — by the `source_ddl_ref` DDL audit that greps each planted fact
+  against its cited DDL span.
+- **STATICALLY-DECIDABLE RADIUS ONLY.** Scoring covers only the planted facts; there is NO dynamic-SQL
+  resolution beyond them — precisely the radius at which the plan-blindspots false positive (note 1)
+  lives.
+- **DOCKER-TIER REPRODUCIBILITY.** The v2 run is reproducible only where Docker is available to rebuild
+  the mssql fixture; where Docker is UNAVAILABLE the run SKIPS honestly and its numbers are NEVER
+  fabricated.
+
 ## Token accounting
 
 One boundary, applied IDENTICALLY to both conditions:
