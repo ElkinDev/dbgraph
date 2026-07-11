@@ -63,7 +63,7 @@ describe('the scorer suite depends ONLY on committed fixtures (D15)', () => {
     expect(STAGE_RE.test(scorerSrc)).toBe(false);
   });
 
-  it('the committed fixture set is exactly the six family stubs', () => {
+  it('the committed fixture set is exactly the nine family stubs (six lookup + three v2 plan-*)', () => {
     const fixtures = readdirSync(join(benchTestDir, 'fixtures'))
       .filter((f) => f.endsWith('.json'))
       .sort();
@@ -72,6 +72,9 @@ describe('the scorer suite depends ONLY on committed fixtures (D15)', () => {
       'constraint-semantics.json',
       'fk-path.json',
       'impact.json',
+      'plan-blindspots.json',
+      'plan-callers.json',
+      'plan-order.json',
       'trigger-inventory.json',
       'view-dependency.json',
     ]);

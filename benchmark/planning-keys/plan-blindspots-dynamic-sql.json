@@ -1,0 +1,13 @@
+{
+  "family": "plan-blindspots",
+  "qid": "plan-blindspots-dynamic-sql",
+  "substrate": "mssql-torture",
+  "question": "Below are the stored routines in scope for this change. The graph captures STATIC dependency edges — foreign keys and declared EXEC calls — but a routine that assembles and runs SQL at run time can reference a table that NO static edge records. Which of the scoped routines carry such a dynamic-SQL table dependency, invisible to static edges? List every routine that is a blind spot, comma-separated.",
+  "answerFormat": "Comma-separated, alphabetically sorted list of unqualified routine names, drawn from the scope list, whose dynamic SQL hides a table dependency (e.g. \"usp_x\").",
+  "blind_spots": ["sp_dynamic_search"],
+  "scope": ["sp_place_order", "sp_dynamic_search", "usp_log_change", "usp_refresh_totals"],
+  "source_ddl_ref": "test/fixtures/mssql/torture.sql:199-210",
+  "source_ddl_refs": {
+    "sp_dynamic_search": "test/fixtures/mssql/torture.sql:199-210"
+  }
+}

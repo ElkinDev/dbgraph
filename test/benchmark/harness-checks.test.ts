@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   occursStandalone,
+  excludeScopeBlock,
   deriveCoverageTargets,
   verifyDumpCoverage,
   joinManifestHashes,
@@ -92,6 +93,48 @@ describe('deriveCoverageTargets: per-family targets by pinned rule', () => {
     expect(
       deriveCoverageTargets('column-type-order-items.qty', 'column-type', colGt),
     ).toStrictEqual([{ kind: 'table', name: 'order-items' }]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// deriveCoverageTargets — v2 plan-* families (spec Req 5 table / r4). All three are
+// KIND-AGNOSTIC (kind:'any', name-only), since a plan target may be a table, view,
+// trigger, PROCEDURE, or FUNCTION. plan-order covers the FULL scoped object set.
+// Inline GT literals MIRROR the committed benchmark/planning-keys/*.json shapes.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('deriveCoverageTargets: v2 plan-* families are kind-agnostic name-only (Req 5 / r4)', () => {
+  it('plan-callers derives one {kind:any} target per callers[] routine name', () => {
+    const gt = { callers: ['usp_refresh_totals'] };
+    expect(deriveCoverageTargets('plan-callers-usp_log_change', 'plan-callers', gt)).toStrictEqual([
+      { kind: 'any', name: 'usp_refresh_totals' },
+    ]);
+  });
+
+  it('plan-blindspots derives one {kind:any} target per blind_spots[] routine — NOT the served scope list', () => {
+    const gt = {
+      blind_spots: ['sp_dynamic_search'],
+      scope: ['sp_place_order', 'sp_dynamic_search', 'usp_log_change', 'usp_refresh_totals'],
+    };
+    expect(deriveCoverageTargets('plan-blindspots-dynamic-sql', 'plan-blindspots', gt)).toStrictEqual([
+      { kind: 'any', name: 'sp_dynamic_search' },
+    ]);
+  });
+
+  it('plan-order derives the FULL scoped object set (kind:any), one target per scope member', () => {
+    const gt = {
+      scope: ['order_items', 'orders', 'products', 'regions'],
+      precede: [
+        ['order_items', 'orders'],
+        ['products', 'regions'],
+      ],
+    };
+    expect(deriveCoverageTargets('plan-order-drop-recreate', 'plan-order', gt)).toStrictEqual([
+      { kind: 'any', name: 'order_items' },
+      { kind: 'any', name: 'orders' },
+      { kind: 'any', name: 'products' },
+      { kind: 'any', name: 'regions' },
+    ]);
   });
 });
 
@@ -179,6 +222,56 @@ describe('verifyDumpCoverage: impact (kind:any) matches by NAME regardless of de
     expect(
       verifyDumpCoverage('CREATE TABLE foo (id INTEGER);', [{ kind: 'trigger', name: 'foo' }]),
     ).toStrictEqual([{ kind: 'trigger', name: 'foo' }]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREATE_OBJECT_RE — mssql routines register as DEFINED (r4 / D2c). Without PROCEDURE|
+// PROC|FUNCTION in the CREATE alternation, mssql routines never register and the
+// build-time verifyDumpCoverage assert always fails on the live substrate. The four
+// original kinds MUST stay byte-identical (frozen-set regression). Inline mini-dumps only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('verifyDumpCoverage: CREATE_OBJECT_RE registers PROCEDURE/PROC/FUNCTION (r4 / D2c)', () => {
+  it('a CREATE PROCEDURE / PROC / FUNCTION mini-dump defines those names (kind:any) → []', () => {
+    const dump = [
+      'CREATE PROCEDURE dbo.usp_log_change @order_id int AS BEGIN SELECT 1; END;',
+      'CREATE PROC dbo.usp_refresh_totals AS BEGIN SELECT 1; END;',
+      'CREATE FUNCTION dbo.fn_round_money (@amount decimal(12,2)) RETURNS decimal(12,2) AS BEGIN RETURN 0; END;',
+    ].join('\n\n');
+    expect(
+      verifyDumpCoverage(dump, [
+        { kind: 'any', name: 'usp_log_change' },
+        { kind: 'any', name: 'usp_refresh_totals' },
+        { kind: 'any', name: 'fn_round_money' },
+      ]),
+    ).toStrictEqual([]);
+  });
+
+  it('a routine name genuinely ABSENT still MISSES (kind-agnostic stays sensitive to a wrong-DB dump)', () => {
+    const dump = 'CREATE PROCEDURE dbo.usp_log_change AS BEGIN SELECT 1; END;';
+    expect(verifyDumpCoverage(dump, [{ kind: 'any', name: 'sp_dynamic_search' }])).toStrictEqual([
+      { kind: 'any', name: 'sp_dynamic_search' },
+    ]);
+  });
+
+  it('REGRESSION — TABLE/VIEW/TRIGGER concrete-kind matching stays byte-identical', () => {
+    const dump = [
+      'CREATE TABLE regions (region_id int);',
+      'CREATE VIEW v_order_summary AS SELECT 1;',
+      'CREATE TRIGGER trg_audit_order_update ON orders AFTER UPDATE AS BEGIN SELECT 1; END;',
+    ].join('\n\n');
+    expect(
+      verifyDumpCoverage(dump, [
+        { kind: 'table', name: 'regions' },
+        { kind: 'view', name: 'v_order_summary' },
+        { kind: 'trigger', name: 'trg_audit_order_update' },
+      ]),
+    ).toStrictEqual([]);
+    // A TABLE foo still does NOT cover a concrete TRIGGER foo (kind-aware path unchanged).
+    expect(verifyDumpCoverage('CREATE TABLE foo (id int);', [{ kind: 'trigger', name: 'foo' }])).toStrictEqual([
+      { kind: 'trigger', name: 'foo' },
+    ]);
   });
 });
 
@@ -324,6 +417,51 @@ describe('occursStandalone: standalone (alphanumeric-adjacency) token occurrence
     expect(occursStandalone('list the columns of departments here', 'DEPARTMENTS')).toBe(true);
     // … and an embedded occurrence stays non-standalone regardless of case.
     expect(occursStandalone('which view reads ACTIVE_DEPARTMENTS today', 'departments')).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// excludeScopeBlock — shared scope-list exclusion helper (r2, A1). The scope block is
+// delimited by the literal own-line markers `=== SCOPE BEGIN ===` / `=== SCOPE END ===`.
+// The SAME helper is called by BOTH generate's assertNoAnswerLeak and build-packets'
+// assertPacketPair (never two hand-copied patterns). No markers ⇒ text returned UNCHANGED
+// (byte-identical sqlite path); an unbalanced/nested marker aborts LOUDLY.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('excludeScopeBlock: strips the marked scope region (r2)', () => {
+  it('removes the region between own-line BEGIN/END markers (inclusive)', () => {
+    const text = [
+      'before',
+      '=== SCOPE BEGIN ===',
+      'usp_refresh_totals',
+      'sp_dynamic_search',
+      '=== SCOPE END ===',
+      'after',
+    ].join('\n');
+    expect(excludeScopeBlock(text)).toBe('before\nafter');
+  });
+
+  it('tolerates leading/trailing whitespace around own-line markers', () => {
+    const text = ['q', '   === SCOPE BEGIN ===  ', 'a', '\t=== SCOPE END ===', 'z'].join('\n');
+    expect(excludeScopeBlock(text)).toBe('q\nz');
+  });
+
+  it('returns the text UNCHANGED when no markers are present (byte-identical sqlite path)', () => {
+    const text = 'a plain question with no scope block at all';
+    expect(excludeScopeBlock(text)).toBe(text);
+  });
+
+  it('throws LOUDLY on a BEGIN without a matching END', () => {
+    expect(() => excludeScopeBlock('x\n=== SCOPE BEGIN ===\nfoo')).toThrow(/scope/i);
+  });
+
+  it('throws LOUDLY on an END without a matching BEGIN', () => {
+    expect(() => excludeScopeBlock('a\n=== SCOPE END ===\nb')).toThrow(/scope/i);
+  });
+
+  it('throws LOUDLY on a nested BEGIN before END (markers must not nest)', () => {
+    const text = ['=== SCOPE BEGIN ===', 'a', '=== SCOPE BEGIN ===', 'b', '=== SCOPE END ==='].join('\n');
+    expect(() => excludeScopeBlock(text)).toThrow(/nest/i);
   });
 });
 

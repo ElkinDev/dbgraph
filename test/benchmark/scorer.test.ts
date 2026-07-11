@@ -23,6 +23,9 @@ import {
   compareTriggerInventory,
   compareViewDependency,
   compareConstraintSemantics,
+  comparePlanCallers,
+  comparePlanBlindspots,
+  comparePlanOrder,
   schemaTokens,
   scoreAnswer,
   FAMILIES,
@@ -223,6 +226,100 @@ describe('compareConstraintSemantics', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A4 (v2) — plan-callers / plan-blindspots via the EXISTING unordered set-match rule
+// (Req 2 "closed-form set-match"). Committed fixtures fixtures/plan-callers.json /
+// fixtures/plan-blindspots.json.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('comparePlanCallers (v2 set-match)', () => {
+  const gt = loadFixture<GroundTruthByFamily['plan-callers']>('plan-callers.json'); // 2 callers
+
+  it('passes on the exact caller set regardless of order', () => {
+    expect(comparePlanCallers('sp_place_order, usp_refresh_totals', gt).correct).toBe(true);
+  });
+
+  it('fails when a caller is missing (no partial credit)', () => {
+    expect(comparePlanCallers('usp_refresh_totals', gt).correct).toBe(false);
+  });
+
+  it('fails on a spurious extra caller (no fuzzy matching)', () => {
+    expect(comparePlanCallers('sp_place_order, usp_refresh_totals, sp_dynamic_search', gt).correct).toBe(false);
+  });
+
+  it('normalizes quoting/casing before the set compare', () => {
+    expect(comparePlanCallers('[SP_PLACE_ORDER], "USP_REFRESH_TOTALS"', gt).correct).toBe(true);
+  });
+});
+
+describe('comparePlanBlindspots (v2 set-match over the scoped list)', () => {
+  const gt = loadFixture<GroundTruthByFamily['plan-blindspots']>('plan-blindspots.json'); // {sp_dynamic_search}
+
+  it('passes when the answer names exactly the blind-spot set', () => {
+    expect(comparePlanBlindspots('sp_dynamic_search', gt).correct).toBe(true);
+  });
+
+  it('fails when a non-blind-spot routine from the scope is named', () => {
+    expect(comparePlanBlindspots('sp_place_order', gt).correct).toBe(false);
+  });
+
+  it('fails when a real blind spot is buried among false positives (extra)', () => {
+    expect(comparePlanBlindspots('sp_dynamic_search, sp_place_order', gt).correct).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A4 (v2) — comparePlanOrder: valid-topological-order comparator (Req 2, D3).
+// FULL matrix: valid A, distinct valid B, pair violation, missing, extra, duplicate,
+// empty, quoted/normalized, no-constraint pairs. Committed fixtures/plan-order.json.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('comparePlanOrder (valid-topological-order comparator, D3)', () => {
+  // scope [order_items, orders, products, regions]; pairs order_items→orders,
+  // order_items→products, products→regions.
+  const gt = loadFixture<GroundTruthByFamily['plan-order']>('plan-order.json');
+
+  it('topo positive A — a valid linearization scores correct', () => {
+    expect(comparePlanOrder('order_items, orders, products, regions', gt).correct).toBe(true);
+  });
+
+  it('topo positive B — a DIFFERENT valid permutation of the full set scores correct too', () => {
+    // orders and products swapped; all pairs still respected — no single canonical order.
+    expect(comparePlanOrder('order_items, products, regions, orders', gt).correct).toBe(true);
+  });
+
+  it('topo negative (violation) — regions before products violates products→regions', () => {
+    expect(comparePlanOrder('order_items, orders, regions, products', gt).correct).toBe(false);
+  });
+
+  it('topo negative (missing) — omitting a scoped object is not a full permutation', () => {
+    expect(comparePlanOrder('order_items, orders, products', gt).correct).toBe(false);
+  });
+
+  it('topo negative (extra) — an out-of-scope object is rejected', () => {
+    expect(comparePlanOrder('order_items, orders, products, regions, audit_log', gt).correct).toBe(false);
+  });
+
+  it('topo negative (duplicate) — a repeated scoped object is rejected', () => {
+    expect(comparePlanOrder('order_items, orders, products, regions, orders', gt).correct).toBe(false);
+  });
+
+  it('topo negative (empty) — an empty answer is rejected', () => {
+    expect(comparePlanOrder('', gt).correct).toBe(false);
+  });
+
+  it('normalizes quoting/casing before checking permutation + precedence', () => {
+    expect(comparePlanOrder('[ORDER_ITEMS], "Orders", products, regions', gt).correct).toBe(true);
+  });
+
+  it('with NO constraint pairs, ANY permutation of the full scoped set is accepted', () => {
+    const noPairs: GroundTruthByFamily['plan-order'] = { scope: ['a', 'b', 'c'], precede: [] };
+    expect(comparePlanOrder('c, a, b', noPairs).correct).toBe(true);
+    // …but the full set is still required — a missing member is rejected even with no pairs.
+    expect(comparePlanOrder('c, a', noPairs).correct).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Task 1.6 — schemaTokens: actual passthrough, else ceil(len/4) labeled approx
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -297,8 +394,8 @@ describe('scoreAnswer (blind dispatcher, D13)', () => {
 // Task 1.8 — Family union is EXACTLY the six closed-form families, no rubric path
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Family taxonomy (D6 — six closed-form families, no free-text/rubric)', () => {
-  it('contains exactly the six closed-form families in order', () => {
+describe('Family taxonomy (D6/D4 — nine closed-form families, no free-text/rubric)', () => {
+  it('contains exactly the nine closed-form families in canonical order (6 lookup + 3 v2 plan-*)', () => {
     expect([...FAMILIES]).toStrictEqual([
       'fk-path',
       'column-type',
@@ -306,11 +403,14 @@ describe('Family taxonomy (D6 — six closed-form families, no free-text/rubric)
       'trigger-inventory',
       'view-dependency',
       'constraint-semantics',
+      'plan-callers',
+      'plan-blindspots',
+      'plan-order',
     ]);
   });
 
   it('has no free-text explain/rubric member (headline accuracy is 100% closed-form)', () => {
-    expect(FAMILIES.length).toBe(6);
+    expect(FAMILIES.length).toBe(9);
     expect(FAMILIES).not.toContain('explain');
     expect(FAMILIES).not.toContain('rubric');
   });

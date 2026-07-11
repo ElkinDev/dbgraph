@@ -10,65 +10,65 @@ is UNTOUCHED — the v2 labeled RUN is a later phase; this change builds machine
 
 ### Phase A1: Shared scope-exclusion helper (r2)
 
-- [ ] A1.1 RED: in `test/benchmark/harness-checks.test.ts`, assert a pure `excludeScopeBlock(text)` in
+- [x] A1.1 RED: in `test/benchmark/harness-checks.test.ts`, assert a pure `excludeScopeBlock(text)` in
   `benchmark/harness-checks.ts` strips the region between literal own-line markers `=== SCOPE BEGIN ===`
   and `=== SCOPE END ===`; text with no markers returns unchanged; nested/absent-END aborts loudly.
-- [ ] A1.2 GREEN: implement `excludeScopeBlock` once as an exported pure helper in `harness-checks.ts`.
-- [ ] A1.3 GREEN: call the SAME helper from `generate.ts` `assertNoAnswerLeak` (:446) and
+- [x] A1.2 GREEN: implement `excludeScopeBlock` once as an exported pure helper in `harness-checks.ts`.
+- [x] A1.3 GREEN: call the SAME helper from `generate.ts` `assertNoAnswerLeak` (:446) and
   `build-packets.ts` `assertPacketPair` (:243) — one helper, both callers, no hand-copied pattern (r2).
 
 ### Phase A2: CREATE_OBJECT_RE extension + regression (r4 / D2c)
 
-- [ ] A2.1 RED: frozen-set regression in `harness-checks.test.ts` — a mini-dump with `CREATE PROCEDURE`,
+- [x] A2.1 RED: frozen-set regression in `harness-checks.test.ts` — a mini-dump with `CREATE PROCEDURE`,
   `CREATE PROC`, `CREATE FUNCTION` registers those names as defined; existing `TABLE|VIEW|TRIGGER|INDEX`
   matches stay byte-identical (benchmark-guard-precision style).
-- [ ] A2.2 GREEN: extend `CREATE_OBJECT_RE` (`harness-checks.ts:128`) to `PROCEDURE|PROC|FUNCTION|TABLE|VIEW|TRIGGER|INDEX`.
+- [x] A2.2 GREEN: extend `CREATE_OBJECT_RE` (`harness-checks.ts:128`) to `PROCEDURE|PROC|FUNCTION|TABLE|VIEW|TRIGGER|INDEX`.
 
 ### Phase A3: deriveCoverageTargets plan cases (spec Req 5)
 
-- [ ] A3.1 RED: in `harness-checks.test.ts`, assert `deriveCoverageTargets` returns `{kind:'any'}` NAME-only
+- [x] A3.1 RED: in `harness-checks.test.ts`, assert `deriveCoverageTargets` returns `{kind:'any'}` NAME-only
   targets for `plan-callers` (`callers[]`), `plan-blindspots` (`blind_spots[]`), and `plan-order` (the FULL
   scoped object set of `precede` pairs) — covers Req 5 scenario "Targets derived per family by pinned rule".
-- [ ] A3.2 GREEN: add the three plan cases to `deriveCoverageTargets` (`harness-checks.ts:73-115`).
+- [x] A3.2 GREEN: add the three plan cases to `deriveCoverageTargets` (`harness-checks.ts:73-115`).
 
 ### Phase A4: Scorer — 3 families + comparators (spec Req 2)
 
-- [ ] A4.1 RED: in `test/benchmark/scorer.test.ts`, FULL `comparePlanOrder` unit matrix with committed
+- [x] A4.1 RED: in `test/benchmark/scorer.test.ts`, FULL `comparePlanOrder` unit matrix with committed
   `test/benchmark/fixtures/plan-order.json` — valid order A (Req2 "topo positive A"), distinct valid order B
   (same verdict, "topo positive B"), pair violation ("topo negative — violation"), missing scoped object
   ("missing"), extra out-of-scope object AND duplicate ("extra"), empty answer (reject), quoted/normalized
   qnames, no-constraint pairs (any order accepted). `.toStrictEqual`.
-- [ ] A4.2 RED: assert `plan-callers` / `plan-blindspots` score via the EXISTING unordered set-match rule
+- [x] A4.2 RED: assert `plan-callers` / `plan-blindspots` score via the EXISTING unordered set-match rule
   against `fixtures/plan-callers.json` / `fixtures/plan-blindspots.json` (Req2 closed-form set-match scenario).
-- [ ] A4.3 GREEN: implement pure `comparePlanOrder(answerParsed, gt)` in `scorer/families.ts` — correct IFF
+- [x] A4.3 GREEN: implement pure `comparePlanOrder(answerParsed, gt)` in `scorer/families.ts` — correct IFF
   answer is a PERMUTATION of `scope` (each once, no extra, no dup) AND every `[u,v]` has `index(u)<index(v)`;
   reuse `splitList`+`normalizeQname` but PRESERVE order.
-- [ ] A4.4 GREEN: register 3 families in `scorer/index.ts` — `Family` (:13), `FAMILIES` (:22),
+- [x] A4.4 GREEN: register 3 families in `scorer/index.ts` — `Family` (:13), `FAMILIES` (:22),
   `GroundTruthByFamily` (:50) shapes, `scoreAnswer` switch (:150); wire set-match for callers/blindspots and
   `comparePlanOrder` for order. Confirms Req2 "Scorer unit tests pass inside npm test".
 
 ### Phase A5: Hand-planted keys + DDL audit (r1, spec Req 1)
 
-- [ ] A5.1 Plant keys: GREP the WHOLE `test/fixtures/mssql/torture.sql` (r1) for the COMPLETE caller set of
+- [x] A5.1 Plant keys: GREP the WHOLE `test/fixtures/mssql/torture.sql` (r1) for the COMPLETE caller set of
   `usp_log_change` (question = "a required parameter must be added to usp_log_change — which routines call
   it?"; expected `{usp_refresh_totals}` at the EXEC region :253-265, but every call site by DDL audit, not
   assumption); every `sp_executesql` site (blind-spots, e.g. `sp_dynamic_search`→`orders` :199-210); and all
   FK/calls precedence pairs (`order_items→orders/products→regions` :53-79, `fn_net_amount→fn_round_money`
   :225-239, `usp_refresh_totals→usp_log_change` :263).
-- [ ] A5.2 Create `benchmark/planning-keys/plan-callers-<qid>.json`, `plan-blindspots-<qid>.json`,
+- [x] A5.2 Create `benchmark/planning-keys/plan-callers-<qid>.json`, `plan-blindspots-<qid>.json`,
   `plan-order-<qid>.json` — GT shape + top-level `source_ddl_ref` string + per-target `source_ddl_refs` map
   (one entry per scope/pair member). NEVER derived from `affected`/`getImpact` (Req1 "never store-derived").
-- [ ] A5.3 RED: grep-audit check (positive) — each planted target's fact IS PRESENT at its cited
+- [x] A5.3 RED: grep-audit check (positive) — each planted target's fact IS PRESENT at its cited
   `source_ddl_ref` span in `torture.sql` (Req1 "planted key auditable against cited DDL", v2 positive).
-- [ ] A5.4 RED: grep-audit NEGATIVE — a key whose `source_ddl_ref` lacks the fact FAILS LOUDLY naming
+- [x] A5.4 RED: grep-audit NEGATIVE — a key whose `source_ddl_ref` lacks the fact FAILS LOUDLY naming
   qid+target (Req1 "source_ddl_ref lacks the fact FAILS audit", v2 negative). GREEN: implement audit assertion.
 
 ### Phase A6: Batch A gate + commit (HARD STOP)
 
-- [ ] A6.1 HARD STOP: sqlite `questions.yaml`, `ground-truth/*.json`, `packets/*`+`manifest.json` BYTE-IDENTICAL;
+- [x] A6.1 HARD STOP: sqlite `questions.yaml`, `ground-truth/*.json`, `packets/*`+`manifest.json` BYTE-IDENTICAL;
   runs 1–3 raw/scored BYTE-IDENTICAL (regression assert, Req4 "Frozen SQLite runs byte-identical" HARD guard).
-- [ ] A6.2 Gate: `tsc` clean; lint 0/0; `npm test` green (floor 3669 + new tests). Fix RED→GREEN only.
-- [ ] A6.3 ONE conventional commit for Batch A (hooks active); NO push.
+- [x] A6.2 Gate: `tsc` clean; lint 0/0; `npm test` green (floor 3669 + new tests). Fix RED→GREEN only.
+- [x] A6.3 ONE conventional commit for Batch A (hooks active); NO push.
 
 ## Batch B — Substrate dimension + mssql dump + Docker-gated proof
 

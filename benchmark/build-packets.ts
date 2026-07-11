@@ -36,7 +36,7 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 import { schemaTokens, type Family, type TokenCount } from './scorer/index.ts';
-import { deriveCoverageTargets, verifyDumpCoverage } from './harness-checks.ts';
+import { deriveCoverageTargets, verifyDumpCoverage, excludeScopeBlock } from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CLI args (mirrors generate.ts — no dependency on a YAML/arg library, ADR: zero new deps)
@@ -270,7 +270,9 @@ function assertPacketPair(
     ['WITH', withText],
     ['WITHOUT', withoutText],
   ] as const) {
-    const scannable = text.split(ddlDump).join('');
+    // The DDL region is fair input (excluded); r2 ALSO excludes a served SCOPE block via the SAME
+    // shared helper generate uses — never a second hand-copied pattern. No markers ⇒ unchanged.
+    const scannable = excludeScopeBlock(text.split(ddlDump).join(''));
     for (const atom of atoms) {
       if (scannable.includes(atom)) {
         throw new Error(

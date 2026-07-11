@@ -1,0 +1,4 @@
+{
+  "blind_spots": ["sp_dynamic_search"],
+  "scope": ["sp_place_order", "sp_dynamic_search", "usp_log_change", "usp_refresh_totals"]
+}

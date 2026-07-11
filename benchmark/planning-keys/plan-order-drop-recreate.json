@@ -1,0 +1,32 @@
+{
+  "family": "plan-order",
+  "qid": "plan-order-drop-recreate",
+  "substrate": "mssql-torture",
+  "question": "You must DROP and later re-create the following database objects. Give a single valid DROP order: every object must be dropped before the object it depends on — a child table before the parent it references, and a calling routine before the routine it invokes. List the scoped objects in one valid drop order, comma-separated.",
+  "answerFormat": "Comma-separated list of every scoped object exactly once, in a valid drop order (dependents before dependencies).",
+  "scope": [
+    "order_items",
+    "orders",
+    "products",
+    "regions",
+    "fn_net_amount",
+    "fn_round_money",
+    "usp_refresh_totals",
+    "usp_log_change"
+  ],
+  "precede": [
+    ["order_items", "orders"],
+    ["order_items", "products"],
+    ["products", "regions"],
+    ["fn_net_amount", "fn_round_money"],
+    ["usp_refresh_totals", "usp_log_change"]
+  ],
+  "source_ddl_ref": "test/fixtures/mssql/torture.sql:53-265",
+  "source_ddl_refs": {
+    "order_items->orders": "test/fixtures/mssql/torture.sql:76-77",
+    "order_items->products": "test/fixtures/mssql/torture.sql:78-79",
+    "products->regions": "test/fixtures/mssql/torture.sql:53-54",
+    "fn_net_amount->fn_round_money": "test/fixtures/mssql/torture.sql:233-239",
+    "usp_refresh_totals->usp_log_change": "test/fixtures/mssql/torture.sql:253-265"
+  }
+}

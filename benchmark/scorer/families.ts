@@ -197,3 +197,94 @@ export function compareConstraintSemantics(
       : `constraint-semantics ${groundTruth.ordered ? 'ordered' : 'set'} mismatch`,
   };
 }
+
+// ── plan-callers (v2, A4) — SET equality of normalized caller routine qnames ──
+
+export function comparePlanCallers(
+  answerParsed: string,
+  groundTruth: GroundTruthByFamily['plan-callers'],
+): ScoreResult {
+  const expected = toQnameSet(groundTruth.callers);
+  const got = toQnameSet(splitList(answerParsed));
+  const correct = setEquals(expected, got);
+  return {
+    correct,
+    expected: displaySet(expected),
+    got: displaySet(got),
+    detail: correct ? 'plan-callers set match' : 'plan-callers set mismatch',
+  };
+}
+
+// ── plan-blindspots (v2, A4) — SET equality of the blind-spot routine qnames ──
+// The scored key is the blind_spots[] subset of the served scope list (the scope itself is
+// fair prompt input, NOT part of the answer key). Same unordered set-match rule as callers.
+
+export function comparePlanBlindspots(
+  answerParsed: string,
+  groundTruth: GroundTruthByFamily['plan-blindspots'],
+): ScoreResult {
+  const expected = toQnameSet(groundTruth.blind_spots);
+  const got = toQnameSet(splitList(answerParsed));
+  const correct = setEquals(expected, got);
+  return {
+    correct,
+    expected: displaySet(expected),
+    got: displaySet(got),
+    detail: correct ? 'plan-blindspots set match' : 'plan-blindspots set mismatch',
+  };
+}
+
+// ── plan-order (v2, A4 / D3) — valid-topological-order comparator (the one novel rule) ──
+// CORRECT iff the answer is a PERMUTATION of the FULL scoped set (each scoped object exactly
+// once, no extras, no duplicates) AND every must-precede pair `[u,v]` has index(u) < index(v).
+// Deterministic: the same answer always yields the same verdict, independent of which valid
+// linearization the key's pairs would themselves admit. Order of the answer list is PRESERVED
+// (splitList keeps order); `normalizeQname` makes it quoting/case independent.
+
+export function comparePlanOrder(
+  answerParsed: string,
+  groundTruth: GroundTruthByFamily['plan-order'],
+): ScoreResult {
+  const scope = groundTruth.scope.map((s) => normalizeQname(s));
+  const scopeSet = new Set(scope);
+  const answer = splitList(answerParsed).map((a) => normalizeQname(a));
+  const answerSet = new Set(answer);
+
+  // Permutation: full length, no duplicates, no extras, every scoped object present.
+  const isPermutation =
+    answer.length === scope.length &&
+    answerSet.size === answer.length && // no duplicates
+    scope.every((s) => answerSet.has(s)) && // every scoped object present
+    answer.every((a) => scopeSet.has(a)); // no out-of-scope object
+
+  // Position of the FIRST occurrence of each answer token (for precedence checks).
+  const indexOf = new Map<string, number>();
+  answer.forEach((a, i) => {
+    if (!indexOf.has(a)) indexOf.set(a, i);
+  });
+
+  const violations: string[] = [];
+  for (const [u, v] of groundTruth.precede) {
+    const nu = normalizeQname(u);
+    const nv = normalizeQname(v);
+    const iu = indexOf.get(nu);
+    const iv = indexOf.get(nv);
+    if (iu === undefined || iv === undefined || iu >= iv) {
+      violations.push(`${nu}->${nv}`);
+    }
+  }
+
+  const correct = isPermutation && violations.length === 0;
+  const detail = correct
+    ? 'plan-order valid linearization'
+    : !isPermutation
+      ? 'plan-order answer is not a permutation of the scoped set'
+      : `plan-order violates must-precede pair(s): ${violations.join(', ')}`;
+
+  return {
+    correct,
+    expected: `permutation of [${scope.join(', ')}] respecting ${groundTruth.precede.length} must-precede pair(s)`,
+    got: answer.join(', '),
+    detail,
+  };
+}

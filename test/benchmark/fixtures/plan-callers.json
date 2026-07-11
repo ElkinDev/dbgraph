@@ -1,0 +1,3 @@
+{
+  "callers": ["usp_refresh_totals", "sp_place_order"]
+}

@@ -41,7 +41,7 @@ const { createSqliteGraphStore } = (await import(
   '../dist/index.js' as string
 )) as typeof import('../src/index.js');
 import type { Family, FkHop, TriggerTuple } from './scorer/index.js';
-import { occursStandalone } from './harness-checks.ts';
+import { occursStandalone, excludeScopeBlock } from './harness-checks.ts';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Deterministic helpers (ADR-008 — locale-independent, no randomness)
@@ -445,7 +445,10 @@ function assertSourceRefs(questions: readonly QuestionRecord[]): void {
 
 function assertNoAnswerLeak(questions: readonly QuestionRecord[]): void {
   for (const q of questions) {
-    const haystack = q.question.toLowerCase();
+    // r2: a served SCOPE block (scope-list planning families) is FAIR input the agent must read,
+    // so its region is EXCLUDED from the leak scan via the SAME shared helper build-packets uses.
+    // Questions with no scope markers (every sqlite family) are returned unchanged — byte-identical.
+    const haystack = excludeScopeBlock(q.question).toLowerCase();
     for (const token of q.answerTokens) {
       const needle = token.trim().toLowerCase();
       // A leak is a STANDALONE occurrence — one NOT flanked by an alphanumeric-or-underscore

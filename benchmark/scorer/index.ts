@@ -9,16 +9,28 @@
  * Shared helpers (task 1.1): `parseAnswer`, `normalizeQname`, `canonicalType`.
  */
 
-// ── Family taxonomy (D6 — six closed-form families, NO free-text/rubric member) ──
+// ── Family taxonomy (D6 — closed-form families, NO free-text/rubric member) ──────
+// The six original lookup families PLUS the three v2 task-planning families (D4). All are
+// CLOSED-FORM (deterministic scoring); v2 adds NO rubric/free-text member — plan-callers /
+// plan-blindspots reuse the unordered set-match rule, plan-order the new topo-order rule.
 export type Family =
   | 'fk-path'
   | 'column-type'
   | 'impact'
   | 'trigger-inventory'
   | 'view-dependency'
-  | 'constraint-semantics';
+  | 'constraint-semantics'
+  | 'plan-callers'
+  | 'plan-blindspots'
+  | 'plan-order';
 
-/** Runtime tuple of exactly the six closed-form families (headline accuracy is 100% closed-form, D6). */
+/**
+ * Runtime tuple of the closed-form families in canonical order: the six lookup families FOLLOWED
+ * by the three v2 task-planning families (D4). Headline accuracy stays 100% closed-form — every
+ * member is deterministically scored, there is still NO free-text/rubric family. `score.ts`
+ * iterates this tuple and FILTERS families with zero questions, so a frozen sqlite run (which has
+ * no plan-* questions) produces a byte-identical aggregate even though the tuple grew (D6).
+ */
 export const FAMILIES: readonly Family[] = [
   'fk-path',
   'column-type',
@@ -26,6 +38,9 @@ export const FAMILIES: readonly Family[] = [
   'trigger-inventory',
   'view-dependency',
   'constraint-semantics',
+  'plan-callers',
+  'plan-blindspots',
+  'plan-order',
 ] as const;
 
 // ── Ground-truth shapes, keyed by family (mechanical derivation output, D5) ──────
@@ -54,6 +69,15 @@ export interface GroundTruthByFamily {
   'trigger-inventory': { readonly triggers: readonly TriggerTuple[] };
   'view-dependency': { readonly dependencies: readonly string[] };
   'constraint-semantics': { readonly columns: readonly string[]; readonly ordered: boolean };
+  // v2 planning families (D3/D4). The committed key FILES also carry `source_ddl_ref` +
+  // `source_ddl_refs` (auditable pointers) — those are ignored by the scorer, which reads
+  // only the scored fields below.
+  'plan-callers': { readonly callers: readonly string[] };
+  'plan-blindspots': { readonly blind_spots: readonly string[]; readonly scope: readonly string[] };
+  'plan-order': {
+    readonly scope: readonly string[];
+    readonly precede: readonly (readonly [string, string])[];
+  };
 }
 
 export interface ScoreResult {
@@ -125,6 +149,9 @@ export {
   compareTriggerInventory,
   compareViewDependency,
   compareConstraintSemantics,
+  comparePlanCallers,
+  comparePlanBlindspots,
+  comparePlanOrder,
 } from './families.ts';
 
 // ── Public re-exports: token-accounting formula (design §Token accounting, D9) ──
@@ -139,6 +166,9 @@ import {
   compareTriggerInventory,
   compareViewDependency,
   compareConstraintSemantics,
+  comparePlanCallers,
+  comparePlanBlindspots,
+  comparePlanOrder,
 } from './families.ts';
 
 /**
@@ -164,6 +194,12 @@ export function scoreAnswer(input: ScoreInput): ScoreResult {
       return compareViewDependency(input.answerParsed, input.groundTruth);
     case 'constraint-semantics':
       return compareConstraintSemantics(input.answerParsed, input.groundTruth);
+    case 'plan-callers':
+      return comparePlanCallers(input.answerParsed, input.groundTruth);
+    case 'plan-blindspots':
+      return comparePlanBlindspots(input.answerParsed, input.groundTruth);
+    case 'plan-order':
+      return comparePlanOrder(input.answerParsed, input.groundTruth);
     default: {
       // Exhaustiveness guard — unreachable given the FAMILIES check above.
       throw new Error(`Unknown benchmark family: ${String((input as { family: string }).family)}`);

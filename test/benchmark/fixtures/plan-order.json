@@ -1,0 +1,8 @@
+{
+  "scope": ["order_items", "orders", "products", "regions"],
+  "precede": [
+    ["order_items", "orders"],
+    ["order_items", "products"],
+    ["products", "regions"]
+  ]
+}

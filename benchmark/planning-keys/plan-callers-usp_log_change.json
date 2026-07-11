@@ -1,0 +1,13 @@
+{
+  "family": "plan-callers",
+  "qid": "plan-callers-usp_log_change",
+  "substrate": "mssql-torture",
+  "question": "A required parameter is being added to the signature of the stored procedure dbo.usp_log_change. Which routines invoke it and must therefore be updated to match the new signature? List every calling routine, comma-separated.",
+  "answerFormat": "Comma-separated, alphabetically sorted list of unqualified routine names that call the procedure (e.g. \"usp_a, usp_b\").",
+  "callee": "usp_log_change",
+  "callers": ["usp_refresh_totals"],
+  "source_ddl_ref": "test/fixtures/mssql/torture.sql:253-265",
+  "source_ddl_refs": {
+    "usp_refresh_totals": "test/fixtures/mssql/torture.sql:253-265"
+  }
+}

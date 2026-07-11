@@ -45,6 +45,59 @@ export function occursStandalone(haystack: string, needle: string): boolean {
   }
 }
 
+// ── Scope-block exclusion (r2) — shared by BOTH leak/pair guards ─────────────
+
+/** The literal own-line markers that delimit a served scope list (r2, uppercase). */
+const SCOPE_BEGIN = '=== SCOPE BEGIN ===';
+const SCOPE_END = '=== SCOPE END ===';
+const SCOPE_BEGIN_RE = /^[ \t]*=== SCOPE BEGIN ===[ \t]*$/m;
+const SCOPE_END_RE = /^[ \t]*=== SCOPE END ===[ \t]*$/m;
+
+/**
+ * Return `text` with the marked SCOPE region removed — the ONE shared exclusion used by BOTH
+ * `generate`'s `assertNoAnswerLeak` and `build-packets`'s `assertPacketPair` (r2 — never two
+ * hand-copied patterns). For scope-list planning families the served scope block is FAIR input
+ * (the agent must read it), so its content must NOT count as an answer leak; this strips it
+ * BEFORE the leak scan. The scope list is delimited by the literal own-line markers
+ * `=== SCOPE BEGIN ===` / `=== SCOPE END ===` (both dropped, plus everything between).
+ *
+ * When NEITHER marker is present the input is returned BYTE-IDENTICAL (the sqlite path has no
+ * scope block, so this is a no-op). An UNBALANCED (BEGIN without END, or END without BEGIN) or
+ * NESTED (a second BEGIN before its END) marker set aborts LOUDLY — a malformed scope block must
+ * never silently pass the guard.
+ */
+export function excludeScopeBlock(text: string): string {
+  const hasBegin = SCOPE_BEGIN_RE.test(text);
+  const hasEnd = SCOPE_END_RE.test(text);
+  if (!hasBegin && !hasEnd) return text; // no markers → unchanged (byte-identical sqlite path)
+  if (hasBegin !== hasEnd) {
+    throw new Error(
+      `excludeScopeBlock: unbalanced scope markers (BEGIN=${hasBegin}, END=${hasEnd}) — a scope block MUST carry BOTH "${SCOPE_BEGIN}" and "${SCOPE_END}" on their own lines.`,
+    );
+  }
+  const out: string[] = [];
+  let inScope = false;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === SCOPE_BEGIN) {
+      if (inScope) {
+        throw new Error('excludeScopeBlock: nested "=== SCOPE BEGIN ===" before a matching END — scope markers must NOT nest.');
+      }
+      inScope = true;
+      continue; // drop the BEGIN marker line
+    }
+    if (trimmed === SCOPE_END) {
+      inScope = false;
+      continue; // drop the END marker line
+    }
+    if (!inScope) out.push(line);
+  }
+  if (inScope) {
+    throw new Error('excludeScopeBlock: "=== SCOPE BEGIN ===" without a matching "=== SCOPE END ===" — the scope block is unterminated.');
+  }
+  return out.join('\n');
+}
+
 // ── Coverage targets (D2) ────────────────────────────────────────────────────
 
 export type ObjectKind = 'table' | 'view' | 'trigger' | 'any'; // 'any' = kind-agnostic (name-only)
@@ -109,6 +162,25 @@ export function deriveCoverageTargets(
       const view = tableFromQid(qid, family);
       return [{ kind: 'view', name: view }];
     }
+    case 'plan-callers': {
+      // v2 (spec Req 5 / r4): every planted CALLER routine must be DEFINED in the dump. A caller
+      // may be a proc or function, so match by NAME only (kind:'any'). The callee (the routine
+      // whose signature changes) is the question SUBJECT, not a coverage target.
+      const callers = (gt['callers'] ?? []) as readonly string[];
+      return callers.map((name) => ({ kind: 'any', name }));
+    }
+    case 'plan-blindspots': {
+      // v2: cover each BLIND-SPOT routine (the scored answer subset) — NOT the served scope list,
+      // which is fair prompt input, not an answer target. Name-only (kind:'any').
+      const blindSpots = (gt['blind_spots'] ?? []) as readonly string[];
+      return blindSpots.map((name) => ({ kind: 'any', name }));
+    }
+    case 'plan-order': {
+      // v2 (r4): kind-agnostic over the FULL scoped object set (tables + routines). Every scoped
+      // object of the drop/recreate ordering must be DEFINED in the dump; name-only (kind:'any').
+      const scope = (gt['scope'] ?? []) as readonly string[];
+      return scope.map((name) => ({ kind: 'any', name }));
+    }
     default:
       return [];
   }
@@ -125,8 +197,11 @@ function tableFromQid(qid: string, family: Family): string {
 // One CREATE-defined object per match: kind + raw name token (schema/quotes stripped later).
 // Tolerates `TEMP`/`TEMPORARY` and `IF NOT EXISTS`. The name token stops at whitespace, `(`
 // or `;` — enough for the deterministic `sqlite_master` dump and the unit mini-dumps.
+// PROCEDURE|PROC|FUNCTION are included (r4 / D2c) so mssql routines register as DEFINED; without
+// them the plan-* coverage assert on the live substrate always fails. PROCEDURE precedes PROC in
+// the alternation so `CREATE PROCEDURE` matches the full keyword, never a truncated `PROC`.
 const CREATE_OBJECT_RE =
-  /CREATE\s+(?:TEMP(?:ORARY)?\s+)?(TABLE|VIEW|TRIGGER|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(;]+)/gi;
+  /CREATE\s+(?:TEMP(?:ORARY)?\s+)?(PROCEDURE|PROC|FUNCTION|TABLE|VIEW|TRIGGER|INDEX)\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\s(;]+)/gi;
 
 /** Normalize an object identifier: strip quoting + optional `schema.` prefix, lowercase. */
 function normalizeObjectName(raw: string): string {
@@ -164,6 +239,96 @@ export function verifyDumpCoverage(
     return t.kind === 'any'
       ? !definedNames.has(name) // kind-agnostic: name present under ANY kind
       : !defined.has(`${t.kind}:${name}`); // concrete kind: exact kind:name (UNCHANGED)
+  });
+}
+
+// ── Planting-key DDL audit (v2, A5 — spec Req 1) ─────────────────────────────
+
+/** Verdict for one planted target: is its fact PRESENT at its cited DDL span? */
+export interface PlanKeyAuditResult {
+  readonly qid: string;
+  readonly family: string;
+  readonly target: string;
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** A committed dynamic-SQL construct proves a plan-blindspots target's hidden dependency. */
+const DYNAMIC_SQL_RE = /sp_executesql|exec\s*\(/i;
+
+/** Extract the inclusive line span cited by a `path:START[-END]` ref; null when unparseable/OOB. */
+function extractDdlSpan(ddlText: string, ref: string): string | null {
+  const m = /:(\d+)(?:-(\d+))?\s*$/.exec(ref);
+  if (m === null) return null;
+  const start = Number.parseInt(m[1] ?? '', 10);
+  const end = m[2] !== undefined ? Number.parseInt(m[2], 10) : start;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) return null;
+  const lines = ddlText.split(/\r?\n/);
+  if (end > lines.length) return null;
+  return lines.slice(start - 1, end).join('\n');
+}
+
+/** Case-insensitive literal-substring presence (targets carry `_`/`->`, never a regex pattern). */
+function spanContains(span: string, token: string): boolean {
+  return token.length > 0 && span.toLowerCase().includes(token.toLowerCase());
+}
+
+/**
+ * Audit every planted target of a committed plan-* key against the DDL text — PURE (the caller
+ * reads `torture.sql`). Each target's `source_ddl_ref` cited span MUST contain the planted fact,
+ * greppable-auditable (spec Req 1):
+ *   - plan-callers: the caller AND the callee both appear in the span (the EXEC is the call fact);
+ *   - plan-blindspots: the blind-spot routine appears AND the span carries a dynamic-SQL construct
+ *     (`sp_executesql`/`EXEC(...)`) — the reference invisible to static edges;
+ *   - plan-order: BOTH endpoints of the must-precede pair appear in the span (the FK/call fact).
+ * A missing ref entry, an unparseable/out-of-bounds span, or an absent fact yields `ok:false` with
+ * a detail naming the qid + target — an unverifiable hand-planted key is a SPEC VIOLATION, never a
+ * silent pass.
+ */
+export function auditPlanKey(
+  key: Record<string, unknown>,
+  ddlText: string,
+): readonly PlanKeyAuditResult[] {
+  const qid = String(key['qid'] ?? '<unknown-qid>');
+  const family = String(key['family'] ?? '<unknown-family>');
+  const refs = (key['source_ddl_refs'] ?? {}) as Record<string, string>;
+
+  // (target, refKey, requiredTokens, requireDynamicSql) per family.
+  const checks: { target: string; refKey: string; tokens: string[]; requireDynamic: boolean }[] = [];
+  if (family === 'plan-callers') {
+    const callee = String(key['callee'] ?? '');
+    for (const caller of (key['callers'] ?? []) as readonly string[]) {
+      checks.push({ target: caller, refKey: caller, tokens: [caller, callee], requireDynamic: false });
+    }
+  } else if (family === 'plan-blindspots') {
+    for (const bs of (key['blind_spots'] ?? []) as readonly string[]) {
+      checks.push({ target: bs, refKey: bs, tokens: [bs], requireDynamic: true });
+    }
+  } else if (family === 'plan-order') {
+    for (const pair of (key['precede'] ?? []) as readonly (readonly [string, string])[]) {
+      const [u, v] = pair;
+      const target = `${u}->${v}`;
+      checks.push({ target, refKey: target, tokens: [u, v], requireDynamic: false });
+    }
+  }
+
+  return checks.map(({ target, refKey, tokens, requireDynamic }) => {
+    const ref = refs[refKey];
+    if (ref === undefined || ref.length === 0) {
+      return { qid, family, target, ok: false, detail: `${qid} / ${target}: no source_ddl_ref entry — a planted target MUST cite its DDL span (Req 1).` };
+    }
+    const span = extractDdlSpan(ddlText, ref);
+    if (span === null) {
+      return { qid, family, target, ok: false, detail: `${qid} / ${target}: source_ddl_ref "${ref}" is unparseable or out of bounds.` };
+    }
+    const missing = tokens.filter((t) => !spanContains(span, t));
+    if (missing.length > 0) {
+      return { qid, family, target, ok: false, detail: `${qid} / ${target}: cited span ${ref} does NOT contain ${missing.map((t) => `"${t}"`).join(', ')} — planted fact absent (SPEC VIOLATION).` };
+    }
+    if (requireDynamic && !DYNAMIC_SQL_RE.test(span)) {
+      return { qid, family, target, ok: false, detail: `${qid} / ${target}: cited span ${ref} carries NO dynamic-SQL construct — the blind-spot fact is absent (SPEC VIOLATION).` };
+    }
+    return { qid, family, target, ok: true, detail: `${qid} / ${target}: fact present at ${ref}.` };
   });
 }
 
