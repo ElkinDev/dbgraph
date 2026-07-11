@@ -12,7 +12,7 @@
  *
  * This guard reads FILES ONLY (the source constant + `package.json` on disk) — NO build
  * artifact — so it runs UNCONDITIONALLY in `npm test` (no `skipIf`). The triple-equality
- * `pkg.version === DBGRAPH_VERSION === '1.1.0'` makes divergence mechanically impossible to
+ * `pkg.version === DBGRAPH_VERSION === '1.1.1'` makes divergence mechanically impossible to
  * ship: bump one source without the other and this test goes RED before anything is packed.
  */
 
@@ -35,8 +35,8 @@ describe('version single-source drift guard (always-on)', () => {
     expect(pkg.version).toBe(DBGRAPH_VERSION);
   });
 
-  it('the single version value is exactly "1.1.0"', () => {
-    // Pins the current release value so both channels report 1.1.0.
-    expect(DBGRAPH_VERSION).toBe('1.1.0');
+  it('the single version value is exactly "1.1.1"', () => {
+    // Pins the current release value so both channels report 1.1.1.
+    expect(DBGRAPH_VERSION).toBe('1.1.1');
   });
 });

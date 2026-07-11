@@ -18,7 +18,7 @@
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 set -eu
 
-DEFAULT_VERSION='1.1.0'
+DEFAULT_VERSION='1.1.1'
 VERSION="${DBGRAPH_VERSION:-$DEFAULT_VERSION}"
 INSTALL_DIR="${DBGRAPH_INSTALL_DIR:-$HOME/.local/bin}"
 BASE="${DBGRAPH_DOWNLOAD_BASE:-}"
