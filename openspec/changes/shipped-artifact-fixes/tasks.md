@@ -20,10 +20,10 @@ clean. STRICT TDD (`strict_tdd: true`): failing test first, then make it pass.
 ## Batch 2 — Dist-level masking-class closer (Docker + build gated)
 
 ### Phase 3: Gated dist-level live-connect test
-- [ ] 3.1 Create `test/adapters/engines/mssql/dist-connect.integration.test.ts`: self-gate on `mssqlIntegrationEnabled()` AND built `dist/index.cjs`; reuse `startMssqlContainer`; 240s hookTimeout.
-- [ ] 3.2 Load `createMssqlSchemaAdapter` from the BUILT `dist/index.cjs` via real Node (spawned child or `createRequire`), NOT vitest src.
-- [ ] 3.3 RED (against pre-fix built dist): SQL-auth connect + extract fails `new undefined()`. NOTE: this RED is ONLY observable via the dist artifact — that is the point; the unit RED (2.2) is its Docker-free proxy.
-- [ ] 3.4 GREEN: rebuild post-fix; dist connects + extracts. Confirm skip-clean when dist/Docker absent; floor 3731 holds.
+- [x] 3.1 Create `test/adapters/engines/mssql/dist-connect.integration.test.ts`: self-gate on `mssqlIntegrationEnabled()` AND built `dist/index.cjs`; reuse `startMssqlContainer`; 240s hookTimeout. (Double-gate `describe.skipIf(!(mssqlIntegrationEnabled() && DIST_BUILT))`.)
+- [x] 3.2 Load `createMssqlSchemaAdapter` from the BUILT `dist/index.cjs` via real Node — chose SPAWNED Node child (`process.execPath` + `node -e` requiring the dist, result → temp file), NOT `createRequire` in-process, for maximum fidelity (zero vitest on the interop path).
+- [x] 3.3 RED (against pre-fix built dist): transiently reverted the interop fix in src → rebuilt → dist child reported `ok:false` `ConnectivityUnavailableError` (raw destructure → ConnectionPool `undefined` → `new undefined()` swallowed by canConnect → strategies exhausted). Restored via `git checkout` + rebuild. This RED is ONLY observable via the dist artifact; the unit RED (2.2) is its Docker-free proxy.
+- [x] 3.4 GREEN: post-fix dist connects + extracts (1 passed, engine=mssql, schemas⊇dbo, objectCount>0). Skip-clean confirmed when Docker/dist absent (2 skipped, never failing); `npm test` floor 3731 passed | 4 skipped holds (integration file excluded from default run).
 
 ## Phase 4: Verification
 - [ ] 4.1 `npm test` >= 3731 (incl. 4 skipped); `npm run lint`; `npx tsc --noEmit`.

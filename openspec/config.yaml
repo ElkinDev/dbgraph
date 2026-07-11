@@ -19,8 +19,8 @@ testing:
       available: true
       tool: vitest
     integration:
-      available: false
-      tool: "testcontainers (planned, not installed yet)"
+      available: true
+      tool: "testcontainers@12.0.4 — mssql/pg/mysql/mongodb suites (*.integration.test.ts); gated by DBGRAPH_INTEGRATION=1 npm run test:integration"
     e2e:
       available: false
       tool: none
