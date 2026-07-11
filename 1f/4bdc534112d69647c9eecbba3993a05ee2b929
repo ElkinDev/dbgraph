@@ -1,0 +1,25 @@
+openspec/changes/mssql-dynamic-sql-granularity/proposal.md
+  s_b5cc375016610a::t_d3c83e2a0485ef 1-95
+openspec/changes/mssql-dynamic-sql-granularity/tasks.md
+  s_b5cc375016610a::t_eedd7a36f4d363 1-115
+openspec/changes/mssql-dynamic-sql-granularity/design.md
+  s_b5cc375016610a::t_623fcbe1bed6a0 1-196
+openspec/changes/mssql-dynamic-sql-granularity/specs/mssql-extraction/spec.md
+  s_b5cc375016610a::t_8c8af2b26ee30b 1-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "1f4bdc534112d69647c9eecbba3993a05ee2b929",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
