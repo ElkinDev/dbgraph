@@ -102,7 +102,7 @@ never-store-derived, and read-not-queried.)
 
 #### Scenario: N is fixed and pre-registered before any run
 
-- GIVEN the committed `benchmark/questions.yaml` (or a planning substrate's committed set file)
+- GIVEN the committed `benchmark/questions.yaml` (or, for a planning substrate, the committed planning-keys plus the deterministic generator from which the set file derives byte-reproducibly at run time)
 - WHEN its question count is inspected
 - THEN N is a fixed integer between 5 and 10 for lookup sets, or between 3 and 10 for a planning substrate set, committed BEFORE any transcript exists under `benchmark/runs/` for that set's labeled run
 - AND every committed question in the set appears scored in that run's report (none dropped)
@@ -352,7 +352,8 @@ or scoring rule of that set. A NEW labeled run on a DIFFERENT SUBSTRATE (e.g. v2
 the plan-* families) is its OWN pre-registered set with its OWN frozen methodology and MAY register
 additional question families and the additively-extended scorer, but it MUST NOT add, remove, or alter
 any command, question, key, scoring rule, file, or table of ANY EXISTING frozen run. The v2 substrate
-label MUST thread from the pre-registered set file through the packets manifest, aggregate, and render, so
+label MUST thread from the pre-registered set file (materialized byte-reproducibly at run time from the
+committed planning-keys and deterministic generator) through the packets manifest, aggregate, and render, so
 every v2 output CARRIES its substrate label. The FROZEN SQLite runs (Runs 1–3) MUST remain BYTE-frozen —
 their question set, keys, run files, and results tables UNTOUCHED — and labeled with their N. Results MUST
 be reported HONESTLY per the standing contract: whatever the numbers show — INCLUDING no improvement or a
