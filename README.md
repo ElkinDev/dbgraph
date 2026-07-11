@@ -21,10 +21,11 @@ re-discovering the schema by hand.
   `@modelcontextprotocol/sdk` stdio transport
   (`openspec/specs/mcp-server/spec.md` — Purpose).
 
-> **Status.** This repository runs **from source today**. There is no published npm
-> package or binary yet — the release workflow exists but has never been fired (see
-> [Limitations](#limitations)). Standalone win-x64 / linux-x64 binaries are planned for
-> v1.0.
+> **Status.** dbgraph is **published at v1.1.0** on npm as
+> [`@elkindev/dbgraph`](https://www.npmjs.com/package/@elkindev/dbgraph), with `v1.0.0` and
+> `v1.1.0` tags on GitHub; `dbgraph --version` reports `1.1.0`. See the
+> [Quickstart](#quickstart) to install, or build the win-x64 / linux-x64 SEA binaries from
+> `release.yml`.
 
 ## What it models
 
@@ -35,14 +36,20 @@ Every catalog object becomes a node; every relationship becomes an edge.
   and `field` (for document stores).
 - **Edges** (`openspec/specs/graph-model/spec.md` — Edge taxonomy): `references`
   (declared foreign keys, plus an aggregated table→table form), `depends_on` (view
-  dependencies), `reads_from` / `writes_to` (parsed from module bodies), `fires_on`
-  (triggers, carrying the DML event), `indexes`, and `inferred_reference` (opt-in,
-  carrying `confidence: inferred` and a numeric `score`).
+  dependencies, optionally carrying the exact consumed source columns in
+  `attrs.dstColumns`), `reads_from` / `writes_to` (parsed from module bodies), `fires_on`
+  (triggers, carrying the DML event), `calls` (a routine invoking another routine),
+  `indexes`, and `inferred_reference` (opt-in, carrying `confidence: inferred` and a
+  numeric `score`).
 
 Every edge is classified by `confidence` — `declared`, `parsed`, or `inferred` — so
 the graph never hides how it knows something. A module whose body cannot be analyzed
 is flagged `has_dynamic_sql: true` rather than guessing its edges
-(`openspec/specs/graph-normalization/spec.md` — "Dynamic SQL declares blindness").
+(`openspec/specs/graph-normalization/spec.md` — "Dynamic SQL declares blindness"). The
+programmable-object internals added in v1.1.0 — routine parameters, routine→routine
+`calls` edges, and view column-level lineage — carry the SAME provenance discipline
+(catalog-`declared`, body-`parsed`, or honestly absent per engine); see
+[Programmable-object depth](#programmable-object-depth-v110).
 
 ## Feature matrix
 
@@ -111,12 +118,164 @@ compatibility — never by reading data values
 (`openspec/specs/graph-normalization/spec.md` — "Opt-in structural inference of
 references", "Inference is opt-in and OFF by default").
 
-## Quickstart (from source)
+### Programmable-object depth (v1.1.0)
 
-There is no published package yet, so run from source. Requires **Node.js >= 22**.
+v1.1.0 (the DOG series — deep object graph) models the INTERNALS of programmable objects,
+per-engine and provenance-honest: a routine→routine call graph, routine parameters, view
+column-level lineage, and a per-node dynamic-SQL degradation marker. Each cell is `declared`
+(catalog-sourced), `parsed` (body-tokenized), or honestly `—` (the engine has no such
+catalog / object) — never fabricated.
+
+| Engine | `calls` edges (routine→routine) | Routine parameters | View column lineage (`attrs.dstColumns`) | `[DYNAMIC SQL]` per-node marker |
+|--------|:---:|:---:|:---:|:---:|
+| **SQLite** | — (no routines) | — (no routines) | object-grain¹ | — (no dynamic-SQL form) |
+| **SQL Server** | declared² | ✓ `sys.parameters`³ | declared, native path⁴ | ✓⁵ |
+| **PostgreSQL** | parsed⁶ | ✓ `pg_proc`⁷ | declared `view_column_usage`⁸ | ✓⁹ |
+| **MySQL / MariaDB** | parsed¹⁰ | ✓ `information_schema.PARAMETERS`¹¹ | object-grain¹² | ✓¹³ |
+| **MongoDB** | — (no routines) | — (no routines) | — (no SQL views) | — (no routines) |
+
+**Legend:** `declared` = catalog-sourced · `parsed` = body-tokenized (`confidence: parsed`) ·
+object-grain = the view→table `depends_on` edge stands but carries NO `attrs.dstColumns`
+(degrade-by-absence, never a body-parsed guess) · ✓ / — for the marker = whether a
+dynamic-SQL routine is annotated per node.
+
+**Per-cell sources:**
+
+¹ SQLite views keep object-grain `depends_on` with no `dstColumns` — no column catalog and no
+body-parsed columns (`openspec/specs/sqlite-extraction/spec.md` — "View column lineage
+degrades by absence (no catalog, no body-parsed columns)"). SQLite emits no `calls` edges and
+no routine parameters, because its `CapabilityMatrix` declares procedures/functions
+unsupported (same spec — "SQLite emits no calls edges (capability honestly absent)", "SQLite
+emits no routine parameters (capability honestly absent)").
+² SQL Server resolves `EXEC` / `SELECT fn()` calls from `sys.sql_expression_dependencies` —
+catalog IDENTITY, no body parse — so mssql `calls` edges are `declared`
+(`openspec/specs/mssql-extraction/spec.md` — "Catalog-declared calls edges for routine
+invocations"; `openspec/specs/graph-model/spec.md` — "calls edge provenance is
+engine-determined, never inferred").
+³ Parameters (name incl. the `@` sigil, raw type, direction, ordinal, `hasDefault`) from
+`sys.parameters`; the `parameter_id = 0` function-return row is excluded
+(`openspec/specs/mssql-extraction/spec.md` — "Extract routine parameters from
+sys.parameters").
+⁴ On the NATIVE driver path, per-view `sys.dm_sql_referenced_entities(...)` (a TVF) sources
+the consumed source-column set onto `attrs.dstColumns` and flips the covered `depends_on`
+edge `parsed → declared`; the sqlcmd / dump strategies carry no view-columns family and stay
+object-grain — the project's first strategy-dependent coverage difference, stated plainly
+(`openspec/specs/mssql-extraction/spec.md` — "Declared consumed-column set stamped on view
+depends_on via dm_sql_referenced_entities (native path)").
+⁵ Routines whose body uses `EXEC` / `sp_executesql` are flagged `has_dynamic_sql: true` with
+no invented edges (`openspec/specs/mssql-extraction/spec.md` — "Dynamic SQL is flagged, never
+guessed").
+⁶ PostgreSQL `calls` edges are derived by the shared body tokenizer over the
+dynamic-string-masked static body — `confidence: parsed` (`openspec/specs/pg-extraction/spec.md`
+— "Body-parsed calls edges for routine invocations").
+⁷ Parameters decoded from `pg_proc` arrays (`RETURNS TABLE` result columns are excluded, not
+parameters) (`openspec/specs/pg-extraction/spec.md` — "Decode routine parameters from pg_proc
+arrays").
+⁸ Regular views source their consumed columns from `information_schema.view_column_usage` and
+flip `parsed → declared`; materialized / owner-uncovered views degrade to object-grain by
+absence (`openspec/specs/pg-extraction/spec.md` — "Declared consumed-column set for regular
+views via view_column_usage, with confidence flip", "Sources absent from view_column_usage
+stay parsed object grain (degrade-by-absence), never guessed").
+⁹ plpgsql bodies using the dynamic `EXECUTE` statement are flagged `hasDynamicSql: true`; a
+trigger's `EXECUTE FUNCTION` clause is NOT dynamic (`openspec/specs/pg-extraction/spec.md` —
+"Dynamic SQL is flagged via plpgsql EXECUTE, never guessed; trigger EXECUTE FUNCTION is NOT
+dynamic").
+¹⁰ MySQL `calls` edges are body-tokenized and presence-gated — `confidence: parsed`, never a
+self-edge unless genuinely recursive (`openspec/specs/mysql-extraction/spec.md` — "Body-parsed
+calls edges for routine invocations, presence-gated with no phantom or self edges").
+¹¹ Parameters from `information_schema.PARAMETERS`; MySQL exposes no default column, so
+`hasDefault` is omitted (never set false) (`openspec/specs/mysql-extraction/spec.md` — "Extract
+routine parameters from information_schema.PARAMETERS").
+¹² MySQL has no view-column catalog wired, so view `depends_on` edges stay object-grain with
+`supportsColumnLineage: false` (`openspec/specs/mysql-extraction/spec.md` — "View column
+lineage degrades by absence (no view-column catalog)").
+¹³ Routines using `PREPARE` / `EXECUTE` are flagged `hasDynamicSql: true`, with a table named
+only inside the masked dynamic string yielding no edge (`openspec/specs/mysql-extraction/spec.md`
+— "Dynamic SQL via PREPARE/EXECUTE is flagged, never guessed; a non-dynamic body is not
+flagged").
+
+The `[DYNAMIC SQL]` marker — UPPERCASE, bracketed, one internal space — is a PER-NODE
+degradation flag surfaced across `explore`, `object`, `precheck` / `affected`, and `impact`
+(the CLI and the mirroring MCP tools), attached ONLY to the specific dynamic-SQL routine and
+never as a blanket warning; SQLite and MongoDB never emit it
+(`openspec/specs/mcp-server/spec.md` — "Dynamic-SQL caveat surfaces at normal AND full detail
+in explore and object", "precheck and affected mark the exact dynamic-SQL degraded items per
+node", "dbgraph_impact names the specific dynamic-SQL degraded routines"). Routine parameters
+and view column sets render through the SAME shared payload helper that backs `object` /
+`explore`, so the CLI and MCP surfaces never drift (`openspec/specs/mcp-server/spec.md` —
+"Routine focus renders a PARAMETERS section via the shared payload helper", "explore and
+object render a view's consumed source columns at full detail, honest").
+
+## Benchmark (honest numbers)
+
+> **Honesty is the contract.** Every figure below is scoped to *this fixture, this question
+> set, this model* — no generalized "X% better" claim is made or implied. Full protocol,
+> per-question appendix, and the complete limitations list live in
+> [`docs/benchmarks.md`](docs/benchmarks.md); the numbers here are transcribed from it.
+
+**The claim under test:** an agent answering schema questions **WITH** dbgraph's read-only
+CLI (`query` / `explore` / `affected` / `status`) is at least as accurate as the SAME agent
+**WITHOUT** it (given only a raw DDL dump), at fewer schema-bearing tokens — measured on the
+committed SQLite torture fixture (`test/fixtures/sqlite/torture.sql`), a pre-registered
+question set, and a single model family (Claude). Ground truth is held separately; the scorer
+is deterministic and BLIND to the WITH/WITHOUT label.
+
+| Run | dbgraph code | N | WITH accuracy | WITHOUT accuracy | Schema-token cost (WITH vs WITHOUT) |
+|-----|--------------|:-:|:-:|:-:|--|
+| 1 — `torture-2026-07-06` | pre-`explore-payloads` | 5 | **40%** (2/5) | **80%** (4/5) | 293,325 vs 133,442 — actual¹ (WITH 2.2×) |
+| 2 — `explore-payloads-2026-07-06` | + `explore-payloads` | 5 | **80%** (4/5) | **80%** (4/5) | 180,373 vs 133,442 — actual¹ (WITH −38.5% vs Run 1) |
+| 3 — `dog-complete-2026-07-10` | v1.1.0 (DOG-1..4 + view-deps) | 6 | **100%** (6/6) | **100%** (6/6) | 3,581 vs 4,722 — approx² (WITH −24%) |
+
+¹ Runs 1–2 report ACTUAL runtime token usage summed across the condition agents, INCLUDING a
+fixed ≈26.7k-token/agent harness overhead identical on both arms — so the cross-condition
+DELTA, not the absolute, is the meaningful quantity. ² Run 3 counts only schema-bearing text
+via `ceil(chars / 4)` on both arms, so its figures are NOT comparable to Runs 1–2 — only the
+within-run WITH − WITHOUT delta is.
+
+**Run 1 — dbgraph LOST its own benchmark, and we published it anyway.** WITH scored 40%
+against WITHOUT's 80% while spending 2.2× the tokens. The root cause was a PRODUCT gap, not a
+graph-data gap: the graph STORED the exact facts, but the CLI never rendered node payloads
+(column types, PK/FK membership), so an agent could not reach them. Reporting that
+unsoftened is the contract.
+
+**Run 2 — after `explore-payloads` rendered those payloads, WITH ties WITHOUT** (80% / 80%)
+on the SAME frozen protocol, at 38.5% fewer WITH tokens than Run 1 and 73% fewer tool calls
+(157 → 42).
+
+**Run 3 — on v1.1.0 code, all six closed-form families are instantiable for the first time**
+(`view-dependency` fires now that SQLite carries view-dependency edges). WITH and WITHOUT both
+score 100% (6/6) — a TIE on correctness — while WITH spends ≈24% fewer schema tokens (3,581 vs
+4,722). Per question, a pointed graph lookup runs ≈200 schema-tokens (the trigger-inventory
+and view-dependency questions cost 197 each) against WITHOUT's fixed 787-token whole-schema
+dump; the WITH range across the six questions is 197–1,381.
+
+**Read the tie honestly.** This fixture is TINY — the entire comment-free DDL is ≈787 tokens,
+so it fits in a single dump. That is WITHOUT's BEST case, and even there dbgraph MATCHES
+accuracy at lower token cost. The gap only widens with schema size: a real enterprise
+catalog's dump does not fit a context window at all, whereas a targeted graph query stays in
+the hundreds of tokens regardless of catalog size. No such larger run is claimed here — only
+the direction is argued, and only the measured tie is asserted.
+
+**Stated limitations** (full list in `docs/benchmarks.md`): self-run and not peer-reviewed; a
+single model family; small N on one primary schema; token approximation when the runtime does
+not report actual usage; and shared-extraction circularity — sharpest in the `impact` family,
+whose ground-truth key IS dbgraph's own `affected` output, so WITH there necessarily AGREES
+WITH THE TOOL rather than providing an independent check.
+
+## Quickstart
+
+Install from npm — dbgraph is published as
+[`@elkindev/dbgraph`](https://www.npmjs.com/package/@elkindev/dbgraph) (latest `1.1.0`).
+Requires **Node.js >= 22**.
 
 ```bash
-git clone <this-repo> dbgraph
+npm install -g @elkindev/dbgraph    # or run ad hoc: npx @elkindev/dbgraph <command>
+```
+
+Prefer to run from source? Clone and build:
+
+```bash
+git clone https://github.com/ElkinDev/dbgraph.git
 cd dbgraph
 npm ci
 npm run build
@@ -157,7 +316,9 @@ runtime — a plaintext credential is rejected
 | `sync` | Synchronize the graph with the database — incremental by fingerprint; `--full` forces a rebuild. |
 | `status` | Show current graph counts, the last snapshot, and whether the live schema has drifted. |
 | `query <term>` | Full-text search the graph; prints type + qualified name per hit. Exits 1 on zero hits. |
-| `explore <qname>` | Show a node and its grouped neighbors. `--detail brief\|normal\|full`. |
+| `explore <qname>` | Show a node and its grouped neighbors (auto-surfacing `calls` neighbors). `--detail brief\|normal\|full`. |
+| `object <qname>` | Show one object in full — columns, constraints, indexes, triggers, plus (v1.1.0) routine parameters and view consumed-column sets, with a `[DYNAMIC SQL]` marker on degraded routines. |
+| `viz` | Export a self-contained, fully-offline interactive HTML graph (default `graph.html`); `--mermaid` emits a deterministic ER diagram to stdout. Shaping flags: `--out <file>`, `--full` (all nodes incl. columns), `--columns`, `--kinds <list>`, `--schema <name>`, `--min-degree <n>`. CLI-only — never an MCP tool. |
 | `diff <a> <b>` | Compare two snapshots per object (added/removed/modified). `--last` compares the two most recent. Exits 1 when changes exist (CI-gate). |
 | `affected <script.sql>` | Analyze a DDL script and report impacted objects. `--json` for machine output; exits 1 when anything is affected. |
 | `doctor` | Run a content-free connectivity self-test (safe to share). |
@@ -172,6 +333,14 @@ input (`openspec/specs/cli-config/spec.md`; `src/cli/cli.ts` `USAGE_TEXT`;
 Exit codes map to a fixed contract (`openspec/specs/cli-config/spec.md`): `0` success ·
 `1` a "negative" result (zero query hits, or diff/affected found changes) · `2`
 connection failure · `3` permission failure · `4` unsupported dialect.
+
+`dbgraph viz` is export-only and read-only: it renders `.dbgraph/dbgraph.db` to ONE
+self-contained HTML file that makes ZERO network requests at view time (opens over
+`file://`) and embeds schema identifiers ONLY — never connection strings, resolved secrets,
+or sampled values — so treat the output as exactly as sensitive as the local index. Its
+node-detail panel reuses the same payload renderer as `dbgraph object`, and `--mermaid` is a
+byte-deterministic ER diagram (`openspec/specs/graph-viz/spec.md`; `src/cli/commands/viz.ts`).
+Full walkthrough: [`docs/viz.md`](docs/viz.md).
 
 ## MCP integration
 
@@ -284,11 +453,6 @@ exception (`openspec/specs/connectivity-diagnostics/spec.md`).
 
 Stated plainly, and by design:
 
-- **No published release yet.** The package version is `0.0.0` and the `release.yml`
-  workflow, though written and trigger-guarded, has never been fired — no tag has been
-  pushed (`openspec/specs/binary-distribution/spec.md` — "release.yml is trigger-guarded
-  ... and never fired"). Run from source today; standalone win-x64 / linux-x64 binaries
-  are planned for v1.0.
 - **MongoDB structure is inferred, not declared.** Field structure comes from `$sample`;
   it is honest only about what the sample observed. Sampled document **values are never
   persisted** — only field names, types and presence frequencies survive

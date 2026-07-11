@@ -3,7 +3,7 @@
  * Re-exports everything from the core barrel plus the SQLite adapter factory.
  * The adapter factory is the ONLY place core and adapters are joined (ADR-004).
  *
- * Consumers: import from '@niklerk23/dbgraph' — never from internal sub-paths.
+ * Consumers: import from '@elkindev/dbgraph' — never from internal sub-paths.
  */
 
 export const DBGRAPH_VERSION = '1.1.0';
