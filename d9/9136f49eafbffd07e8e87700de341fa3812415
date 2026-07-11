@@ -1,0 +1,36 @@
+src/cli/commands/install.ts
+  s_b5cc375016610a::t_c74efd8d13fade 522,819,830,840,848
+  s_b5cc375016610a::t_70ef0fb832dabb 905
+README.md
+  s_b5cc375016610a::t_6be2325ff1a1e4 358
+src/adapters/engines/mssql/strategies/native-tedious.strategy.ts
+  s_b5cc375016610a::t_b60918e9e7a932 162-164
+  s_b5cc375016610a::t_9175a5aa2b0c93 47-58,72-75
+  s_b5cc375016610a::t_abd3e06cd6537a 160,165,173-191,194
+  s_b5cc375016610a::t_81743da949c41c 46
+openspec/changes/shipped-artifact-fixes/tasks.md
+  s_b5cc375016610a::t_935a1e7ebc29b1 9-12,15-18
+test/adapters/engines/mssql/native-tedious.strategy.test.ts
+  s_b5cc375016610a::t_0f3c529f59e1eb 1-142
+openspec/changes/shipped-artifact-fixes/apply-progress.md
+  s_b5cc375016610a::t_13f65a5f204223 1-54
+test/cli/commands/install.test.ts
+  s_b5cc375016610a::t_30ba08e7f446a2 1133,1146,1156,1216,1309,1324,1609,1630,1658,1728,2028
+  s_b5cc375016610a::t_2c27993439959d 84,129,251,297,519-520,586,711,756,761,771,791,803,868,885,892,913,938,943,962,982,994,1062,1080,1086,1107,1297,1540,1598,1604,1622,1624,1635-1636,1656-1657,1689,1834,1991,2002,2080
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "d99136f49eafbffd07e8e87700de341fa3812415",
+  "prompts": {},
+  "sessions": {
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
