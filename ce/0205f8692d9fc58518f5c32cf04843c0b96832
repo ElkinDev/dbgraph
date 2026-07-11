@@ -1,0 +1,52 @@
+openspec/specs/mcp-server/spec.md
+  s_b5cc375016610a::t_0f89e9a9c8d5e5 433
+  s_b5cc375016610a::t_5ee05b72435ebc 467
+  s_b5cc375016610a::t_d884d97b323764 392-397
+  s_b5cc375016610a::t_14c73833f79fa3 419,426,522,529
+  s_b5cc375016610a::t_7e4e7d92aecb9b 439,537
+  s_b5cc375016610a::t_8ed1d34f0ddd48 496,500
+  s_b5cc375016610a::t_afadb9f5ab1bfc 490
+openspec/specs/mssql-extraction/spec.md
+  s_b5cc375016610a::t_345015d5402633 817-872
+  s_b5cc375016610a::t_62a617d491ba1b 873-906
+  s_b5cc375016610a::t_9c8b83579286ad 258-282,287-305,309
+openspec/specs/cli-config/spec.md
+  s_b5cc375016610a::t_d3c60ce3e2907d 75-84
+  s_b5cc375016610a::t_1c3b9e466ca70f 91-97
+openspec/changes/archive/2026-07-11-mssql-config-hardening/archive-report.md
+  s_b15e5204be2598::t_e8932ff3129540 1-44
+openspec/changes/archive/2026-07-11-mssql-config-hardening/verify-report.md
+  s_b15e5204be2598::t_8c3f18442ed6c8 1-30
+openspec/changes/archive/2026-07-11-mssql-dynamic-sql-granularity/archive-report.md
+  s_b15e5204be2598::t_c0b5bdf4a06c01 1-48
+openspec/changes/archive/2026-07-11-mssql-dynamic-sql-granularity/verify-report.md
+  s_b15e5204be2598::t_a8b694b68d18c9 1-42
+openspec/changes/archive/2026-07-11-shipped-artifact-fixes/archive-report.md
+  s_b15e5204be2598::t_24051d8ba28af3 1-50
+openspec/changes/archive/2026-07-11-shipped-artifact-fixes/verify-report.md
+  s_b15e5204be2598::t_20bb30dc809edb 1-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "ce0205f8692d9fc58518f5c32cf04843c0b96832",
+  "prompts": {},
+  "sessions": {
+    "s_b15e5204be2598": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a59c8adf931a9dbe2",
+        "model": "unknown"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    },
+    "s_b5cc375016610a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3d080cd-ecd0-48f8-8825-d47830acfe47",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "niklerk23 <niklerk23@gmail.com>"
+    }
+  }
+}
